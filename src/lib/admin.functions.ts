@@ -1,0 +1,824 @@
+import { createServerFn } from "@tanstack/react-start";
+import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
+import { z } from "zod";
+
+async function assertAdmin(supabase: any, userId: string) {
+  const { data, error } = await supabase.rpc("has_role", { _user_id: userId, _role: "admin" });
+  if (error) throw new Error(error.message);
+  if (!data) throw new Error("Forbidden: admin role required");
+}
+
+async function logAudit(
+  actor: { id: string; email: string | null },
+  entry: { action: string; target_type?: string; target_id?: string; target_label?: string; details?: any },
+) {
+  const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+  await supabaseAdmin.from("audit_logs").insert({
+    actor_id: actor.id,
+    actor_email: actor.email,
+    action: entry.action,
+    target_type: entry.target_type ?? null,
+    target_id: entry.target_id ?? null,
+    target_label: entry.target_label ?? null,
+    details: entry.details ?? null,
+  });
+}
+
+async function getActor(context: any): Promise<{ id: string; email: string | null }> {
+  return { id: context.userId, email: context.claims?.email ?? null };
+}
+
+export const listUsers = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    await assertAdmin(context.supabase, context.userId);
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+
+    const { data: authData, error: authErr } = await supabaseAdmin.auth.admin.listUsers({ page: 1, perPage: 200 });
+    if (authErr) throw new Error(authErr.message);
+
+    const ids = authData.users.map((u) => u.id);
+    const [{ data: profiles }, { data: roles }] = await Promise.all([
+      supabaseAdmin.from("profiles").select("id, full_name, phone, city").in("id", ids),
+      supabaseAdmin.from("user_roles").select("user_id, role").in("user_id", ids),
+    ]);
+    const profileMap = new Map((profiles ?? []).map((p: any) => [p.id, p]));
+    const roleMap = new Map<string, string[]>();
+    (roles ?? []).forEach((r: any) => {
+      const list = roleMap.get(r.user_id) ?? [];
+      list.push(r.role);
+      roleMap.set(r.user_id, list);
+    });
+
+    return authData.users.map((u) => ({
+      id: u.id,
+      email: u.email ?? null,
+      created_at: u.created_at,
+      last_sign_in_at: u.last_sign_in_at ?? null,
+      banned_until: (u as any).banned_until ?? null,
+      profile: profileMap.get(u.id) ?? null,
+      roles: roleMap.get(u.id) ?? [],
+    }));
+  });
+
+export const setUserBanned = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input: unknown) =>
+    z.object({ userId: z.string().uuid(), banned: z.boolean(), reason: z.string().max(500).optional() }).parse(input),
+  )
+  .handler(async ({ data, context }) => {
+    await assertAdmin(context.supabase, context.userId);
+    if (data.userId === context.userId) throw new Error("Vous ne pouvez pas vous bloquer vous-même.");
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { data: target } = await supabaseAdmin.auth.admin.getUserById(data.userId);
+    const { error } = await supabaseAdmin.auth.admin.updateUserById(data.userId, {
+      ban_duration: data.banned ? "876000h" : "none",
+    } as any);
+    if (error) throw new Error(error.message);
+    await logAudit(await getActor(context), {
+      action: data.banned ? "user.ban" : "user.unban",
+      target_type: "user",
+      target_id: data.userId,
+      target_label: target?.user?.email ?? undefined,
+      details: data.reason ? { reason: data.reason } : null,
+    });
+
+    return { ok: true };
+  });
+
+export const setUserRole = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input: unknown) =>
+    z
+      .object({
+        userId: z.string().uuid(),
+        role: z.enum(["admin", "driver", "passenger", "support"]),
+        grant: z.boolean(),
+      })
+      .parse(input),
+  )
+  .handler(async ({ data, context }) => {
+    await assertAdmin(context.supabase, context.userId);
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    if (data.grant) {
+      const { error } = await supabaseAdmin
+        .from("user_roles")
+        .upsert({ user_id: data.userId, role: data.role }, { onConflict: "user_id,role" });
+      if (error) throw new Error(error.message);
+    } else {
+      if (data.userId === context.userId && data.role === "admin")
+        throw new Error("Vous ne pouvez pas retirer votre propre rôle admin.");
+      const { error } = await supabaseAdmin
+        .from("user_roles")
+        .delete()
+        .eq("user_id", data.userId)
+        .eq("role", data.role);
+      if (error) throw new Error(error.message);
+    }
+    const { data: target } = await supabaseAdmin.auth.admin.getUserById(data.userId);
+    await logAudit(await getActor(context), {
+      action: data.grant ? "role.grant" : "role.revoke",
+      target_type: "user",
+      target_id: data.userId,
+      target_label: target?.user?.email ?? undefined,
+      details: { role: data.role },
+    });
+    return { ok: true };
+  });
+
+export const updateDriverStatus = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input: unknown) =>
+    z
+      .object({
+        userId: z.string().uuid(),
+        status: z.enum(["pending", "under_review", "approved", "rejected", "suspended"]),
+        reason: z.string().max(500).optional(),
+      })
+      .parse(input),
+  )
+  .handler(async ({ data, context }) => {
+    await assertAdmin(context.supabase, context.userId);
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const update: any = {
+      status: data.status,
+      status_updated_at: new Date().toISOString(),
+      status_updated_by: context.userId,
+    };
+    if (data.status === "rejected" || data.status === "suspended") {
+      update.rejection_reason = data.reason ?? null;
+    } else {
+      update.rejection_reason = null;
+    }
+    const { error } = await supabaseAdmin.from("driver_profiles").update(update).eq("user_id", data.userId);
+    if (error) throw new Error(error.message);
+
+    const { data: target } = await supabaseAdmin.auth.admin.getUserById(data.userId);
+    await logAudit(await getActor(context), {
+      action: `driver.status.${data.status}`,
+      target_type: "driver",
+      target_id: data.userId,
+      target_label: target?.user?.email ?? undefined,
+      details: data.reason ? { status: data.status, reason: data.reason } : { status: data.status },
+    });
+    return { ok: true };
+  });
+
+export const uploadDriverDocument = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input: unknown) =>
+    z
+      .object({
+        userId: z.string().uuid(),
+        kind: z.enum(["id", "license", "vehicle"]),
+        filename: z.string().max(200),
+        contentType: z.string().max(100),
+        // base64-encoded file content
+        base64: z.string().max(8_000_000),
+      })
+      .parse(input),
+  )
+  .handler(async ({ data, context }) => {
+    await assertAdmin(context.supabase, context.userId);
+    const allowed = ["image/jpeg", "image/png", "image/webp", "application/pdf"];
+    if (!allowed.includes(data.contentType)) {
+      throw new Error("Format non supporté (JPG, PNG, WEBP ou PDF).");
+    }
+    const buf = Buffer.from(data.base64, "base64");
+    if (buf.byteLength > 5 * 1024 * 1024) throw new Error("Fichier trop volumineux (max 5 Mo).");
+
+    const ext = data.filename.split(".").pop()?.toLowerCase().replace(/[^a-z0-9]/g, "") || "bin";
+    const path = `${data.userId}/${data.kind}-${Date.now()}.${ext}`;
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { error: upErr } = await supabaseAdmin.storage
+      .from("driver-documents")
+      .upload(path, buf, { contentType: data.contentType, upsert: true });
+    if (upErr) throw new Error(upErr.message);
+
+    const col =
+      data.kind === "id" ? "id_document_url" : data.kind === "license" ? "license_document_url" : "vehicle_document_url";
+    const { error: updErr } = await supabaseAdmin
+      .from("driver_profiles")
+      .update({ [col]: path } as any)
+      .eq("user_id", data.userId);
+    if (updErr) throw new Error(updErr.message);
+
+    await logAudit(await getActor(context), {
+      action: "driver.document.upload",
+      target_type: "driver",
+      target_id: data.userId,
+      details: { kind: data.kind, path, size: buf.byteLength },
+    });
+    return { ok: true, path };
+  });
+
+export const getDocumentSignedUrl = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input: unknown) => z.object({ path: z.string().min(1).max(500) }).parse(input))
+  .handler(async ({ data, context }) => {
+    await assertAdmin(context.supabase, context.userId);
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { data: signed, error } = await supabaseAdmin.storage
+      .from("driver-documents")
+      .createSignedUrl(data.path, 60 * 10);
+    if (error) throw new Error(error.message);
+    return { url: signed.signedUrl };
+  });
+
+export const listAuditLogs = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    await assertAdmin(context.supabase, context.userId);
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { data, error } = await supabaseAdmin
+      .from("audit_logs")
+      .select("*")
+      .order("created_at", { ascending: false })
+      .limit(500);
+    if (error) throw new Error(error.message);
+    return data ?? [];
+  });
+
+export const listPricingSettings = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    await assertAdmin(context.supabase, context.userId);
+    const { data, error } = await context.supabase
+      .from("pricing_settings")
+      .select("*")
+      .order("category");
+    if (error) throw new Error(error.message);
+    return data ?? [];
+  });
+
+export const updatePricingSetting = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: unknown) =>
+    z
+      .object({
+        id: z.string().uuid(),
+        base_fare_xof: z.number().int().min(0),
+        per_km_xof: z.number().int().min(0),
+        per_min_xof: z.number().int().min(0),
+        min_fare_xof: z.number().int().min(0),
+        commission_type: z.enum(["percent", "flat"]),
+        commission_rate: z.number().min(0).max(100),
+        commission_flat_xof: z.number().int().min(0),
+        active: z.boolean(),
+      })
+      .parse(d),
+  )
+  .handler(async ({ data, context }) => {
+    await assertAdmin(context.supabase, context.userId);
+    const { id, ...patch } = data;
+    const { data: updated, error } = await context.supabase
+      .from("pricing_settings")
+      .update({ ...patch, updated_by: context.userId })
+      .eq("id", id)
+      .select()
+      .single();
+    if (error) throw new Error(error.message);
+    await logAudit(await getActor(context), {
+      action: "pricing.update",
+      target_type: "pricing_settings",
+      target_id: id,
+      target_label: updated?.category ?? null,
+      details: patch,
+    });
+    return updated;
+  });
+
+/* ====================== Commission schedules ====================== */
+
+const VEHICLE_CATEGORIES = ["taxi", "eco", "confort", "confort_plus", "vip"] as const;
+
+export const listCommissionSchedules = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    await assertAdmin(context.supabase, context.userId);
+    const { data, error } = await context.supabase
+      .from("commission_schedules")
+      .select("*")
+      .order("category")
+      .order("priority", { ascending: false })
+      .order("starts_at", { ascending: false });
+    if (error) throw new Error(error.message);
+    return data ?? [];
+  });
+
+const scheduleInput = z.object({
+  category: z.enum(VEHICLE_CATEGORIES),
+  commission_type: z.enum(["percent", "flat"]),
+  commission_rate: z.number().min(0).max(100),
+  commission_flat_xof: z.number().int().min(0),
+  starts_at: z.string(),
+  ends_at: z.string().nullable().optional(),
+  priority: z.number().int().min(0).default(0),
+  active: z.boolean().default(true),
+  notes: z.string().nullable().optional(),
+});
+
+export const createCommissionSchedule = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: unknown) => scheduleInput.parse(d))
+  .handler(async ({ data, context }) => {
+    await assertAdmin(context.supabase, context.userId);
+    const { data: created, error } = await context.supabase
+      .from("commission_schedules")
+      .insert({ ...data, created_by: context.userId })
+      .select()
+      .single();
+    if (error) throw new Error(error.message);
+    await logAudit(await getActor(context), {
+      action: "commission_schedule.create",
+      target_type: "commission_schedules",
+      target_id: created?.id ?? null,
+      target_label: created?.category ?? null,
+      details: data,
+    });
+    return created;
+  });
+
+export const updateCommissionSchedule = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: unknown) =>
+    scheduleInput.partial().extend({ id: z.string().uuid() }).parse(d),
+  )
+  .handler(async ({ data, context }) => {
+    await assertAdmin(context.supabase, context.userId);
+    const { id, ...patch } = data;
+    const { data: updated, error } = await context.supabase
+      .from("commission_schedules")
+      .update(patch)
+      .eq("id", id)
+      .select()
+      .single();
+    if (error) throw new Error(error.message);
+    await logAudit(await getActor(context), {
+      action: "commission_schedule.update",
+      target_type: "commission_schedules",
+      target_id: id,
+      target_label: updated?.category ?? null,
+      details: patch,
+    });
+    return updated;
+  });
+
+export const deleteCommissionSchedule = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: unknown) => z.object({ id: z.string().uuid() }).parse(d))
+  .handler(async ({ data, context }) => {
+    await assertAdmin(context.supabase, context.userId);
+    const { error } = await context.supabase
+      .from("commission_schedules")
+      .delete()
+      .eq("id", data.id);
+    if (error) throw new Error(error.message);
+    await logAudit(await getActor(context), {
+      action: "commission_schedule.delete",
+      target_type: "commission_schedules",
+      target_id: data.id,
+      target_label: undefined,
+      details: null,
+    });
+    return { ok: true };
+  });
+
+/* -------------------- Commission helpers / report / preview / conflicts -------------------- */
+
+type ResolvedCommission = {
+  source: "schedule" | "default" | "none";
+  schedule_id: string | null;
+  notes: string | null;
+  commission_type: "percent" | "flat";
+  commission_rate: number;
+  commission_flat_xof: number;
+};
+
+async function resolveCommissionFor(
+  supabase: any,
+  category: string,
+  at: string,
+): Promise<ResolvedCommission> {
+  const { data: sched } = await supabase
+    .from("commission_schedules")
+    .select("*")
+    .eq("category", category)
+    .eq("active", true)
+    .lte("starts_at", at)
+    .or(`ends_at.is.null,ends_at.gt.${at}`)
+    .order("priority", { ascending: false })
+    .order("starts_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (sched) {
+    return {
+      source: "schedule",
+      schedule_id: sched.id,
+      notes: sched.notes ?? null,
+      commission_type: sched.commission_type,
+      commission_rate: Number(sched.commission_rate ?? 0),
+      commission_flat_xof: Number(sched.commission_flat_xof ?? 0),
+    };
+  }
+
+  const { data: def } = await supabase
+    .from("pricing_settings")
+    .select("*")
+    .eq("category", category)
+    .eq("active", true)
+    .limit(1)
+    .maybeSingle();
+
+  if (def) {
+    return {
+      source: "default",
+      schedule_id: null,
+      notes: null,
+      commission_type: def.commission_type ?? "percent",
+      commission_rate: Number(def.commission_rate ?? 0),
+      commission_flat_xof: Number(def.commission_flat_xof ?? 0),
+    };
+  }
+  return {
+    source: "none",
+    schedule_id: null,
+    notes: null,
+    commission_type: "percent",
+    commission_rate: 0,
+    commission_flat_xof: 0,
+  };
+}
+
+function applyCommission(price: number, r: ResolvedCommission) {
+  const safePrice = Math.max(0, Math.round(price));
+  const amount =
+    r.commission_type === "flat"
+      ? Math.min(r.commission_flat_xof, safePrice)
+      : Math.round((safePrice * r.commission_rate) / 100);
+  return {
+    commission_xof: amount,
+    driver_earnings_xof: Math.max(safePrice - amount, 0),
+  };
+}
+
+export const previewCommission = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: unknown) =>
+    z
+      .object({
+        category: z.enum(VEHICLE_CATEGORIES),
+        starts_at: z.string(),
+        ends_at: z.string().nullable().optional(),
+        sample_price_xof: z.number().int().min(0).default(5000),
+      })
+      .parse(d),
+  )
+  .handler(async ({ data, context }) => {
+    await assertAdmin(context.supabase, context.userId);
+    const atStart = await resolveCommissionFor(context.supabase, data.category, data.starts_at);
+    const atEnd = data.ends_at
+      ? await resolveCommissionFor(context.supabase, data.category, data.ends_at)
+      : null;
+    return {
+      at_start: { ...atStart, ...applyCommission(data.sample_price_xof, atStart) },
+      at_end: atEnd ? { ...atEnd, ...applyCommission(data.sample_price_xof, atEnd) } : null,
+      sample_price_xof: data.sample_price_xof,
+    };
+  });
+
+export const detectScheduleConflicts = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    await assertAdmin(context.supabase, context.userId);
+    const { data, error } = await context.supabase
+      .from("commission_schedules")
+      .select("*")
+      .eq("active", true);
+    if (error) throw new Error(error.message);
+    const rows = (data ?? []) as any[];
+    const conflicts: any[] = [];
+    const byCat = new Map<string, any[]>();
+    rows.forEach((r) => {
+      const list = byCat.get(r.category) ?? [];
+      list.push(r);
+      byCat.set(r.category, list);
+    });
+    for (const [cat, list] of byCat) {
+      for (let i = 0; i < list.length; i++) {
+        for (let j = i + 1; j < list.length; j++) {
+          const a = list[i];
+          const b = list[j];
+          const aEnd = a.ends_at ? new Date(a.ends_at).getTime() : Infinity;
+          const bEnd = b.ends_at ? new Date(b.ends_at).getTime() : Infinity;
+          const aStart = new Date(a.starts_at).getTime();
+          const bStart = new Date(b.starts_at).getTime();
+          const overlap = aStart < bEnd && bStart < aEnd;
+          if (!overlap) continue;
+          conflicts.push({
+            category: cat,
+            a,
+            b,
+            same_priority: a.priority === b.priority,
+            winner_id: a.priority === b.priority ? null : a.priority > b.priority ? a.id : b.id,
+          });
+        }
+      }
+    }
+    return conflicts;
+  });
+
+export const getRideCommissionDetail = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: unknown) => z.object({ ride_id: z.string().uuid() }).parse(d))
+  .handler(async ({ data, context }) => {
+    await assertAdmin(context.supabase, context.userId);
+    const { data: ride, error } = await context.supabase
+      .from("rides")
+      .select("*")
+      .eq("id", data.ride_id)
+      .single();
+    if (error) throw new Error(error.message);
+    const at = ride.completed_at ?? ride.updated_at ?? new Date().toISOString();
+    const resolved = await resolveCommissionFor(context.supabase, ride.category, at);
+    const { data: wtx } = await context.supabase
+      .from("wallet_transactions")
+      .select("*")
+      .eq("ride_id", data.ride_id)
+      .order("created_at", { ascending: false });
+    return { ride, resolved, wallet_tx: wtx ?? [] };
+  });
+
+export const commissionReport = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: unknown) =>
+    z
+      .object({
+        from: z.string(),
+        to: z.string(),
+        category: z.enum(VEHICLE_CATEGORIES).nullable().optional(),
+        driver_id: z.string().uuid().nullable().optional(),
+      })
+      .parse(d),
+  )
+  .handler(async ({ data, context }) => {
+    await assertAdmin(context.supabase, context.userId);
+    let q = context.supabase
+      .from("rides")
+      .select(
+        "id, completed_at, category, driver_id, passenger_id, price_xof, commission_xof, commission_rate, driver_earnings_xof, city, pickup_address, dropoff_address",
+      )
+      .eq("status", "completed")
+      .gte("completed_at", data.from)
+      .lte("completed_at", data.to)
+      .order("completed_at", { ascending: false })
+      .limit(5000);
+    if (data.category) q = q.eq("category", data.category);
+    if (data.driver_id) q = q.eq("driver_id", data.driver_id);
+    const { data: rides, error } = await q;
+    if (error) throw new Error(error.message);
+
+    const driverIds = Array.from(new Set((rides ?? []).map((r: any) => r.driver_id).filter(Boolean)));
+    let driverMap = new Map<string, string>();
+    if (driverIds.length) {
+      const { data: profs } = await context.supabase
+        .from("profiles")
+        .select("id, full_name")
+        .in("id", driverIds);
+      driverMap = new Map((profs ?? []).map((p: any) => [p.id, p.full_name]));
+    }
+
+    const rows = (rides ?? []).map((r: any) => ({
+      ...r,
+      driver_name: r.driver_id ? driverMap.get(r.driver_id) ?? null : null,
+    }));
+
+    const totals = {
+      rides: rows.length,
+      revenue_xof: rows.reduce((s, r) => s + (r.price_xof ?? 0), 0),
+      commission_xof: rows.reduce((s, r) => s + (r.commission_xof ?? 0), 0),
+      driver_earnings_xof: rows.reduce((s, r) => s + (r.driver_earnings_xof ?? 0), 0),
+    };
+    const byCategory: Record<string, any> = {};
+    const byDriver: Record<string, any> = {};
+    rows.forEach((r: any) => {
+      const c = (byCategory[r.category] ??= { category: r.category, rides: 0, revenue_xof: 0, commission_xof: 0 });
+      c.rides++;
+      c.revenue_xof += r.price_xof ?? 0;
+      c.commission_xof += r.commission_xof ?? 0;
+      if (r.driver_id) {
+        const d = (byDriver[r.driver_id] ??= {
+          driver_id: r.driver_id,
+          driver_name: r.driver_name,
+          rides: 0,
+          revenue_xof: 0,
+          commission_xof: 0,
+          earnings_xof: 0,
+        });
+        d.rides++;
+        d.revenue_xof += r.price_xof ?? 0;
+        d.commission_xof += r.commission_xof ?? 0;
+        d.earnings_xof += r.driver_earnings_xof ?? 0;
+      }
+    });
+    return { rows, totals, byCategory: Object.values(byCategory), byDriver: Object.values(byDriver) };
+  });
+
+
+/* ============================ Billing ============================ */
+
+export const listCorporates = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    await assertAdmin(context.supabase, context.userId);
+    const { data, error } = await context.supabase
+      .from("corporate_accounts")
+      .select("*")
+      .order("name");
+    if (error) throw new Error(error.message);
+    return data ?? [];
+  });
+
+export const createCorporate = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: unknown) =>
+    z.object({
+      name: z.string().trim().min(1).max(200),
+      contact_name: z.string().trim().max(200).optional().nullable(),
+      email: z.string().trim().email().max(255).optional().nullable(),
+      phone: z.string().trim().max(50).optional().nullable(),
+      address: z.string().trim().max(500).optional().nullable(),
+      city: z.string().trim().max(100).optional().nullable(),
+      tax_id: z.string().trim().max(100).optional().nullable(),
+    }).parse(d),
+  )
+  .handler(async ({ data, context }) => {
+    await assertAdmin(context.supabase, context.userId);
+    const { data: row, error } = await context.supabase
+      .from("corporate_accounts").insert(data).select().single();
+    if (error) throw new Error(error.message);
+    await logAudit(await getActor(context), {
+      action: "corporate.create", target_type: "corporate_accounts",
+      target_id: row.id, target_label: row.name,
+    });
+    return row;
+  });
+
+export const listInvoices = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    await assertAdmin(context.supabase, context.userId);
+    const { data, error } = await context.supabase
+      .from("invoices")
+      .select("*, corporate:corporate_accounts(id,name)")
+      .order("created_at", { ascending: false })
+      .limit(500);
+    if (error) throw new Error(error.message);
+    return data ?? [];
+  });
+
+export const createInvoice = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: unknown) =>
+    z.object({
+      corporate_id: z.string().uuid(),
+      period_start: z.string().optional().nullable(),
+      period_end: z.string().optional().nullable(),
+      due_date: z.string().optional().nullable(),
+      notes: z.string().max(2000).optional().nullable(),
+      items: z.array(z.object({
+        description: z.string().min(1).max(500),
+        quantity: z.number().min(0.01),
+        unit_price_xof: z.number().int().min(0),
+      })).min(1),
+    }).parse(d),
+  )
+  .handler(async ({ data, context }) => {
+    await assertAdmin(context.supabase, context.userId);
+    const subtotal = data.items.reduce(
+      (s, it) => s + Math.round(it.quantity * it.unit_price_xof), 0,
+    );
+    const vat = Math.round(subtotal * 0.18);
+    const total = subtotal + vat;
+    const { data: inv, error } = await context.supabase
+      .from("invoices").insert({
+        corporate_id: data.corporate_id,
+        period_start: data.period_start || null,
+        period_end: data.period_end || null,
+        due_date: data.due_date || null,
+        notes: data.notes || null,
+        subtotal_xof: subtotal, vat_rate: 18, vat_xof: vat, total_xof: total,
+        created_by: context.userId,
+      }).select().single();
+    if (error) throw new Error(error.message);
+
+    const items = data.items.map((it) => ({
+      invoice_id: inv.id,
+      description: it.description,
+      quantity: it.quantity,
+      unit_price_xof: it.unit_price_xof,
+      total_xof: Math.round(it.quantity * it.unit_price_xof),
+    }));
+    const { error: ie } = await context.supabase.from("invoice_items").insert(items);
+    if (ie) throw new Error(ie.message);
+
+    await logAudit(await getActor(context), {
+      action: "invoice.create", target_type: "invoices",
+      target_id: inv.id, target_label: inv.number ?? undefined,
+      details: { total_xof: total },
+    });
+    return inv;
+  });
+
+export const updateInvoiceStatus = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: unknown) =>
+    z.object({
+      invoice_id: z.string().uuid(),
+      status: z.enum(["draft", "issued", "paid", "cancelled"]),
+    }).parse(d),
+  )
+  .handler(async ({ data, context }) => {
+    await assertAdmin(context.supabase, context.userId);
+    const patch: any = { status: data.status };
+    const now = new Date().toISOString();
+    if (data.status === "issued") patch.issued_at = now;
+    if (data.status === "paid") patch.paid_at = now;
+    if (data.status === "cancelled") patch.cancelled_at = now;
+
+    const { data: row, error } = await context.supabase
+      .from("invoices").update(patch).eq("id", data.invoice_id)
+      .select("number, status").single();
+    if (error) throw new Error(error.message);
+
+    await logAudit(await getActor(context), {
+      action: "invoice.status", target_type: "invoices",
+      target_id: data.invoice_id, target_label: row.number ?? undefined,
+      details: { status: data.status },
+    });
+    return row;
+  });
+
+export const recordInvoicePayment = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: unknown) =>
+    z.object({
+      invoice_id: z.string().uuid(),
+      amount_xof: z.number().int().min(1),
+      method: z.enum(["bank_transfer","mobile_money","cash","card","other"]),
+      reference: z.string().max(200).optional().nullable(),
+      paid_on: z.string().optional().nullable(),
+      notes: z.string().max(1000).optional().nullable(),
+    }).parse(d),
+  )
+  .handler(async ({ data, context }) => {
+    await assertAdmin(context.supabase, context.userId);
+
+    const { data: pay, error } = await context.supabase
+      .from("invoice_payments").insert({
+        invoice_id: data.invoice_id,
+        amount_xof: data.amount_xof,
+        method: data.method,
+        reference: data.reference || null,
+        paid_on: data.paid_on || new Date().toISOString().slice(0,10),
+        notes: data.notes || null,
+        recorded_by: context.userId,
+      }).select().single();
+    if (error) throw new Error(error.message);
+
+    // Recompute paid_xof and auto-set status to 'paid' if fully paid
+    const { data: payments } = await context.supabase
+      .from("invoice_payments").select("amount_xof").eq("invoice_id", data.invoice_id);
+    const paidTotal = (payments ?? []).reduce((s: number, p: any) => s + p.amount_xof, 0);
+
+    const { data: inv } = await context.supabase
+      .from("invoices").select("total_xof, status").eq("id", data.invoice_id).single();
+
+    const patch: any = { paid_xof: paidTotal };
+    if (inv && paidTotal >= inv.total_xof && inv.status !== "paid") {
+      patch.status = "paid";
+      patch.paid_at = new Date().toISOString();
+    }
+    await context.supabase.from("invoices").update(patch).eq("id", data.invoice_id);
+
+    await logAudit(await getActor(context), {
+      action: "invoice.payment", target_type: "invoices",
+      target_id: data.invoice_id,
+      details: { amount_xof: data.amount_xof, method: data.method, reference: data.reference },
+    });
+    return { payment: pay, paid_total: paidTotal };
+  });
+
+export const listInvoicePayments = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: unknown) => z.object({ invoice_id: z.string().uuid() }).parse(d))
+  .handler(async ({ data, context }) => {
+    await assertAdmin(context.supabase, context.userId);
+    const { data: rows, error } = await context.supabase
+      .from("invoice_payments").select("*")
+      .eq("invoice_id", data.invoice_id)
+      .order("paid_on", { ascending: false });
+    if (error) throw new Error(error.message);
+    return rows ?? [];
+  });

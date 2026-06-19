@@ -1,0 +1,1 @@
+REVOKE EXECUTE ON FUNCTION public.resolve_commission(vehicle_category, timestamptz) FROM authenticated;

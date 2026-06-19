@@ -1,0 +1,1 @@
+REVOKE ALL ON FUNCTION public.debit_commission_on_ride_complete() FROM PUBLIC, anon, authenticated;
