@@ -1,7 +1,8 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { supabase } from "@/integrations/supabase/client";
+import { useServerFn } from "@tanstack/react-start";
+import { getTicket, listTicketMessages, postTicketMessage, updateTicket } from "@/lib/app-data.functions";
 import { useAuth } from "@/hooks/use-auth";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -31,31 +32,20 @@ function TicketView() {
   const [internal, setInternal] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
 
+  const getTicketFn = useServerFn(getTicket);
+  const listMessagesFn = useServerFn(listTicketMessages);
+  const postMessageFn = useServerFn(postTicketMessage);
+  const updateTicketFn = useServerFn(updateTicket);
+
   const ticketQ = useQuery({
     queryKey: ["support", "ticket", ticketId],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from("support_tickets")
-        .select("*")
-        .eq("id", ticketId)
-        .single();
-      if (error) throw error;
-      return data;
-    },
+    queryFn: () => getTicketFn({ data: { ticketId } }),
   });
 
   const messagesQ = useQuery({
     queryKey: ["support", "messages", ticketId],
     refetchInterval: 5000,
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from("ticket_messages")
-        .select("*")
-        .eq("ticket_id", ticketId)
-        .order("created_at", { ascending: true });
-      if (error) throw error;
-      return data ?? [];
-    },
+    queryFn: () => listMessagesFn({ data: { ticketId } }),
   });
 
   useEffect(() => {
@@ -66,13 +56,7 @@ function TicketView() {
     mutationFn: async () => {
       const text = body.trim();
       if (text.length < 1) throw new Error("Message vide");
-      const { error } = await supabase.from("ticket_messages").insert({
-        ticket_id: ticketId,
-        author_id: user!.id,
-        body: text,
-        is_internal: internal && isAgent,
-      });
-      if (error) throw error;
+      await postMessageFn({ data: { ticketId, body: text, is_internal: internal && isAgent } });
     },
     onSuccess: () => {
       setBody("");
@@ -85,11 +69,14 @@ function TicketView() {
 
   const updateMut = useMutation({
     mutationFn: async (patch: Record<string, any>) => {
-      const { error } = await supabase
-        .from("support_tickets")
-        .update({ ...patch, ...(patch.status === "closed" ? { closed_at: new Date().toISOString() } : {}) })
-        .eq("id", ticketId);
-      if (error) throw error;
+      await updateTicketFn({
+        data: {
+          ticketId,
+          status: patch.status,
+          priority: patch.priority,
+          assigned_to: patch.assigned_to,
+        },
+      });
     },
     onSuccess: () => {
       toast.success("Mis à jour");

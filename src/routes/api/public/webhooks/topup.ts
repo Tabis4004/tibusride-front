@@ -89,32 +89,28 @@ export const Route = createFileRoute("/api/public/webhooks/topup")({
           });
         }
 
-        const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+        const { serviceConfirmTopup } = await import("@/lib/app-data.functions");
+        const { serviceQuery } = await import("@/integrations/vercel/db");
 
         if (status === "paid") {
-          const { data, error } = await supabaseAdmin.rpc("confirm_topup", {
-            _topup_id: topupId,
-            _provider_ref: providerRef ?? undefined,
-          });
-          if (error)
-            return new Response(JSON.stringify({ ok: false, error: error.message }), {
+          try {
+            const result = await serviceConfirmTopup(topupId, providerRef ?? undefined);
+            return new Response(JSON.stringify({ ok: true, result }), {
+              headers: { "content-type": "application/json" },
+            });
+          } catch (error) {
+            const message = error instanceof Error ? error.message : "confirm failed";
+            return new Response(JSON.stringify({ ok: false, error: message }), {
               status: 500,
               headers: { "content-type": "application/json" },
             });
-          return new Response(JSON.stringify({ ok: true, result: data }), {
-            headers: { "content-type": "application/json" },
-          });
+          }
         }
 
-        const { error } = await supabaseAdmin
-          .from("topup_orders")
-          .update({ status, provider_reference: providerRef ?? null })
-          .eq("id", topupId);
-        if (error)
-          return new Response(JSON.stringify({ ok: false, error: error.message }), {
-            status: 500,
-            headers: { "content-type": "application/json" },
-          });
+        await serviceQuery(
+          `UPDATE public.topup_orders SET status = $2::public.topup_status, provider_reference = COALESCE($3, provider_reference) WHERE id = $1`,
+          [topupId, status, providerRef ?? null],
+        );
         return new Response(JSON.stringify({ ok: true }), {
           headers: { "content-type": "application/json" },
         });

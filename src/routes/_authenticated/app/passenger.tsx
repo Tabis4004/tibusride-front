@@ -3,7 +3,14 @@ import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { z } from "zod";
-import { supabase } from "@/integrations/supabase/client";
+import {
+  cancelRide,
+  createRide,
+  getCurrentRide,
+  getRideById,
+  getRideDriverPublic,
+  listRecentRides,
+} from "@/lib/app-data.functions";
 import { useAuth } from "@/hooks/use-auth";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -125,20 +132,14 @@ function PassengerPage() {
   const mapBias = zone ? { lat: zone.lat, lng: zone.lng, radiusMeters: zone.radiusKm * 1000 } : undefined;
 
   // Recent rides — quick resume
+  const listRecentFn = useServerFn(listRecentRides);
+  const getCurrentFn = useServerFn(getCurrentRide);
+  const createRideFn = useServerFn(createRide);
+
   const recentRidesQ = useQuery({
     queryKey: ["recent-rides", user?.id],
     enabled: !!user,
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from("rides")
-        .select("id, pickup_address, dropoff_address, pickup_lat, pickup_lng, dropoff_lat, dropoff_lng, city, category, created_at, status")
-        .eq("passenger_id", user!.id)
-        .in("status", ["completed", "cancelled"])
-        .order("created_at", { ascending: false })
-        .limit(5);
-      if (error) throw error;
-      return data ?? [];
-    },
+    queryFn: () => listRecentFn(),
   });
 
   const resumeRide = (r: any) => {
@@ -158,18 +159,7 @@ function PassengerPage() {
   const currentRideQ = useQuery({
     queryKey: ["current-ride", user?.id],
     enabled: !!user,
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from("rides")
-        .select("*")
-        .eq("passenger_id", user!.id)
-        .in("status", ["requested", "accepted", "arriving", "in_progress"])
-        .order("created_at", { ascending: false })
-        .limit(1)
-        .maybeSingle();
-      if (error) throw error;
-      return data;
-    },
+    queryFn: () => getCurrentFn(),
   });
 
   const create = useMutation({
@@ -181,25 +171,23 @@ function PassengerPage() {
       const parsed = schema.safeParse({ pickup, dropoff });
       if (!parsed.success) throw new Error(parsed.error.issues[0].message);
 
-      const { error, data } = await supabase.from("rides").insert({
-        passenger_id: user!.id,
-        pickup_address: pickup,
-        dropoff_address: dropoff,
-        pickup_lat: pickupLL?.lat ?? null,
-        pickup_lng: pickupLL?.lng ?? null,
-        dropoff_lat: dropoffLL?.lat ?? null,
-        dropoff_lng: dropoffLL?.lng ?? null,
-        city,
-        category,
-        distance_km: km,
-        duration_min: min,
-        price_xof: price,
-        payment_method: payment,
-        passenger_phone: phone || null,
-        status: "requested",
-      }).select().single();
-      if (error) throw error;
-      return data;
+      return createRideFn({
+        data: {
+          pickup_address: pickup,
+          dropoff_address: dropoff,
+          pickup_lat: pickupLL?.lat ?? null,
+          pickup_lng: pickupLL?.lng ?? null,
+          dropoff_lat: dropoffLL?.lat ?? null,
+          dropoff_lng: dropoffLL?.lng ?? null,
+          city,
+          category,
+          distance_km: km,
+          duration_min: min,
+          price_xof: price,
+          payment_method: payment,
+          passenger_phone: phone || null,
+        },
+      });
     },
     onSuccess: () => {
       toast.success("Course demandée ! Recherche d'un chauffeur…");
@@ -462,17 +450,22 @@ function CurrentRideBanner({ ride: initialRide, onCancel }: { ride: any; onCance
   const getPrefsFn = useServerFn(getNotificationPrefs);
   const { data: prefs } = useQuery({ queryKey: ["notif-prefs"], queryFn: () => getPrefsFn() });
 
-  // Driver contact — via security-definer RPC (only safe vehicle / contact fields)
+  const getRideFn = useServerFn(getRideById);
+  const getDriverFn = useServerFn(getRideDriverPublic);
+
+  const ridePollQ = useQuery({
+    queryKey: ["ride-poll", ride.id],
+    refetchInterval: 3000,
+    queryFn: async () => {
+      const next = await getRideFn({ data: { rideId: ride.id } });
+      return next;
+    },
+  });
+
   const driverQ = useQuery({
     queryKey: ["ride-driver", ride.id, ride.driver_id],
     enabled: !!ride.driver_id,
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .rpc("get_ride_driver_public", { _ride_id: ride.id })
-        .maybeSingle();
-      if (error) throw error;
-      return data;
-    },
+    queryFn: () => getDriverFn({ data: { rideId: ride.id } }),
   });
 
   // Geocode addresses if no coords
@@ -503,33 +496,26 @@ function CurrentRideBanner({ ride: initialRide, onCancel }: { ride: any; onCance
     }
   };
 
-  // Realtime subscription to this ride
+
   useEffect(() => {
-    const ch = supabase
-      .channel(`ride-${ride.id}`)
-      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "rides", filter: `id=eq.${ride.id}` }, (payload) => {
-        const next: any = payload.new;
-        setRide(next);
-        if (next.eta_seconds != null) setEtaSec(next.eta_seconds);
-        // status change notification
-        if (next.status !== lastStatusNotifiedRef.current) {
-          lastStatusNotifiedRef.current = next.status;
-          const label = STATUS_LABEL[next.status] ?? next.status;
-          notify("Mise à jour de la course", label, "status");
-        }
-        // arrival notification
-        if (next.status === "arriving" && !alertedArrivingRef.current) {
-          alertedArrivingRef.current = true;
-          notify("Votre chauffeur est arrivé !", "Rejoignez-le au point de départ.", "arriving");
-        }
-        if (next.status === "completed" || next.status === "cancelled") {
-          qc.invalidateQueries({ queryKey: ["current-ride"] });
-        }
-      })
-      .subscribe();
-    return () => { supabase.removeChannel(ch); };
+    const next = ridePollQ.data;
+    if (!next) return;
+    setRide(next);
+    if (next.eta_seconds != null) setEtaSec(next.eta_seconds);
+    if (next.status !== lastStatusNotifiedRef.current) {
+      lastStatusNotifiedRef.current = next.status;
+      const label = STATUS_LABEL[next.status] ?? next.status;
+      notify("Mise à jour de la course", label, "status");
+    }
+    if (next.status === "arriving" && !alertedArrivingRef.current) {
+      alertedArrivingRef.current = true;
+      notify("Votre chauffeur est arrivé !", "Rejoignez-le au point de départ.", "arriving");
+    }
+    if (next.status === "completed" || next.status === "cancelled") {
+      qc.invalidateQueries({ queryKey: ["current-ride"] });
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ride.id, qc, prefs?.notify_status_change, prefs?.notify_driver_arriving, prefs?.sound_enabled]);
+  }, [ridePollQ.data]);
 
   // Driver position + proximity push
   const driverPos: LatLng | null = ride.driver_lat && ride.driver_lng ? { lat: ride.driver_lat, lng: ride.driver_lng } : null;
@@ -569,10 +555,11 @@ function CurrentRideBanner({ ride: initialRide, onCancel }: { ride: any; onCance
     return () => clearTimeout(t);
   }, [pickup?.lat, pickup?.lng, dropoff?.lat, dropoff?.lng, driverPos?.lat, driverPos?.lng, ride.status, routeFn]);
 
+  const cancelRideFn = useServerFn(cancelRide);
+
   const cancel = useMutation({
     mutationFn: async () => {
-      const { error } = await supabase.from("rides").update({ status: "cancelled", cancelled_at: new Date().toISOString() }).eq("id", ride.id);
-      if (error) throw error;
+      await cancelRideFn({ data: { rideId: ride.id } });
     },
     onSuccess: () => { toast.success("Course annulée"); onCancel(); },
     onError: (e: Error) => toast.error(e.message),

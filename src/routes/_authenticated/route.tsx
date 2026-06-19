@@ -1,26 +1,26 @@
 import { createFileRoute, Outlet, redirect, Link, useNavigate } from "@tanstack/react-router";
-import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/use-auth";
 import { Logo } from "@/components/Logo";
 import { Button } from "@/components/ui/button";
 import { Car, Compass, LayoutDashboard, LifeBuoy, LogOut, ShieldCheck, Sparkles, Inbox } from "lucide-react";
+import { getAuthUserFromRequest } from "@/lib/auth.functions";
 
 export const Route = createFileRoute("/_authenticated")({
   ssr: false,
   beforeLoad: async () => {
-    const { data, error } = await supabase.auth.getUser();
-    if (error || !data.user) throw redirect({ to: "/auth" });
-    return { user: data.user };
+    const user = await getAuthUserFromRequest();
+    if (!user) throw redirect({ to: "/auth" });
+    return { user };
   },
   component: AppLayout,
 });
 
 function AppLayout() {
-  const { roles, primaryRole, user } = useAuth();
+  const { roles, primaryRole, user, signOut } = useAuth();
   const navigate = useNavigate();
 
   const handleSignOut = async () => {
-    await supabase.auth.signOut();
+    await signOut();
     navigate({ to: "/auth", replace: true });
   };
 
@@ -70,7 +70,6 @@ function AppLayout() {
             </Button>
           </div>
         </div>
-        {/* Mobile nav */}
         <nav className="flex gap-1 overflow-x-auto border-t border-border px-2 py-2 md:hidden">
           {roles.includes("passenger") && (
             <Link to="/app/passenger"><Button variant="ghost" size="sm">Commander</Button></Link>

@@ -1,12 +1,13 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { supabase } from "@/integrations/supabase/client";
+import { useServerFn } from "@tanstack/react-start";
 import { useAuth } from "@/hooks/use-auth";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Inbox } from "lucide-react";
+import { listSupportInbox } from "@/lib/app-data.functions";
 
 export const Route = createFileRoute("/_authenticated/app/support-inbox")({
   head: () => ({ meta: [{ title: "Inbox Support — Tibus Ride" }] }),
@@ -26,6 +27,7 @@ function SupportInbox() {
   const { roles, loading } = useAuth();
   const navigate = useNavigate();
   const [filter, setFilter] = useState<(typeof FILTERS)[number]["v"]>("active");
+  const listFn = useServerFn(listSupportInbox);
 
   useEffect(() => {
     if (loading) return;
@@ -38,18 +40,7 @@ function SupportInbox() {
     queryKey: ["support", "inbox", filter],
     refetchInterval: 8000,
     enabled: roles.includes("support") || roles.includes("admin"),
-    queryFn: async () => {
-      let qb = supabase
-        .from("support_tickets")
-        .select("*")
-        .order("last_message_at", { ascending: false })
-        .limit(100);
-      if (filter === "active") qb = qb.in("status", ["open", "pending"]);
-      else if (filter !== "all") qb = qb.eq("status", filter);
-      const { data, error } = await qb;
-      if (error) throw error;
-      return data ?? [];
-    },
+    queryFn: () => listFn({ data: { filter } }),
   });
 
   return (
@@ -60,12 +51,9 @@ function SupportInbox() {
       </div>
       <div className="flex flex-wrap gap-2">
         {FILTERS.map((f) => (
-          <Button
-            key={f.v}
-            size="sm"
-            variant={filter === f.v ? "default" : "outline"}
-            onClick={() => setFilter(f.v)}
-          >{f.l}</Button>
+          <Button key={f.v} size="sm" variant={filter === f.v ? "default" : "outline"} onClick={() => setFilter(f.v)}>
+            {f.l}
+          </Button>
         ))}
       </div>
       <div className="space-y-2">
@@ -73,7 +61,7 @@ function SupportInbox() {
         {!q.isLoading && (q.data?.length ?? 0) === 0 && (
           <Card><CardContent className="py-8 text-center text-muted-foreground">Aucun ticket.</CardContent></Card>
         )}
-        {(q.data ?? []).map((t) => (
+        {(q.data ?? []).map((t: any) => (
           <Link key={t.id} to="/app/support/$ticketId" params={{ ticketId: t.id }}>
             <Card className="hover:border-primary transition-colors">
               <CardContent className="py-3 flex items-start justify-between gap-3">

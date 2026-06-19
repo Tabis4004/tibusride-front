@@ -2,7 +2,14 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { supabase } from "@/integrations/supabase/client";
+import {
+  adminDashboardStats,
+  adminListDrivers,
+  adminListFraudLogs,
+  adminListRides,
+  adminUpdateRewardSettings,
+  getRewardSettings,
+} from "@/lib/app-data.functions";
 import { useAuth } from "@/hooks/use-auth";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -145,18 +152,11 @@ function DriversTab() {
   const [onlineFilter, setOnlineFilter] = useState<string>("all");
   const [cityFilter, setCityFilter] = useState<string>("all");
   const [q, setQ] = useState("");
+  const listDriversFn = useServerFn(adminListDrivers);
 
   const { data } = useQuery({
     queryKey: ["admin-drivers"],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from("driver_profiles")
-        .select("*, profiles:user_id(full_name, phone, city)")
-        .order("created_at", { ascending: false })
-        .limit(500);
-      if (error) throw error;
-      return data ?? [];
-    },
+    queryFn: () => listDriversFn(),
   });
 
   const cities = useMemo(() => {
@@ -671,14 +671,11 @@ function UsersTab() {
 /* ------------------------------ Rides ------------------------------ */
 function RidesTab() {
   const [selectedRide, setSelectedRide] = useState<string | null>(null);
+  const listRidesFn = useServerFn(adminListRides);
   const { data } = useQuery({
     queryKey: ["admin-rides"],
     refetchInterval: 5000,
-    queryFn: async () => {
-      const { data, error } = await supabase.from("rides").select("*").order("created_at", { ascending: false }).limit(100);
-      if (error) throw error;
-      return data ?? [];
-    },
+    queryFn: () => listRidesFn(),
   });
   return (
     <div className="rounded-2xl border border-border bg-card">
@@ -885,18 +882,20 @@ function AuditTab() {
 
 /* ------------------------------ Metrics ------------------------------ */
 function MetricsTab() {
+  const statsFn = useServerFn(adminDashboardStats);
   const { data } = useQuery({
     queryKey: ["admin-metrics"],
     queryFn: async () => {
-      const [{ count: totalRides }, { count: completed }, { data: rev }, { count: drivers }] = await Promise.all([
-        supabase.from("rides").select("*", { count: "exact", head: true }),
-        supabase.from("rides").select("*", { count: "exact", head: true }).eq("status", "completed"),
-        supabase.from("rides").select("price_xof").eq("status", "completed"),
-        supabase.from("driver_profiles").select("*", { count: "exact", head: true }).eq("status", "approved"),
-      ]);
-      const total = (rev ?? []).reduce((s: number, r: any) => s + (r.price_xof ?? 0), 0);
+      const stats = await statsFn();
+      const total = stats.revenueXof;
       const commission = Math.round(total * 0.15);
-      return { totalRides: totalRides ?? 0, completed: completed ?? 0, total, commission, drivers: drivers ?? 0 };
+      return {
+        totalRides: stats.totalRides,
+        completed: stats.completedRides,
+        total,
+        commission,
+        drivers: stats.approvedDrivers,
+      };
     },
   });
   if (!data) return <div className="py-8 text-center text-muted-foreground">Calcul…</div>;
@@ -2066,15 +2065,10 @@ function PreviewBlock({ label, data, samplePrice }: { label: string; data: any; 
 
 function FraudTab() {
   const [kind, setKind] = useState<string>("");
+  const listFraudFn = useServerFn(adminListFraudLogs);
   const q = useQuery({
     queryKey: ["fraud-logs", kind],
-    queryFn: async () => {
-      let req = supabase.from("fraud_logs").select("*").order("created_at", { ascending: false }).limit(200);
-      if (kind) req = req.eq("kind", kind);
-      const { data, error } = await req;
-      if (error) throw error;
-      return data ?? [];
-    },
+    queryFn: () => listFraudFn({ data: { kind: kind || undefined } }),
   });
   const kinds = ["", "share_cooldown", "share_daily_cap", "referral_duplicate", "referral_invalid_code", "referral_self", "referral_same_phone", "duplicate_payout_attempt"];
   const sevColor = (s: string) => s === "high" ? "text-destructive" : s === "warn" ? "text-orange-600" : "text-muted-foreground";
@@ -2114,13 +2108,11 @@ function FraudTab() {
 // ============ Rewards settings tab ============
 function RewardsTab() {
   const qc = useQueryClient();
+  const settingsFn = useServerFn(getRewardSettings);
+  const updateSettingsFn = useServerFn(adminUpdateRewardSettings);
   const { data, isLoading } = useQuery({
     queryKey: ["admin", "reward_settings"],
-    queryFn: async () => {
-      const { data, error } = await supabase.from("reward_settings").select("*").eq("id", true).maybeSingle();
-      if (error) throw error;
-      return data;
-    },
+    queryFn: () => settingsFn(),
   });
   const [form, setForm] = useState<Record<string, number> | null>(null);
   const current = form ?? (data ? {
@@ -2135,8 +2127,7 @@ function RewardsTab() {
 
   const save = useMutation({
     mutationFn: async (payload: Record<string, number>) => {
-      const { error } = await supabase.from("reward_settings").update(payload as never).eq("id", true);
-      if (error) throw error;
+      await updateSettingsFn({ data: payload });
     },
     onSuccess: () => {
       toast.success("Paramètres récompenses enregistrés");

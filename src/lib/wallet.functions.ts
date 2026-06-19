@@ -1,91 +1,56 @@
 import { createServerFn } from "@tanstack/react-start";
-import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
+import { requireAuth } from "@/integrations/vercel/auth-middleware";
+import { hasRole } from "@/integrations/vercel/auth";
+import { ensureDriverWallet, serviceApplyWalletTx } from "@/lib/app-data.functions";
+import { queryOne, queryRows } from "@/integrations/vercel/db";
 import { z } from "zod";
 
-async function assertAdmin(supabase: any, userId: string) {
-  const { data, error } = await supabase.rpc("has_role", { _user_id: userId, _role: "admin" });
-  if (error) throw new Error(error.message);
-  if (!data) throw new Error("Forbidden: admin role required");
-}
-
-async function applyTx(args: {
-  driver_id: string;
-  type: "topup" | "commission" | "adjustment" | "refund";
-  amount_xof: number;
-  ride_id?: string | null;
-  reference?: string | null;
-  notes?: string | null;
-  actor: string;
-}) {
-  const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-  const { data, error } = await supabaseAdmin.rpc("apply_wallet_transaction", {
-    _driver_id: args.driver_id,
-    _type: args.type,
-    _amount_xof: args.amount_xof,
-    _ride_id: args.ride_id ?? undefined,
-    _reference: args.reference ?? undefined,
-    _notes: args.notes ?? undefined,
-    _actor: args.actor,
-  });
-  if (error) throw new Error(error.message);
-  return data as number;
-}
-
 export const getMyWallet = createServerFn({ method: "GET" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuth])
   .handler(async ({ context }) => {
-    // ensure wallet row exists
-    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    await supabaseAdmin
-      .from("driver_wallets")
-      .upsert({ user_id: context.userId }, { onConflict: "user_id", ignoreDuplicates: true });
-
-    const { data: wallet } = await context.supabase
-      .from("driver_wallets")
-      .select("balance_xof, updated_at")
-      .eq("user_id", context.userId)
-      .maybeSingle();
-
-    const { data: txs } = await context.supabase
-      .from("wallet_transactions")
-      .select("*")
-      .eq("driver_id", context.userId)
-      .order("created_at", { ascending: false })
-      .limit(50);
-
+    await ensureDriverWallet(context.userId);
+    const wallet = await queryOne<{ balance_xof: number; updated_at: string }>(
+      context.userId,
+      `SELECT balance_xof, updated_at FROM public.driver_wallets WHERE user_id = $1`,
+      [context.userId],
+    );
+    const txs = await queryRows(
+      context.userId,
+      `SELECT * FROM public.wallet_transactions WHERE driver_id = $1 ORDER BY created_at DESC LIMIT 50`,
+      [context.userId],
+    );
     return {
       balance_xof: wallet?.balance_xof ?? 0,
       updated_at: wallet?.updated_at ?? null,
-      transactions: txs ?? [],
+      transactions: txs,
     };
   });
 
 export const listDriverWallets = createServerFn({ method: "GET" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuth])
   .handler(async ({ context }) => {
-    await assertAdmin(context.supabase, context.userId);
-    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-
-    const { data: wallets, error } = await supabaseAdmin
-      .from("driver_wallets")
-      .select("user_id, balance_xof, updated_at");
-    if (error) throw new Error(error.message);
-
-    const ids = (wallets ?? []).map((w: any) => w.user_id);
-    if (ids.length === 0) return [];
-
-    const { data: profiles } = await supabaseAdmin
-      .from("profiles").select("id, full_name, phone").in("id", ids);
-    const map = new Map((profiles ?? []).map((p: any) => [p.id, p]));
-
-    return (wallets ?? []).map((w: any) => ({
+    if (!(await hasRole(context.userId, "admin"))) throw new Error("Forbidden: admin role required");
+    const wallets = await queryRows(
+      context.userId,
+      `SELECT user_id, balance_xof, updated_at FROM public.driver_wallets`,
+      [],
+    );
+    if (wallets.length === 0) return [];
+    const ids = wallets.map((w) => (w as { user_id: string }).user_id);
+    const profiles = await queryRows(
+      context.userId,
+      `SELECT id, full_name, phone FROM public.profiles WHERE id = ANY($1::uuid[])`,
+      [ids],
+    );
+    const map = new Map(profiles.map((p) => [(p as { id: string }).id, p]));
+    return wallets.map((w) => ({
       ...w,
-      profile: map.get(w.user_id) ?? null,
+      profile: map.get((w as { user_id: string }).user_id) ?? null,
     }));
   });
 
 export const adminWalletTopup = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuth])
   .inputValidator((d: unknown) =>
     z.object({
       driver_id: z.string().uuid(),
@@ -95,8 +60,8 @@ export const adminWalletTopup = createServerFn({ method: "POST" })
     }).parse(d),
   )
   .handler(async ({ data, context }) => {
-    await assertAdmin(context.supabase, context.userId);
-    const balance = await applyTx({
+    if (!(await hasRole(context.userId, "admin"))) throw new Error("Forbidden");
+    const balance = await serviceApplyWalletTx({
       driver_id: data.driver_id,
       type: "topup",
       amount_xof: data.amount_xof,
@@ -108,17 +73,17 @@ export const adminWalletTopup = createServerFn({ method: "POST" })
   });
 
 export const adminWalletAdjust = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuth])
   .inputValidator((d: unknown) =>
     z.object({
       driver_id: z.string().uuid(),
-      amount_xof: z.number().int(), // can be negative
+      amount_xof: z.number().int(),
       notes: z.string().max(1000),
     }).parse(d),
   )
   .handler(async ({ data, context }) => {
-    await assertAdmin(context.supabase, context.userId);
-    const balance = await applyTx({
+    if (!(await hasRole(context.userId, "admin"))) throw new Error("Forbidden");
+    const balance = await serviceApplyWalletTx({
       driver_id: data.driver_id,
       type: "adjustment",
       amount_xof: data.amount_xof,

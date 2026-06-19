@@ -2,7 +2,13 @@ import { createFileRoute, useNavigate, Link } from "@tanstack/react-router";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { supabase } from "@/integrations/supabase/client";
+import {
+  getDriverWallet,
+  getPassengerWallet,
+  getProfile,
+  getRewardSettings,
+  getRidePayout,
+} from "@/lib/app-data.functions";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { toast } from "sonner";
@@ -43,13 +49,16 @@ function RideDetailPage() {
   const counterpartSharesPhone = isPassenger ? ride?.driver_shares_phone : ride?.passenger_shares_phone;
   const ownShare = isPassenger ? ride?.passenger_shares_phone : ride?.driver_shares_phone;
 
+  const getProfileFn = useServerFn(getProfile);
+  const paxWalletFn = useServerFn(getPassengerWallet);
+  const drvWalletFn = useServerFn(getDriverWallet);
+  const settingsFn = useServerFn(getRewardSettings);
+  const payoutFn = useServerFn(getRidePayout);
+
   const counterpartQ = useQuery({
     queryKey: ["ride-counterpart", counterpartId],
     enabled: !!counterpartId,
-    queryFn: async () => {
-      const { data } = await supabase.from("profiles").select("full_name,phone").eq("id", counterpartId).maybeSingle();
-      return data;
-    },
+    queryFn: () => getProfileFn({ data: { userId: counterpartId! } }),
   });
   const counterpartPhone = isPassenger
     ? counterpartQ.data?.phone
@@ -83,33 +92,21 @@ function RideDetailPage() {
   const paxWalletQ = useQuery({
     queryKey: ["pax-wallet", user?.id],
     enabled: !!user && isPassenger,
-    queryFn: async () => {
-      const { data } = await supabase.from("passenger_wallets").select("balance_pts").eq("user_id", user!.id).maybeSingle();
-      return data ?? { balance_pts: 0 };
-    },
+    queryFn: async () => (await paxWalletFn()) ?? { balance_pts: 0 },
   });
   const drvWalletQ = useQuery({
     queryKey: ["driver-wallet", user?.id],
     enabled: !!user && isDriver,
-    queryFn: async () => {
-      const { data } = await supabase.from("driver_wallets").select("balance_xof").eq("user_id", user!.id).maybeSingle();
-      return data ?? { balance_xof: 0 };
-    },
+    queryFn: async () => (await drvWalletFn()) ?? { balance_xof: 0 },
   });
   const settingsQ = useQuery({
     queryKey: ["reward-settings"],
-    queryFn: async () => {
-      const { data } = await supabase.from("reward_settings").select("point_value_xof,passenger_ride_earn_pts").eq("id", true).maybeSingle();
-      return data;
-    },
+    queryFn: () => settingsFn(),
   });
   const payoutQ = useQuery({
     queryKey: ["ride-payout", rideId],
     enabled: !!rideId && isDriver,
-    queryFn: async () => {
-      const { data } = await supabase.from("ride_payouts").select("*").eq("ride_id", rideId).maybeSingle();
-      return data;
-    },
+    queryFn: () => payoutFn({ data: { rideId } }),
     refetchInterval: 5000,
   });
 

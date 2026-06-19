@@ -1,32 +1,56 @@
-import { createFileRoute, useNavigate, Link } from "@tanstack/react-router";
+import { createFileRoute, useNavigate, Link, redirect } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
+import { useServerFn } from "@tanstack/react-start";
 import { z } from "zod";
-import { supabase } from "@/integrations/supabase/client";
-import { lovable } from "@/integrations/lovable";
+import { signIn, signUp, requestPasswordReset } from "@/lib/auth.functions";
+import {
+  buildLocalGoogleAuthUrl,
+  isSupabaseAuthConfigured,
+  shouldUseLocalGoogleOAuth,
+} from "@/lib/google-oauth";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Logo } from "@/components/Logo";
 import { toast } from "sonner";
 import { useAuth } from "@/hooks/use-auth";
+import { getAuthUserFromRequest } from "@/lib/auth.functions";
 
 const searchSchema = z.object({
   mode: z.enum(["signin", "signup", "driver"]).optional(),
+  error: z.string().optional(),
 });
 
 export const Route = createFileRoute("/auth")({
   validateSearch: searchSchema,
   head: () => ({ meta: [{ title: "Connexion — Tibus Ride" }] }),
+  beforeLoad: async () => {
+    const user = await getAuthUserFromRequest();
+    if (user) throw redirect({ to: "/app" });
+  },
   component: AuthPage,
 });
 
 function AuthPage() {
-  const { mode } = Route.useSearch();
+  const { mode, error } = Route.useSearch();
   const initial = mode === "signin" ? "signin" : "signup";
   const defaultDriver = mode === "driver";
   const navigate = useNavigate();
-  const { user, primaryRole, loading } = useAuth();
+  const { user, primaryRole, loading, refreshRoles } = useAuth();
+
+  useEffect(() => {
+    if (error) {
+      toast.error(decodeURIComponent(error));
+    }
+  }, [error]);
 
   useEffect(() => {
     if (!loading && user && primaryRole) {
@@ -44,50 +68,108 @@ function AuthPage() {
             Connectez-vous ou créez votre compte en quelques secondes.
           </p>
 
-          <Tabs defaultValue={initial} className="mt-6">
+          <GoogleSignInButton />
+
+          <div className="relative my-6">
+            <div className="absolute inset-0 flex items-center">
+              <span className="w-full border-t border-border" />
+            </div>
+            <div className="relative flex justify-center text-xs uppercase">
+              <span className="bg-card px-2 text-muted-foreground">ou</span>
+            </div>
+          </div>
+
+          <Tabs defaultValue={initial} className="mt-2">
             <TabsList className="grid w-full grid-cols-2">
               <TabsTrigger value="signup">Créer un compte</TabsTrigger>
               <TabsTrigger value="signin">Se connecter</TabsTrigger>
             </TabsList>
             <TabsContent value="signup">
-              <SignUpForm defaultDriver={defaultDriver} />
+              <SignUpForm defaultDriver={defaultDriver} onDone={refreshRoles} />
             </TabsContent>
             <TabsContent value="signin">
-              <SignInForm />
+              <SignInForm onDone={refreshRoles} />
             </TabsContent>
           </Tabs>
-
-          <GoogleButton />
         </div>
       </div>
     </div>
   );
 }
 
-function GoogleButton() {
+function GoogleSignInButton() {
   const [loading, setLoading] = useState(false);
+
   const handle = async () => {
     setLoading(true);
-    const res = await lovable.auth.signInWithOAuth("google", { redirect_uri: window.location.origin + "/app" });
-    if (res.error) toast.error("Connexion Google impossible");
-    setLoading(false);
+    try {
+      const redirectTo = `${window.location.origin}/auth/callback`;
+
+      if (shouldUseLocalGoogleOAuth()) {
+        window.location.href = buildLocalGoogleAuthUrl(redirectTo);
+        return;
+      }
+
+      if (isSupabaseAuthConfigured()) {
+        const { supabase } = await import("@/integrations/supabase/client");
+        const { error } = await supabase.auth.signInWithOAuth({
+          provider: "google",
+          options: { redirectTo },
+        });
+        if (error) throw error;
+        return;
+      }
+
+      throw new Error(
+        "Google : ajoutez VITE_GOOGLE_CLIENT_ID + GOOGLE_CLIENT_SECRET dans .env",
+      );
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Connexion Google impossible");
+      setLoading(false);
+    }
   };
+
   return (
-    <>
-      <div className="my-6 flex items-center gap-3 text-xs text-muted-foreground">
-        <div className="h-px flex-1 bg-border" /> ou <div className="h-px flex-1 bg-border" />
-      </div>
-      <Button variant="outline" className="w-full" onClick={handle} disabled={loading}>
-        <svg className="mr-2 h-4 w-4" viewBox="0 0 24 24"><path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/><path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.99.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/><path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84C6.71 7.31 9.14 5.38 12 5.38z"/></svg>
-        Continuer avec Google
-      </Button>
-    </>
+    <Button
+      type="button"
+      variant="outline"
+      className="mt-6 w-full gap-2"
+      onClick={handle}
+      disabled={loading}
+    >
+      <GoogleIcon />
+      {loading ? "Redirection…" : "Continuer avec Google"}
+    </Button>
   );
 }
 
-function SignUpForm({ defaultDriver }: { defaultDriver: boolean }) {
+function GoogleIcon() {
+  return (
+    <svg className="h-4 w-4" viewBox="0 0 24 24" aria-hidden="true">
+      <path
+        fill="#4285F4"
+        d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
+      />
+      <path
+        fill="#34A853"
+        d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
+      />
+      <path
+        fill="#FBBC05"
+        d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"
+      />
+      <path
+        fill="#EA4335"
+        d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"
+      />
+    </svg>
+  );
+}
+
+function SignUpForm({ defaultDriver, onDone }: { defaultDriver: boolean; onDone: () => Promise<void> }) {
   const [loading, setLoading] = useState(false);
   const [isDriver, setIsDriver] = useState(defaultDriver);
+  const signUpServer = useServerFn(signUp);
 
   const handle = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -110,16 +192,21 @@ function SignUpForm({ defaultDriver }: { defaultDriver: boolean }) {
     }
 
     setLoading(true);
-    const { error } = await supabase.auth.signUp({
-      email, password,
-      options: {
-        emailRedirectTo: `${window.location.origin}/app`,
-        data: { full_name, phone, role: isDriver ? "driver" : "passenger" },
-      },
-    });
-    setLoading(false);
-    if (error) return toast.error(error.message);
-    toast.success("Compte créé ! Connexion en cours…");
+    try {
+      const result = await signUpServer({
+        data: { email, password, full_name, phone, role: isDriver ? "driver" : "passenger" },
+      });
+      if (result.redirectUrl) {
+        window.location.href = result.redirectUrl;
+        return;
+      }
+      await onDone();
+      toast.success("Compte créé !");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Inscription impossible");
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -159,33 +246,159 @@ function SignUpForm({ defaultDriver }: { defaultDriver: boolean }) {
   );
 }
 
-function SignInForm() {
+function SignInForm({ onDone }: { onDone: () => Promise<void> }) {
   const [loading, setLoading] = useState(false);
+  const [forgotOpen, setForgotOpen] = useState(false);
+  const signInServer = useServerFn(signIn);
+
   const handle = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     const fd = new FormData(e.currentTarget);
     setLoading(true);
-    const { error } = await supabase.auth.signInWithPassword({
-      email: String(fd.get("email")),
-      password: String(fd.get("password")),
-    });
-    setLoading(false);
-    if (error) return toast.error("Identifiants incorrects");
-    toast.success("Bienvenue !");
+    try {
+      const result = await signInServer({
+        data: { email: String(fd.get("email")), password: String(fd.get("password")) },
+      });
+      if (result.redirectUrl) {
+        window.location.href = result.redirectUrl;
+        return;
+      }
+      await onDone();
+      toast.success("Bienvenue !");
+    } catch {
+      toast.error("Identifiants incorrects");
+    } finally {
+      setLoading(false);
+    }
   };
+
   return (
-    <form onSubmit={handle} className="mt-6 space-y-4">
-      <div>
-        <Label htmlFor="email-in">Email</Label>
-        <Input id="email-in" name="email" type="email" required />
-      </div>
-      <div>
-        <Label htmlFor="password-in">Mot de passe</Label>
-        <Input id="password-in" name="password" type="password" required />
-      </div>
-      <Button type="submit" className="w-full" disabled={loading}>
-        {loading ? "Connexion…" : "Se connecter"}
-      </Button>
-    </form>
+    <>
+      <form onSubmit={handle} className="mt-6 space-y-4">
+        <div>
+          <Label htmlFor="email-in">Email</Label>
+          <Input id="email-in" name="email" type="email" required />
+        </div>
+        <div>
+          <div className="flex items-center justify-between">
+            <Label htmlFor="password-in">Mot de passe</Label>
+            <button
+              type="button"
+              onClick={() => setForgotOpen(true)}
+              className="text-xs text-primary hover:underline"
+            >
+              Mot de passe oublié ?
+            </button>
+          </div>
+          <Input id="password-in" name="password" type="password" required />
+        </div>
+        <Button type="submit" className="w-full" disabled={loading}>
+          {loading ? "Connexion…" : "Se connecter"}
+        </Button>
+      </form>
+      <ForgotPasswordDialog open={forgotOpen} onOpenChange={setForgotOpen} />
+    </>
+  );
+}
+
+function ForgotPasswordDialog({
+  open,
+  onOpenChange,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+}) {
+  const [loading, setLoading] = useState(false);
+  const [resetUrl, setResetUrl] = useState<string | null>(null);
+  const requestReset = useServerFn(requestPasswordReset);
+
+  const handle = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    const fd = new FormData(e.currentTarget);
+    const email = String(fd.get("email"));
+    const parsed = z.string().email("Email invalide").safeParse(email);
+    if (!parsed.success) {
+      toast.error(parsed.error.issues[0].message);
+      return;
+    }
+
+    setLoading(true);
+    setResetUrl(null);
+    try {
+      const result = await requestReset({
+        data: { email, origin: window.location.origin },
+      });
+      toast.success(result.message);
+      if (result.resetUrl) {
+        setResetUrl(result.resetUrl);
+      } else if (result.emailConfigured === false) {
+        toast.info("Ajoutez RESEND_API_KEY dans .env pour envoyer des emails.");
+      } else {
+        onOpenChange(false);
+      }
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Envoi impossible");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const copyLink = async () => {
+    if (!resetUrl) return;
+    await navigator.clipboard.writeText(resetUrl);
+    toast.success("Lien copié");
+  };
+
+  return (
+    <Dialog
+      open={open}
+      onOpenChange={(next) => {
+        if (!next) setResetUrl(null);
+        onOpenChange(next);
+      }}
+    >
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>Mot de passe oublié</DialogTitle>
+          <DialogDescription>
+            {resetUrl
+              ? "Service email non configuré — utilisez ce lien (valide 1 h) :"
+              : "Entrez votre email. Vous recevrez un lien pour choisir un nouveau mot de passe."}
+          </DialogDescription>
+        </DialogHeader>
+        {resetUrl ? (
+          <div className="space-y-4">
+            <div className="rounded-lg border border-border bg-secondary/30 p-3 text-xs break-all">
+              {resetUrl}
+            </div>
+            <div className="flex gap-2">
+              <Button type="button" className="flex-1" onClick={copyLink}>
+                Copier le lien
+              </Button>
+              <Button type="button" variant="outline" className="flex-1" asChild>
+                <a href={resetUrl}>Ouvrir</a>
+              </Button>
+            </div>
+          </div>
+        ) : (
+          <form onSubmit={handle} className="space-y-4">
+            <div>
+              <Label htmlFor="forgot-email">Email</Label>
+              <Input
+                id="forgot-email"
+                name="email"
+                type="email"
+                placeholder="vous@email.com"
+                required
+                autoFocus
+              />
+            </div>
+            <Button type="submit" className="w-full" disabled={loading}>
+              {loading ? "Envoi…" : "Envoyer le lien"}
+            </Button>
+          </form>
+        )}
+      </DialogContent>
+    </Dialog>
   );
 }

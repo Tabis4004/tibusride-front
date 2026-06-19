@@ -1,7 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/use-auth";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
@@ -10,6 +9,16 @@ import { toast } from "sonner";
 import { Car, Clock, MapPin, Wallet } from "lucide-react";
 import { useServerFn } from "@tanstack/react-start";
 import { getMyWallet } from "@/lib/wallet.functions";
+import {
+  claimRide,
+  getDriverProfile,
+  listOpenRides,
+  setDriverOnline,
+  updateDriverLocation,
+  updateRideStatus,
+  upsertDriverProfile,
+} from "@/lib/app-data.functions";
+import { listMyRides } from "@/lib/app-data.functions";
 
 export const Route = createFileRoute("/_authenticated/app/driver")({
   head: () => ({ meta: [{ title: "Tableau de bord chauffeur — Tibus Ride" }] }),
@@ -19,15 +28,18 @@ export const Route = createFileRoute("/_authenticated/app/driver")({
 function DriverPage() {
   const { user } = useAuth();
   const qc = useQueryClient();
+  const getDriverFn = useServerFn(getDriverProfile);
+  const listMyRidesFn = useServerFn(listMyRides);
+  const listOpenFn = useServerFn(listOpenRides);
+  const setOnlineFn = useServerFn(setDriverOnline);
+  const claimFn = useServerFn(claimRide);
+  const updateStatusFn = useServerFn(updateRideStatus);
+  const updateLocFn = useServerFn(updateDriverLocation);
 
   const driverQ = useQuery({
     queryKey: ["driver-profile", user?.id],
     enabled: !!user,
-    queryFn: async () => {
-      const { data, error } = await supabase.from("driver_profiles").select("*").eq("user_id", user!.id).maybeSingle();
-      if (error) throw error;
-      return data;
-    },
+    queryFn: () => getDriverFn(),
   });
 
   const myRidesQ = useQuery({
@@ -35,14 +47,8 @@ function DriverPage() {
     enabled: !!user,
     refetchInterval: 5000,
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from("rides")
-        .select("*")
-        .eq("driver_id", user!.id)
-        .in("status", ["accepted", "arriving", "in_progress"])
-        .order("accepted_at", { ascending: false });
-      if (error) throw error;
-      return data ?? [];
+      const res = await listMyRidesFn();
+      return (res.asDriver ?? []).filter((r: any) => ["accepted", "arriving", "in_progress"].includes(r.status));
     },
   });
 
@@ -50,19 +56,12 @@ function DriverPage() {
     queryKey: ["open-rides", driverQ.data?.is_online, driverQ.data?.city],
     enabled: !!driverQ.data?.is_online && driverQ.data?.status === "approved",
     refetchInterval: 4000,
-    queryFn: async () => {
-      let q = supabase.from("rides").select("*").eq("status", "requested").order("requested_at", { ascending: true }).limit(20);
-      if (driverQ.data?.city) q = q.eq("city", driverQ.data.city);
-      const { data, error } = await q;
-      if (error) throw error;
-      return data ?? [];
-    },
+    queryFn: () => listOpenFn({ data: { city: driverQ.data?.city } }),
   });
 
   const toggleOnline = useMutation({
     mutationFn: async (online: boolean) => {
-      const { error } = await supabase.from("driver_profiles").update({ is_online: online }).eq("user_id", user!.id);
-      if (error) throw error;
+      await setOnlineFn({ data: { online } });
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: ["driver-profile"] }),
     onError: (e: Error) => toast.error(e.message),
@@ -70,22 +69,15 @@ function DriverPage() {
 
   const accept = useMutation({
     mutationFn: async (rideId: string) => {
-      const { error } = await supabase.from("rides").update({
-        driver_id: user!.id, status: "accepted", accepted_at: new Date().toISOString(),
-      }).eq("id", rideId).eq("status", "requested");
-      if (error) throw error;
+      await claimFn({ data: { rideId } });
     },
     onSuccess: () => { toast.success("Course acceptée !"); qc.invalidateQueries(); },
     onError: (e: Error) => toast.error(e.message),
   });
 
   const updateStatus = useMutation({
-    mutationFn: async ({ rideId, status }: { rideId: string; status: string }) => {
-      const patch: any = { status };
-      if (status === "in_progress") patch.started_at = new Date().toISOString();
-      if (status === "completed") patch.completed_at = new Date().toISOString();
-      const { error } = await supabase.from("rides").update(patch).eq("id", rideId);
-      if (error) throw error;
+    mutationFn: async ({ rideId, status }: { rideId: string; status: "arriving" | "in_progress" | "completed" }) => {
+      await updateStatusFn({ data: { rideId, status } });
     },
     onSuccess: () => qc.invalidateQueries(),
   });
@@ -231,11 +223,10 @@ function RideCard({ ride, actions }: { ride: any; actions: React.ReactNode }) {
 }
 
 function CityBootstrap({ onCreated }: { onCreated: () => void }) {
-  const { user } = useAuth();
+  const upsertFn = useServerFn(upsertDriverProfile);
   const mut = useMutation({
     mutationFn: async () => {
-      const { error } = await supabase.from("driver_profiles").insert({ user_id: user!.id, status: "pending" });
-      if (error) throw error;
+      await upsertFn({ data: {} });
     },
     onSuccess: onCreated,
   });
@@ -249,13 +240,12 @@ function CityBootstrap({ onCreated }: { onCreated: () => void }) {
 }
 
 function DriverInfoForm({ profile, onSaved }: { profile: any; onSaved: () => void }) {
-  const { user } = useAuth();
   const [city, setCity] = useState(profile.city ?? "");
   const [license, setLicense] = useState(profile.license_number ?? "");
+  const upsertFn = useServerFn(upsertDriverProfile);
   const save = useMutation({
     mutationFn: async () => {
-      const { error } = await supabase.from("driver_profiles").update({ city, license_number: license }).eq("user_id", user!.id);
-      if (error) throw error;
+      await upsertFn({ data: { city, license_number: license } });
     },
     onSuccess: () => { toast.success("Informations enregistrées"); onSaved(); },
   });
@@ -332,6 +322,7 @@ function WalletSection() {
 
 /** Streams the driver's GPS position to the ride row every ~6s while active. */
 function DriverLocationSharer({ rideId }: { rideId: string }) {
+  const updateLocFn = useServerFn(updateDriverLocation);
   const [status, setStatus] = useState<"idle" | "ok" | "denied" | "error">("idle");
   useEffect(() => {
     if (typeof navigator === "undefined" || !navigator.geolocation) {
@@ -344,18 +335,20 @@ function DriverLocationSharer({ rideId }: { rideId: string }) {
         const now = Date.now();
         if (now - lastSent < 6000) return;
         lastSent = now;
-        const { error } = await supabase.from("rides").update({
-          driver_lat: pos.coords.latitude,
-          driver_lng: pos.coords.longitude,
-          driver_location_updated_at: new Date().toISOString(),
-        }).eq("id", rideId);
-        if (!error) setStatus("ok");
+        try {
+          await updateLocFn({
+            data: { rideId, lat: pos.coords.latitude, lng: pos.coords.longitude },
+          });
+          setStatus("ok");
+        } catch {
+          setStatus("error");
+        }
       },
       (err) => setStatus(err.code === err.PERMISSION_DENIED ? "denied" : "error"),
       { enableHighAccuracy: true, maximumAge: 5000, timeout: 15000 },
     );
     return () => navigator.geolocation.clearWatch(watchId);
-  }, [rideId]);
+  }, [rideId, updateLocFn]);
 
   return (
     <div className="rounded-xl border border-border bg-card px-4 py-2 text-xs text-muted-foreground">

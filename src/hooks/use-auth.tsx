@@ -1,53 +1,63 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
-import type { Session, User } from "@supabase/supabase-js";
-import { supabase } from "@/integrations/supabase/client";
+import { useServerFn } from "@tanstack/react-start";
+import { getSession, signOut as signOutFn } from "@/lib/auth.functions";
 
 type Role = "passenger" | "driver" | "admin" | "support";
 
+export type AuthUser = {
+  id: string;
+  email: string;
+};
+
 type AuthCtx = {
-  user: User | null;
-  session: Session | null;
+  user: AuthUser | null;
   roles: Role[];
   loading: boolean;
   hasRole: (r: Role) => boolean;
   primaryRole: Role | null;
   refreshRoles: () => Promise<void>;
+  signOut: () => Promise<void>;
 };
 
 const Ctx = createContext<AuthCtx | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [user, setUser] = useState<User | null>(null);
-  const [session, setSession] = useState<Session | null>(null);
+  const [user, setUser] = useState<AuthUser | null>(null);
   const [roles, setRoles] = useState<Role[]>([]);
   const [loading, setLoading] = useState(true);
+  const getSessionServer = useServerFn(getSession);
+  const signOutServer = useServerFn(signOutFn);
 
-  const loadRoles = async (uid: string | undefined) => {
-    if (!uid) return setRoles([]);
-    const { data } = await supabase.from("user_roles").select("role").eq("user_id", uid);
-    setRoles(((data ?? []) as { role: Role }[]).map((r) => r.role));
+  const loadSession = async () => {
+    const data = await getSessionServer();
+    setUser(data.user);
+    setRoles((data.roles ?? []) as Role[]);
   };
 
   useEffect(() => {
-    const { data: sub } = supabase.auth.onAuthStateChange((_event, s) => {
-      setSession(s);
-      setUser(s?.user ?? null);
-      // Defer to avoid deadlock in callback
-      setTimeout(() => loadRoles(s?.user?.id), 0);
-    });
-    supabase.auth.getSession().then(({ data }) => {
-      setSession(data.session);
-      setUser(data.session?.user ?? null);
-      loadRoles(data.session?.user?.id).finally(() => setLoading(false));
-    });
-    return () => sub.subscription.unsubscribe();
+    loadSession().finally(() => setLoading(false));
   }, []);
 
   const value: AuthCtx = {
-    user, session, roles, loading,
+    user,
+    roles,
+    loading,
     hasRole: (r) => roles.includes(r),
-    primaryRole: roles.includes("admin") ? "admin" : roles.includes("support") ? "support" : roles.includes("driver") ? "driver" : roles.includes("passenger") ? "passenger" : null,
-    refreshRoles: () => loadRoles(user?.id),
+    primaryRole: roles.includes("admin")
+      ? "admin"
+      : roles.includes("support")
+        ? "support"
+        : roles.includes("driver")
+          ? "driver"
+          : roles.includes("passenger")
+            ? "passenger"
+            : null,
+    refreshRoles: loadSession,
+    signOut: async () => {
+      await signOutServer();
+      setUser(null);
+      setRoles([]);
+    },
   };
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }

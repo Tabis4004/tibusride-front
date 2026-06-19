@@ -2,7 +2,20 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { supabase } from "@/integrations/supabase/client";
+import {
+  claimShareReward,
+  createPendingTopup,
+  getDriverWallet,
+  getPassengerWallet,
+  getReferralCode,
+  getRewardSettings,
+  listDriverWalletTx,
+  listPassengerWalletTx,
+  listReferrals,
+  listShareEvents,
+  listTopupOrders,
+  registerReferral,
+} from "@/lib/app-data.functions";
 import { useAuth } from "@/hooks/use-auth";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -31,102 +44,64 @@ function RewardsPage() {
   const qc = useQueryClient();
   const isDriver = roles.includes("driver");
 
-  // Settings (for display: point value, bonuses)
+  const settingsFn = useServerFn(getRewardSettings);
+  const codeFn = useServerFn(getReferralCode);
+  const driverWalletFn = useServerFn(getDriverWallet);
+  const driverTxFn = useServerFn(listDriverWalletTx);
+  const paxWalletFn = useServerFn(getPassengerWallet);
+  const paxTxFn = useServerFn(listPassengerWalletTx);
+  const refsFn = useServerFn(listReferrals);
+  const sharesFn = useServerFn(listShareEvents);
+  const claimShareFn = useServerFn(claimShareReward);
+  const registerRefFn = useServerFn(registerReferral);
+  const createPendingTopupFn = useServerFn(createPendingTopup);
+  const topupsFn = useServerFn(listTopupOrders);
+
   const settingsQ = useQuery({
     queryKey: ["reward-settings"],
-    queryFn: async () => {
-      const { data, error } = await supabase.from("reward_settings").select("*").eq("id", true).maybeSingle();
-      if (error) throw error;
-      return data;
-    },
+    queryFn: () => settingsFn(),
   });
 
-  // Referral code
   const codeQ = useQuery({
     queryKey: ["referral-code", user?.id],
     enabled: !!user,
-    queryFn: async () => {
-      const { data, error } = await supabase.rpc("get_or_create_referral_code", { _user_id: user!.id });
-      if (error) throw error;
-      return data as string;
-    },
+    queryFn: () => codeFn(),
   });
 
-  // Driver wallet
   const driverWalletQ = useQuery({
     queryKey: ["driver-wallet", user?.id],
     enabled: !!user && isDriver,
-    queryFn: async () => {
-      const { data } = await supabase.from("driver_wallets").select("*").eq("user_id", user!.id).maybeSingle();
-      return data ?? { balance_xof: 0 };
-    },
+    queryFn: async () => (await driverWalletFn()) ?? { balance_xof: 0 },
   });
 
   const driverTxQ = useQuery({
     queryKey: ["driver-tx", user?.id],
     enabled: !!user && isDriver,
-    queryFn: async () => {
-      const { data } = await supabase
-        .from("wallet_transactions")
-        .select("*")
-        .eq("driver_id", user!.id)
-        .order("created_at", { ascending: false })
-        .limit(20);
-      return data ?? [];
-    },
+    queryFn: () => driverTxFn(),
   });
 
-  // Passenger wallet
   const paxWalletQ = useQuery({
     queryKey: ["pax-wallet", user?.id],
     enabled: !!user,
-    queryFn: async () => {
-      const { data } = await supabase.from("passenger_wallets").select("*").eq("user_id", user!.id).maybeSingle();
-      return data ?? { balance_pts: 0 };
-    },
+    queryFn: async () => (await paxWalletFn()) ?? { balance_pts: 0 },
   });
 
   const paxTxQ = useQuery({
     queryKey: ["pax-tx", user?.id],
     enabled: !!user,
-    queryFn: async () => {
-      const { data } = await supabase
-        .from("passenger_wallet_transactions")
-        .select("*")
-        .eq("user_id", user!.id)
-        .order("created_at", { ascending: false })
-        .limit(20);
-      return data ?? [];
-    },
+    queryFn: () => paxTxFn(),
   });
 
-  // Referrals
   const refsQ = useQuery({
     queryKey: ["my-referrals", user?.id],
     enabled: !!user,
-    queryFn: async () => {
-      const { data } = await supabase
-        .from("referrals")
-        .select("*")
-        .eq("referrer_id", user!.id)
-        .order("created_at", { ascending: false });
-      return data ?? [];
-    },
+    queryFn: () => refsFn(),
   });
 
-  // Shares
   const sharesQ = useQuery({
     queryKey: ["my-shares", user?.id],
     enabled: !!user && isDriver,
-    queryFn: async () => {
-      const { data } = await supabase
-        .from("share_events")
-        .select("*")
-        .eq("user_id", user!.id)
-        .order("created_at", { ascending: false })
-        .limit(10);
-      return data ?? [];
-    },
+    queryFn: () => sharesFn(),
   });
 
   const settings = settingsQ.data;
@@ -150,9 +125,7 @@ function RewardsPage() {
         toast.success("Lien copié");
       }
       if (isDriver) {
-        const { data, error } = await supabase.rpc("claim_driver_share_reward", { _channel: channel });
-        if (error) throw error;
-        return data as { rewarded: boolean; bonus_xof?: number; reason?: string };
+        return claimShareFn({ data: { channel } }) as Promise<{ rewarded: boolean; bonus_xof?: number; reason?: string }>;
       }
       return { rewarded: false };
     },
@@ -173,9 +146,7 @@ function RewardsPage() {
   const [refCodeInput, setRefCodeInput] = useState("");
   const registerRefMut = useMutation({
     mutationFn: async () => {
-      const { data, error } = await supabase.rpc("register_referral", { _code: refCodeInput.trim().toUpperCase() });
-      if (error) throw error;
-      return data as { ok: boolean; reason?: string };
+      return registerRefFn({ data: { code: refCodeInput.trim().toUpperCase() } }) as Promise<{ ok: boolean; reason?: string }>;
     },
     onSuccess: (r) => {
       if (r.ok) {
@@ -229,13 +200,7 @@ function RewardsPage() {
         window.location.href = res.checkout_url;
         return res;
       }
-      const { data, error } = await supabase
-        .from("topup_orders")
-        .insert({ user_id: user!.id, amount_xof: topupAmount, provider, status: "pending" })
-        .select()
-        .single();
-      if (error) throw error;
-      return data;
+      return createPendingTopupFn({ data: { amount_xof: topupAmount, provider } });
     },
     onSuccess: () => {
       if (provider !== "geniuspay") {
@@ -249,10 +214,7 @@ function RewardsPage() {
   const topupsQ = useQuery({
     queryKey: ["topup-orders", user?.id],
     enabled: !!user,
-    queryFn: async () => {
-      const { data } = await supabase.from("topup_orders").select("*").eq("user_id", user!.id).order("created_at",{ascending:false}).limit(10);
-      return data ?? [];
-    },
+    queryFn: () => topupsFn(),
   });
 
   const copyCode = () => {

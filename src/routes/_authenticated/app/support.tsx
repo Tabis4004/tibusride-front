@@ -2,7 +2,8 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { z } from "zod";
-import { supabase } from "@/integrations/supabase/client";
+import { useServerFn } from "@tanstack/react-start";
+import { createTicket, listMyTickets } from "@/lib/app-data.functions";
 import { useAuth } from "@/hooks/use-auth";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -53,39 +54,25 @@ function SupportPage() {
   const [category, setCategory] = useState<string>("other");
   const [body, setBody] = useState("");
 
+  const listTicketsFn = useServerFn(listMyTickets);
+  const createTicketFn = useServerFn(createTicket);
+
   const ticketsQ = useQuery({
     queryKey: ["support", "my-tickets", user?.id],
     enabled: !!user,
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from("support_tickets")
-        .select("*")
-        .eq("created_by", user!.id)
-        .order("last_message_at", { ascending: false })
-        .limit(50);
-      if (error) throw error;
-      return data ?? [];
-    },
+    queryFn: () => listTicketsFn(),
   });
 
   const createMut = useMutation({
     mutationFn: async () => {
       const parsed = schema.parse({ subject, category, body });
-      const { data: ticket, error } = await supabase
-        .from("support_tickets")
-        .insert({
-          created_by: user!.id,
+      return createTicketFn({
+        data: {
           subject: parsed.subject,
           category: parsed.category,
-        })
-        .select()
-        .single();
-      if (error) throw error;
-      const { error: msgErr } = await supabase
-        .from("ticket_messages")
-        .insert({ ticket_id: ticket.id, author_id: user!.id, body: parsed.body });
-      if (msgErr) throw msgErr;
-      return ticket;
+          body: parsed.body,
+        },
+      });
     },
     onSuccess: () => {
       toast.success("Ticket créé");

@@ -1,6 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
-import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
+import { requireAuth } from "@/integrations/vercel/auth-middleware";
 
 const GATEWAY_URL = "https://connector-gateway.lovable.dev/google_maps";
 
@@ -17,7 +17,7 @@ function gatewayHeaders(): HeadersInit {
 
 /** Geocode a free-form address to { lat, lng } via the connector gateway. */
 export const geocodeAddress = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuth])
   .inputValidator((d) => z.object({ address: z.string().trim().min(2).max(300) }).parse(d))
   .handler(async ({ data }) => {
     const url = `${GATEWAY_URL}/maps/api/geocode/json?address=${encodeURIComponent(data.address)}`;
@@ -32,7 +32,7 @@ export const geocodeAddress = createServerFn({ method: "POST" })
 
 /** Compute a route between two points using the Routes API (v2). */
 export const computeRoute = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuth])
   .inputValidator((d) =>
     z.object({
       origin: z.object({ lat: z.number(), lng: z.number() }),
@@ -71,7 +71,7 @@ export const computeRoute = createServerFn({ method: "POST" })
 
 /** Reverse geocode lat/lng → formatted address via the connector gateway. */
 export const reverseGeocode = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuth])
   .inputValidator((d) => z.object({ lat: z.number(), lng: z.number() }).parse(d))
   .handler(async ({ data }) => {
     const url = `${GATEWAY_URL}/maps/api/geocode/json?latlng=${data.lat},${data.lng}`;
@@ -85,7 +85,7 @@ export const reverseGeocode = createServerFn({ method: "POST" })
 
 /** Places API (New) — Autocomplete suggestions, ranked by relevance & distance. */
 export const placesAutocomplete = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuth])
   .inputValidator((d) =>
     z.object({
       input: z.string().trim().min(2).max(200),
@@ -124,7 +124,7 @@ export const placesAutocomplete = createServerFn({ method: "POST" })
 
 /** Places API (New) — Resolve a placeId to { lat, lng, formatted }. */
 export const placeDetails = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuth])
   .inputValidator((d) => z.object({ placeId: z.string().min(1).max(200) }).parse(d))
   .handler(async ({ data }) => {
     const res = await fetch(`${GATEWAY_URL}/places/v1/places/${encodeURIComponent(data.placeId)}`, {

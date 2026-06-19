@@ -13,8 +13,11 @@ import { Route as SitemapDotxmlRouteImport } from './routes/sitemap[.]xml'
 import { Route as AuthRouteImport } from './routes/auth'
 import { Route as AuthenticatedRouteRouteImport } from './routes/_authenticated/route'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as AuthResetPasswordRouteImport } from './routes/auth.reset-password'
+import { Route as AuthCallbackRouteImport } from './routes/auth.callback'
 import { Route as AuthenticatedAppRouteRouteImport } from './routes/_authenticated/app/route'
 import { Route as AuthenticatedAppIndexRouteImport } from './routes/_authenticated/app/index'
+import { Route as ApiAuthSetSessionRouteImport } from './routes/api/auth/set-session'
 import { Route as AuthenticatedAppSupportInboxRouteImport } from './routes/_authenticated/app/support-inbox'
 import { Route as AuthenticatedAppSupportRouteImport } from './routes/_authenticated/app/support'
 import { Route as AuthenticatedAppSettingsRouteImport } from './routes/_authenticated/app/settings'
@@ -46,6 +49,16 @@ const IndexRoute = IndexRouteImport.update({
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AuthResetPasswordRoute = AuthResetPasswordRouteImport.update({
+  id: '/reset-password',
+  path: '/reset-password',
+  getParentRoute: () => AuthRoute,
+} as any)
+const AuthCallbackRoute = AuthCallbackRouteImport.update({
+  id: '/callback',
+  path: '/callback',
+  getParentRoute: () => AuthRoute,
+} as any)
 const AuthenticatedAppRouteRoute = AuthenticatedAppRouteRouteImport.update({
   id: '/app',
   path: '/app',
@@ -55,6 +68,11 @@ const AuthenticatedAppIndexRoute = AuthenticatedAppIndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => AuthenticatedAppRouteRoute,
+} as any)
+const ApiAuthSetSessionRoute = ApiAuthSetSessionRouteImport.update({
+  id: '/api/auth/set-session',
+  path: '/api/auth/set-session',
+  getParentRoute: () => rootRouteImport,
 } as any)
 const AuthenticatedAppSupportInboxRoute =
   AuthenticatedAppSupportInboxRouteImport.update({
@@ -119,9 +137,11 @@ const AuthenticatedAppRideRideIdRoute =
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
-  '/auth': typeof AuthRoute
+  '/auth': typeof AuthRouteWithChildren
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/app': typeof AuthenticatedAppRouteRouteWithChildren
+  '/auth/callback': typeof AuthCallbackRoute
+  '/auth/reset-password': typeof AuthResetPasswordRoute
   '/app/admin': typeof AuthenticatedAppAdminRoute
   '/app/driver': typeof AuthenticatedAppDriverRoute
   '/app/passenger': typeof AuthenticatedAppPassengerRoute
@@ -130,6 +150,7 @@ export interface FileRoutesByFullPath {
   '/app/settings': typeof AuthenticatedAppSettingsRoute
   '/app/support': typeof AuthenticatedAppSupportRouteWithChildren
   '/app/support-inbox': typeof AuthenticatedAppSupportInboxRoute
+  '/api/auth/set-session': typeof ApiAuthSetSessionRoute
   '/app/': typeof AuthenticatedAppIndexRoute
   '/app/ride/$rideId': typeof AuthenticatedAppRideRideIdRoute
   '/app/support/$ticketId': typeof AuthenticatedAppSupportTicketIdRoute
@@ -137,8 +158,10 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
-  '/auth': typeof AuthRoute
+  '/auth': typeof AuthRouteWithChildren
   '/sitemap.xml': typeof SitemapDotxmlRoute
+  '/auth/callback': typeof AuthCallbackRoute
+  '/auth/reset-password': typeof AuthResetPasswordRoute
   '/app/admin': typeof AuthenticatedAppAdminRoute
   '/app/driver': typeof AuthenticatedAppDriverRoute
   '/app/passenger': typeof AuthenticatedAppPassengerRoute
@@ -147,6 +170,7 @@ export interface FileRoutesByTo {
   '/app/settings': typeof AuthenticatedAppSettingsRoute
   '/app/support': typeof AuthenticatedAppSupportRouteWithChildren
   '/app/support-inbox': typeof AuthenticatedAppSupportInboxRoute
+  '/api/auth/set-session': typeof ApiAuthSetSessionRoute
   '/app': typeof AuthenticatedAppIndexRoute
   '/app/ride/$rideId': typeof AuthenticatedAppRideRideIdRoute
   '/app/support/$ticketId': typeof AuthenticatedAppSupportTicketIdRoute
@@ -156,9 +180,11 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/_authenticated': typeof AuthenticatedRouteRouteWithChildren
-  '/auth': typeof AuthRoute
+  '/auth': typeof AuthRouteWithChildren
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/_authenticated/app': typeof AuthenticatedAppRouteRouteWithChildren
+  '/auth/callback': typeof AuthCallbackRoute
+  '/auth/reset-password': typeof AuthResetPasswordRoute
   '/_authenticated/app/admin': typeof AuthenticatedAppAdminRoute
   '/_authenticated/app/driver': typeof AuthenticatedAppDriverRoute
   '/_authenticated/app/passenger': typeof AuthenticatedAppPassengerRoute
@@ -167,6 +193,7 @@ export interface FileRoutesById {
   '/_authenticated/app/settings': typeof AuthenticatedAppSettingsRoute
   '/_authenticated/app/support': typeof AuthenticatedAppSupportRouteWithChildren
   '/_authenticated/app/support-inbox': typeof AuthenticatedAppSupportInboxRoute
+  '/api/auth/set-session': typeof ApiAuthSetSessionRoute
   '/_authenticated/app/': typeof AuthenticatedAppIndexRoute
   '/_authenticated/app/ride/$rideId': typeof AuthenticatedAppRideRideIdRoute
   '/_authenticated/app/support/$ticketId': typeof AuthenticatedAppSupportTicketIdRoute
@@ -179,6 +206,8 @@ export interface FileRouteTypes {
     | '/auth'
     | '/sitemap.xml'
     | '/app'
+    | '/auth/callback'
+    | '/auth/reset-password'
     | '/app/admin'
     | '/app/driver'
     | '/app/passenger'
@@ -187,6 +216,7 @@ export interface FileRouteTypes {
     | '/app/settings'
     | '/app/support'
     | '/app/support-inbox'
+    | '/api/auth/set-session'
     | '/app/'
     | '/app/ride/$rideId'
     | '/app/support/$ticketId'
@@ -196,6 +226,8 @@ export interface FileRouteTypes {
     | '/'
     | '/auth'
     | '/sitemap.xml'
+    | '/auth/callback'
+    | '/auth/reset-password'
     | '/app/admin'
     | '/app/driver'
     | '/app/passenger'
@@ -204,6 +236,7 @@ export interface FileRouteTypes {
     | '/app/settings'
     | '/app/support'
     | '/app/support-inbox'
+    | '/api/auth/set-session'
     | '/app'
     | '/app/ride/$rideId'
     | '/app/support/$ticketId'
@@ -215,6 +248,8 @@ export interface FileRouteTypes {
     | '/auth'
     | '/sitemap.xml'
     | '/_authenticated/app'
+    | '/auth/callback'
+    | '/auth/reset-password'
     | '/_authenticated/app/admin'
     | '/_authenticated/app/driver'
     | '/_authenticated/app/passenger'
@@ -223,6 +258,7 @@ export interface FileRouteTypes {
     | '/_authenticated/app/settings'
     | '/_authenticated/app/support'
     | '/_authenticated/app/support-inbox'
+    | '/api/auth/set-session'
     | '/_authenticated/app/'
     | '/_authenticated/app/ride/$rideId'
     | '/_authenticated/app/support/$ticketId'
@@ -232,8 +268,9 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AuthenticatedRouteRoute: typeof AuthenticatedRouteRouteWithChildren
-  AuthRoute: typeof AuthRoute
+  AuthRoute: typeof AuthRouteWithChildren
   SitemapDotxmlRoute: typeof SitemapDotxmlRoute
+  ApiAuthSetSessionRoute: typeof ApiAuthSetSessionRoute
   ApiPublicWebhooksTopupRoute: typeof ApiPublicWebhooksTopupRoute
 }
 
@@ -267,6 +304,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/auth/reset-password': {
+      id: '/auth/reset-password'
+      path: '/reset-password'
+      fullPath: '/auth/reset-password'
+      preLoaderRoute: typeof AuthResetPasswordRouteImport
+      parentRoute: typeof AuthRoute
+    }
+    '/auth/callback': {
+      id: '/auth/callback'
+      path: '/callback'
+      fullPath: '/auth/callback'
+      preLoaderRoute: typeof AuthCallbackRouteImport
+      parentRoute: typeof AuthRoute
+    }
     '/_authenticated/app': {
       id: '/_authenticated/app'
       path: '/app'
@@ -280,6 +331,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/app/'
       preLoaderRoute: typeof AuthenticatedAppIndexRouteImport
       parentRoute: typeof AuthenticatedAppRouteRoute
+    }
+    '/api/auth/set-session': {
+      id: '/api/auth/set-session'
+      path: '/api/auth/set-session'
+      fullPath: '/api/auth/set-session'
+      preLoaderRoute: typeof ApiAuthSetSessionRouteImport
+      parentRoute: typeof rootRouteImport
     }
     '/_authenticated/app/support-inbox': {
       id: '/_authenticated/app/support-inbox'
@@ -417,13 +475,36 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
 const AuthenticatedRouteRouteWithChildren =
   AuthenticatedRouteRoute._addFileChildren(AuthenticatedRouteRouteChildren)
 
+interface AuthRouteChildren {
+  AuthCallbackRoute: typeof AuthCallbackRoute
+  AuthResetPasswordRoute: typeof AuthResetPasswordRoute
+}
+
+const AuthRouteChildren: AuthRouteChildren = {
+  AuthCallbackRoute: AuthCallbackRoute,
+  AuthResetPasswordRoute: AuthResetPasswordRoute,
+}
+
+const AuthRouteWithChildren = AuthRoute._addFileChildren(AuthRouteChildren)
+
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AuthenticatedRouteRoute: AuthenticatedRouteRouteWithChildren,
-  AuthRoute: AuthRoute,
+  AuthRoute: AuthRouteWithChildren,
   SitemapDotxmlRoute: SitemapDotxmlRoute,
+  ApiAuthSetSessionRoute: ApiAuthSetSessionRoute,
   ApiPublicWebhooksTopupRoute: ApiPublicWebhooksTopupRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
+
+import type { getRouter } from './router.tsx'
+import type { startInstance } from './start.ts'
+declare module '@tanstack/react-start' {
+  interface Register {
+    ssr: true
+    router: Awaited<ReturnType<typeof getRouter>>
+    config: Awaited<ReturnType<typeof startInstance.getOptions>>
+  }
+}
