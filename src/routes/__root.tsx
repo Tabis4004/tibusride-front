@@ -91,6 +91,8 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       { name: "twitter:card", content: "summary_large_image" },
       { name: "twitter:title", content: "Tibus Ride — VTC pour l'Afrique de l'Ouest" },
       { name: "twitter:description", content: "Commandez une voiture (Taxi, Éco, Confort, Confort+ ou VIP) à Dakar, Abidjan, Lomé, Cotonou, Niamey, Bamako, Ouagadougou, Accra, Lagos, Abuja et Conakry. Paiement Mobile Money, cash ou carte." },
+      { property: "og:image", content: "https://pub-bb2e103a32db4e198524a2e9ed8f35b4.r2.dev/a5a7e696-8968-4e8d-ae72-0c49c680a668/id-preview-fe1674df--f7c5ff36-5198-4850-82d6-16ad192725bf.lovable.app-1781869389661.png" },
+      { name: "twitter:image", content: "https://pub-bb2e103a32db4e198524a2e9ed8f35b4.r2.dev/a5a7e696-8968-4e8d-ae72-0c49c680a668/id-preview-fe1674df--f7c5ff36-5198-4850-82d6-16ad192725bf.lovable.app-1781869389661.png" },
     ],
     links: [{ rel: "stylesheet", href: appCss }],
   }),
