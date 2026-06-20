@@ -1,4 +1,5 @@
-// Tarification simple adaptée au marché ouest-africain (XOF).
+import { normalizeCountry, type ServiceCountry } from "@/lib/countries";
+
 // Tibus Ride — catégories: Taxi (1-4 pass), Éco, Confort, Confort+, VIP.
 
 export type Category = "taxi" | "eco" | "confort" | "confort_plus" | "vip";
@@ -90,6 +91,70 @@ export function nearestServiceCity(point: { lat: number; lng: number }): string 
     }
   }
   return best.value;
+}
+
+/** Ville principale d'un pays de service. */
+export function defaultCityForCountry(country: string | null | undefined): string | undefined {
+  const norm = normalizeCountry(country);
+  if (!norm) return undefined;
+  return CITIES.find((c) => c.country === norm)?.value;
+}
+
+/** Ville la plus proche dans le pays de l'utilisateur (sinon globale). */
+export function nearestServiceCityInCountry(
+  point: { lat: number; lng: number },
+  country: string | null | undefined,
+): string | undefined {
+  const norm = normalizeCountry(country);
+  const pool = norm ? CITIES.filter((c) => c.country === norm) : [];
+  if (pool.length === 0) return undefined;
+  let best = pool[0];
+  let bestKm = Infinity;
+  for (const c of pool) {
+    const d = haversineKm({ lat: c.lat, lng: c.lng }, point);
+    if (d < bestKm) {
+      bestKm = d;
+      best = c;
+    }
+  }
+  return best.value;
+}
+
+export type ResolveCityInput = {
+  profileCity?: string | null;
+  profileCountry?: string | null;
+  gps?: { lat: number; lng: number } | null;
+};
+
+/** Ville par défaut : profil utilisateur, puis GPS dans son pays, puis GPS global. */
+export function resolveServiceCity(input: ResolveCityInput): string {
+  const profileCity = input.profileCity?.trim();
+  if (profileCity && CITIES.some((c) => c.value === profileCity)) {
+    if (input.gps) {
+      const inCountry = nearestServiceCityInCountry(input.gps, input.profileCountry);
+      const zone = getServiceZone(profileCity);
+      if (zone && input.gps) {
+        const d = haversineKm({ lat: zone.lat, lng: zone.lng }, input.gps);
+        if (d <= zone.radiusKm * 1.5) return profileCity;
+      }
+      if (inCountry) return inCountry;
+    } else {
+      return profileCity;
+    }
+  }
+
+  const fromCountry = defaultCityForCountry(input.profileCountry);
+  if (input.gps) {
+    const inCountry = nearestServiceCityInCountry(input.gps, input.profileCountry);
+    if (inCountry) return inCountry;
+    return nearestServiceCity(input.gps);
+  }
+  if (fromCountry) return fromCountry;
+  return CITIES[0].value;
+}
+
+export function countryForCity(city: string): ServiceCountry | undefined {
+  return getServiceZone(city)?.country as ServiceCountry | undefined;
 }
 
 function haversineKm(a: { lat: number; lng: number }, b: { lat: number; lng: number }): number {

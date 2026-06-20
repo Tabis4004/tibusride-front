@@ -1,5 +1,5 @@
-import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { createFileRoute } from "@tanstack/react-router";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { z } from "zod";
@@ -9,11 +9,12 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { CATEGORIES, CITIES, estimateDistance, estimateDuration, estimatePrice, formatXof, getPriceBreakdown, getServiceZone, isInServiceZone, nearestServiceCity, type Category } from "@/lib/pricing";
+import { CATEGORIES, estimateDistance, estimateDuration, formatXof, getServiceZone, isInServiceZone, resolveServiceCity, type Category } from "@/lib/pricing";
+import { computeDynamicPrice, estimateDriverWaitMin, type DynamicPriceBreakdown, type WeatherKind } from "@/lib/dynamic-pricing";
 import { toast } from "sonner";
 import { Banknote, Car, ChevronRight, CreditCard, MapPin, Phone, Smartphone, MessageCircle, ExternalLink, AlertTriangle, History, RotateCcw, Navigation2, UtensilsCrossed, Package } from "lucide-react";
 import { RideTrackingMap, type LatLng } from "@/components/RideTrackingMap";
-import { computeRoute, reverseGeocode } from "@/lib/maps.functions";
+import { computeRoute, reverseGeocode, getWeatherAtPoint, geocodeAddress } from "@/lib/maps.functions";
 import { AddressAutocomplete } from "@/components/AddressAutocomplete";
 import { DeliveryPartnerAds } from "@/components/DeliveryPartnerAds";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
@@ -36,10 +37,11 @@ const PAYMENTS = [
 
 function PassengerPage() {
   const { user } = useAuth();
-  const navigate = useNavigate();
   const qc = useQueryClient();
   const isNative = useNativeApp();
-  const [city, setCity] = useState("Dakar");
+  const [city, setCity] = useState("");
+  const profileRef = useRef<{ city?: string | null; country?: string | null }>({});
+  const [cityReady, setCityReady] = useState(false);
   const [pickup, setPickup] = useState("");
   const [dropoff, setDropoff] = useState("");
   const [category, setCategory] = useState<Category>("eco");
@@ -49,9 +51,11 @@ function PassengerPage() {
   // Map state — geocoded points + computed route
   const [pickupLL, setPickupLL] = useState<LatLng | null>(null);
   const [dropoffLL, setDropoffLL] = useState<LatLng | null>(null);
-  const [routeInfo, setRouteInfo] = useState<{ seconds: number; distanceMeters: number; polyline?: string } | null>(null);
+  const [routeInfo, setRouteInfo] = useState<{ seconds: number; staticSeconds: number; distanceMeters: number; polyline?: string } | null>(null);
   const routeFn = useServerFn(computeRoute);
   const reverseFn = useServerFn(reverseGeocode);
+  const weatherFn = useServerFn(getWeatherAtPoint);
+  const [weather, setWeather] = useState<WeatherKind>("sunny");
 
   // Évite d'effacer les coordonnées quand le texte est mis à jour programmatiquement (carte, GPS, liste).
   const programmaticPickupRef = useRef(false);
@@ -66,7 +70,12 @@ function PassengerPage() {
       .then((pos) => {
         const ll = { lat: pos.coords.lat, lng: pos.coords.lng };
         setPickupLL(ll);
-        setCity(nearestServiceCity(ll));
+        const resolved = resolveServiceCity({
+          profileCity: profileRef.current.city,
+          profileCountry: profileRef.current.country,
+          gps: ll,
+        });
+        setCity(resolved);
         return reverseFn({ data: ll })
           .then((r) => {
             programmaticPickupRef.current = true;
@@ -98,13 +107,22 @@ function PassengerPage() {
 
   useEffect(() => {
     if (!user) return;
-    supabase.from("profiles").select("city").eq("id", user.id).maybeSingle()
+    supabase.from("profiles").select("city, country").eq("id", user.id).maybeSingle()
       .then(({ data }) => {
-        if (data?.city && CITIES.some((c) => c.value === data.city)) setCity(data.city);
+        profileRef.current = { city: data?.city, country: data?.country };
+        const resolved = resolveServiceCity({
+          profileCity: data?.city,
+          profileCountry: data?.country,
+        });
+        setCity(resolved);
+        setCityReady(true);
       });
-    applyCurrentLocationPickup();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.id]);
+
+  useEffect(() => {
+    if (!cityReady) return;
+    applyCurrentLocationPickup();
+  }, [cityReady, applyCurrentLocationPickup]);
 
   // Map interaction: clicking or dragging a marker updates LL + reverse-geocodes to fill input
   const handlePickupFromMap = (ll: LatLng) => {
@@ -124,14 +142,33 @@ function PassengerPage() {
   useEffect(() => {
     if (!pickupLL || !dropoffLL) { setRouteInfo(null); return; }
     routeFn({ data: { origin: pickupLL, destination: dropoffLL } })
-      .then((r) => { if (r.ok) setRouteInfo({ seconds: r.seconds, distanceMeters: r.distanceMeters, polyline: r.polyline }); })
+      .then((r) => {
+        if (r.ok) {
+          setRouteInfo({
+            seconds: r.seconds,
+            staticSeconds: r.staticSeconds ?? r.seconds,
+            distanceMeters: r.distanceMeters,
+            polyline: r.polyline,
+          });
+        }
+      })
       .catch(() => {});
   }, [pickupLL?.lat, pickupLL?.lng, dropoffLL?.lat, dropoffLL?.lng, routeFn]);
 
+  useEffect(() => {
+    if (!pickupLL) return;
+    weatherFn({ data: pickupLL })
+      .then((r) => { if (r.ok) setWeather(r.weather); })
+      .catch(() => {});
+  }, [pickupLL?.lat, pickupLL?.lng, weatherFn]);
+
   const km = routeInfo ? Math.max(1, Math.round(routeInfo.distanceMeters / 100) / 10) : estimateDistance(pickup, dropoff);
   const min = routeInfo ? Math.max(1, Math.round(routeInfo.seconds / 60)) : estimateDuration(km);
+  const staticMin = routeInfo ? Math.max(1, Math.round(routeInfo.staticSeconds / 60)) : min;
   const hasTrip = !!(pickupLL && dropoffLL);
-  const breakdown = hasTrip ? getPriceBreakdown(category, km, min, 0) : null;
+  const breakdown: DynamicPriceBreakdown | null = hasTrip
+    ? computeDynamicPrice({ category, km, durationMin: min, staticDurationMin: staticMin, weather })
+    : null;
   const price = breakdown?.total ?? 0;
 
   // Service zone checks
@@ -141,7 +178,10 @@ function PassengerPage() {
   const outOfZone = (pickupLL && !pickupZone.ok) || (dropoffLL && !dropoffZone.ok);
   const mapBias = zone ? { lat: zone.lat, lng: zone.lng, radiusMeters: zone.radiusKm * 1000 } : undefined;
   const pickupBias = pickupLL
-    ? { lat: pickupLL.lat, lng: pickupLL.lng, radiusMeters: 20000 }
+    ? { lat: pickupLL.lat, lng: pickupLL.lng, radiusMeters: 25000 }
+    : mapBias;
+  const dropoffBias = pickupLL
+    ? { lat: pickupLL.lat, lng: pickupLL.lng, radiusMeters: 40000 }
     : mapBias;
   const nearbyPickupOption = pickupLL && pickup
     ? { title: "Ma position actuelle", subtitle: pickup, lat: pickupLL.lat, lng: pickupLL.lng, formatted: pickup }
@@ -247,9 +287,12 @@ function PassengerPage() {
       return data;
     },
     onSuccess: () => {
-      toast.success("Course demandée ! Recherche d'un chauffeur…");
+      const waitEst = estimateDriverWaitMin(category);
+      toast.success("Course demandée !", {
+        description: `Recherche d'un chauffeur… temps d'attente estimé ~${waitEst} min`,
+        duration: 8000,
+      });
       qc.invalidateQueries({ queryKey: ["current-ride"] });
-      navigate({ to: "/app/rides" });
     },
     onError: (e: Error) => toast.error(e.message),
   });
@@ -357,7 +400,7 @@ function PassengerPage() {
                   value={dropoff}
                   onChange={onDropoffChange}
                   placeholder="Adresse d'arrivée"
-                  bias={mapBias}
+                  bias={dropoffBias}
                   regionCode={zone?.countryCode}
                   resolved={!!dropoffLL}
                   onSelect={({ lat, lng, formatted }) => {
@@ -367,6 +410,26 @@ function PassengerPage() {
                   }}
                 />
               </div>
+
+              {(recentRidesQ.data ?? []).length > 0 && (
+                <div className="space-y-1">
+                  <p className="text-[11px] font-medium text-muted-foreground">Adresses récentes</p>
+                  <ul className="flex flex-col gap-1">
+                    {(recentRidesQ.data ?? []).slice(0, 2).map((r: any) => (
+                      <li key={r.id}>
+                        <button
+                          type="button"
+                          onClick={() => quickDestination(r.dropoff_address, r.dropoff_lat, r.dropoff_lng)}
+                          className="flex w-full items-center gap-2 rounded-xl border border-border bg-muted/20 px-3 py-2 text-left text-sm hover:bg-muted/50"
+                        >
+                          <History className="h-3.5 w-3.5 shrink-0 text-primary" />
+                          <span className="min-w-0 truncate font-medium">{r.dropoff_address.split(",")[0]}</span>
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
 
               {outOfZone && (
                 <div className="flex items-start gap-2 rounded-xl border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs text-destructive">
@@ -392,6 +455,14 @@ function PassengerPage() {
                   <span className="inline-flex items-center gap-1"><MapPin className="h-3 w-3 text-primary" /> {(routeInfo.distanceMeters / 1000).toFixed(1)} km</span>
                   <span className="text-muted-foreground">·</span>
                   <span>⏱ {Math.round(routeInfo.seconds / 60)} min</span>
+                  {breakdown && (
+                    <>
+                      <span className="text-muted-foreground">·</span>
+                      <span>{breakdown.factors.trafficLabel}</span>
+                      <span className="text-muted-foreground">·</span>
+                      <span>{breakdown.factors.weatherLabel}</span>
+                    </>
+                  )}
                 </div>
               )}
 
@@ -459,33 +530,6 @@ function PassengerPage() {
           </Collapsible>
         </section>
 
-        {/* Destinations récentes — raccourcis */}
-        {(recentRidesQ.data?.length ?? 0) > 0 && (
-          <section className="rounded-3xl border border-border bg-card p-4">
-            <h3 className="mb-2 text-xs font-medium text-muted-foreground">Adresses récentes</h3>
-            <ul className="divide-y divide-border">
-              {(recentRidesQ.data ?? []).slice(0, 4).map((r: any) => (
-                <li key={r.id}>
-                  <button
-                    type="button"
-                    onClick={() => quickDestination(r.dropoff_address, r.dropoff_lat, r.dropoff_lng)}
-                    className="flex w-full items-center gap-3 py-3 text-left hover:bg-muted/40"
-                  >
-                    <MapPin className="h-4 w-4 shrink-0 text-primary" />
-                    <div className="min-w-0 flex-1">
-                      <div className="truncate text-sm font-medium">{r.dropoff_address.split(",")[0]}</div>
-                      <div className="truncate text-xs text-muted-foreground">{r.dropoff_address}</div>
-                    </div>
-                    {r.duration_min && (
-                      <span className="shrink-0 text-xs text-muted-foreground">{r.duration_min} min</span>
-                    )}
-                  </button>
-                </li>
-              ))}
-            </ul>
-          </section>
-        )}
-
         {/* Espace pub restaurants */}
         <section className="rounded-3xl border border-border bg-card p-4">
           <DeliveryPartnerAds city={city} />
@@ -495,16 +539,24 @@ function PassengerPage() {
       {!isNative && (
       <aside className="space-y-4 lg:sticky lg:top-4 lg:self-start">
         <div className="rounded-3xl border border-border bg-card p-6">
-          <h3 className="font-display text-lg font-semibold">Tarif détaillé</h3>
-          <p className="text-xs text-muted-foreground">Estimation en temps réel.</p>
+          <h3 className="font-display text-lg font-semibold">Tarif dynamique</h3>
+          <p className="text-xs text-muted-foreground">Distance, trafic, durée et météo en temps réel.</p>
           <dl className="mt-4 space-y-2 text-sm">
             <div className="flex justify-between"><dt className="text-muted-foreground">Véhicule</dt><dd>{CATEGORIES[category].label}</dd></div>
             <div className="flex justify-between"><dt className="text-muted-foreground">Distance</dt><dd>{breakdown ? `${km} km` : "—"}</dd></div>
             <div className="flex justify-between"><dt className="text-muted-foreground">Durée</dt><dd>{breakdown ? `${min} min` : "—"}</dd></div>
+            <div className="flex justify-between"><dt className="text-muted-foreground">Trafic</dt><dd>{breakdown ? breakdown.factors.trafficLabel : "—"}</dd></div>
+            <div className="flex justify-between"><dt className="text-muted-foreground">Météo</dt><dd>{breakdown ? breakdown.factors.weatherLabel : "—"}</dd></div>
             <div className="my-2 border-t border-border" />
             <div className="flex justify-between"><dt className="text-muted-foreground">Base</dt><dd>{breakdown ? formatXof(breakdown.base) : "—"}</dd></div>
             <div className="flex justify-between"><dt className="text-muted-foreground">Distance</dt><dd>{breakdown ? formatXof(breakdown.distance) : "—"}</dd></div>
             <div className="flex justify-between"><dt className="text-muted-foreground">Durée</dt><dd>{breakdown ? formatXof(breakdown.duration) : "—"}</dd></div>
+            {breakdown && breakdown.trafficSurcharge > 0 && (
+              <div className="flex justify-between"><dt className="text-muted-foreground">Trafic</dt><dd>+{formatXof(breakdown.trafficSurcharge)}</dd></div>
+            )}
+            {breakdown && breakdown.weatherSurcharge > 0 && (
+              <div className="flex justify-between"><dt className="text-muted-foreground">Météo</dt><dd>+{formatXof(breakdown.weatherSurcharge)}</dd></div>
+            )}
             <div className="my-2 border-t border-border" />
             <div className="flex items-baseline justify-between">
               <dt className="text-muted-foreground">Total</dt>
@@ -586,6 +638,9 @@ const STATUS_LABEL: Record<string, string> = {
 function CurrentRideBanner({ ride: initialRide, onCancel }: { ride: any; onCancel: () => void }) {
   const qc = useQueryClient();
   const [ride, setRide] = useState<any>(initialRide);
+  const [clock, setClock] = useState(Date.now());
+  const requestedNotifiedRef = useRef(false);
+  const lastWaitThresholdRef = useRef(0);
   const [pickup, setPickup] = useState<LatLng | null>(
     initialRide.pickup_lat != null && initialRide.pickup_lng != null
       ? { lat: Number(initialRide.pickup_lat), lng: Number(initialRide.pickup_lng) }
@@ -615,6 +670,14 @@ function CurrentRideBanner({ ride: initialRide, onCancel }: { ride: any; onCance
   });
 
   const activeRide = rideLiveQ.data ?? ride;
+
+  useEffect(() => {
+    const t = setInterval(() => setClock(Date.now()), 30_000);
+    return () => clearInterval(t);
+  }, []);
+
+  const waitMin = Math.max(0, Math.floor((clock - new Date(activeRide.created_at).getTime()) / 60_000));
+  const estimatedWait = estimateDriverWaitMin((activeRide.category ?? "eco") as Category);
 
   useEffect(() => {
     setRide(initialRide);
@@ -766,15 +829,71 @@ function CurrentRideBanner({ ride: initialRide, onCancel }: { ride: any; onCance
 
   const etaText = etaSec != null ? (etaSec < 60 ? `${etaSec}s` : `${Math.round(etaSec / 60)} min`) : "—";
   const driverPhone = (driverQ.data as any)?.phone as string | undefined;
+  const driverName = (driverQ.data as any)?.full_name as string | undefined;
+
+  const statusMessage = useMemo(() => {
+    switch (activeRide.status) {
+      case "requested":
+        return waitMin === 0
+          ? `Recherche d'un chauffeur… attente estimée ~${estimatedWait} min`
+          : `Recherche en cours — ${waitMin} min d'attente (estimé ~${estimatedWait} min)`;
+      case "accepted":
+        return etaSec != null
+          ? `${driverName ? `${driverName} arrive` : "Chauffeur en route"} dans ${etaSec < 60 ? `${etaSec} s` : `${Math.ceil(etaSec / 60)} min`}`
+          : "Votre chauffeur est en route vers vous";
+      case "arriving":
+        return etaSec != null && etaSec <= 90
+          ? "Votre chauffeur est à quelques instants — rejoignez le point de départ"
+          : "Votre chauffeur vous attend au point de départ";
+      case "in_progress":
+        return etaSec != null
+          ? `Course en cours — destination dans ~${Math.ceil(etaSec / 60)} min`
+          : "Course en cours";
+      default:
+        return STATUS_LABEL[activeRide.status] ?? activeRide.status;
+    }
+  }, [activeRide.status, waitMin, estimatedWait, etaSec, driverName]);
+
+  useEffect(() => {
+    if (activeRide.status !== "requested" || requestedNotifiedRef.current) return;
+    requestedNotifiedRef.current = true;
+    notify(
+      "Course demandée",
+      `Recherche d'un chauffeur — attente estimée ~${estimatedWait} min`,
+      "status",
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeRide.status, estimatedWait]);
+
+  useEffect(() => {
+    if (activeRide.status !== "requested") return;
+    for (const th of [3, 5, 8]) {
+      if (waitMin >= th && lastWaitThresholdRef.current < th) {
+        lastWaitThresholdRef.current = th;
+        notify(
+          "Temps d'attente",
+          `Toujours en recherche… ${waitMin} min écoulées (estimé ~${estimatedWait} min)`,
+          "status",
+        );
+        break;
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [waitMin, activeRide.status, estimatedWait]);
 
   return (
     <div className="space-y-4 rounded-3xl border border-primary/30 bg-primary/5 p-4 sm:p-6">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="flex items-center gap-2 text-sm font-medium text-primary">
-          <span className="h-2 w-2 animate-pulse rounded-full bg-primary" />
-          {STATUS_LABEL[ride.status] ?? ride.status}
+        <div className="flex min-w-0 flex-1 items-center gap-2 text-sm font-medium text-primary">
+          <span className="h-2 w-2 shrink-0 animate-pulse rounded-full bg-primary" />
+          <span className="min-w-0">{statusMessage}</span>
         </div>
-        {ride.status !== "in_progress" && ride.driver_id && (
+        {activeRide.status === "requested" && (
+          <div className="rounded-full bg-card px-3 py-1 text-xs font-semibold">
+            Attente : <span className="text-primary">{waitMin} min</span>
+          </div>
+        )}
+        {activeRide.status !== "in_progress" && activeRide.status !== "requested" && activeRide.driver_id && (
           <div className="rounded-full bg-card px-3 py-1 text-xs font-semibold">
             Arrivée estimée : <span className="text-primary">{etaText}</span>
           </div>

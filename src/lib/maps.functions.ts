@@ -64,7 +64,7 @@ export const computeRoute = createServerFn({ method: "POST" })
     };
     const res = await fetch(ROUTES_URL, {
       method: "POST",
-      headers: googleJsonHeaders("routes.duration,routes.distanceMeters,routes.polyline.encodedPolyline"),
+      headers: googleJsonHeaders("routes.duration,routes.staticDuration,routes.distanceMeters,routes.polyline.encodedPolyline"),
       body: JSON.stringify(body),
     });
     const json: any = await res.json();
@@ -73,13 +73,41 @@ export const computeRoute = createServerFn({ method: "POST" })
     }
     const r = json.routes[0];
     const durationStr: string = r.duration ?? "0s";
+    const staticStr: string = r.staticDuration ?? durationStr;
     const seconds = parseInt(durationStr.replace("s", ""), 10) || 0;
+    const staticSeconds = parseInt(staticStr.replace("s", ""), 10) || seconds;
     return {
       ok: true as const,
       seconds,
+      staticSeconds,
       distanceMeters: r.distanceMeters as number,
       polyline: r.polyline?.encodedPolyline as string | undefined,
     };
+  });
+
+/** Météo locale (Open-Meteo, sans clé) pour ajuster le tarif. */
+export const getWeatherAtPoint = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d) => z.object({ lat: z.number(), lng: z.number() }).parse(d))
+  .handler(async ({ data }) => {
+    const url = new URL("https://api.open-meteo.com/v1/forecast");
+    url.searchParams.set("latitude", String(data.lat));
+    url.searchParams.set("longitude", String(data.lng));
+    url.searchParams.set("current", "precipitation,weather_code");
+    url.searchParams.set("timezone", "auto");
+    const res = await fetch(url.toString());
+    const json: any = await res.json();
+    if (!res.ok || !json.current) {
+      return { ok: false as const, weather: "sunny" as const };
+    }
+    const precip: number = json.current.precipitation ?? 0;
+    const code: number = json.current.weather_code ?? 0;
+    const rainyCodes = new Set([51, 53, 55, 56, 57, 61, 63, 65, 66, 67, 71, 73, 75, 77, 80, 81, 82, 85, 86, 95, 96, 99]);
+    const cloudyCodes = new Set([2, 3, 45, 48]);
+    let weather: "sunny" | "rainy" | "cloudy" = "sunny";
+    if (precip > 0.2 || rainyCodes.has(code)) weather = "rainy";
+    else if (cloudyCodes.has(code)) weather = "cloudy";
+    return { ok: true as const, weather, precipitation: precip, weatherCode: code };
   });
 
 /** Reverse geocode lat/lng → formatted address. */

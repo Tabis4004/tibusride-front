@@ -2,6 +2,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { assertServiceCountry } from "@/lib/countries";
+import { defaultCityForCountry } from "@/lib/pricing";
 
 const rideIdInput = (d: unknown) => z.object({ rideId: z.string().uuid() }).parse(d);
 
@@ -155,8 +156,10 @@ export const completeMyProfile = createServerFn({ method: "POST" })
     const { data: isSuper } = await supabase.rpc("has_role", { _user_id: userId, _role: "superadmin" });
     if (isSuper) throw new Error("Profil superadmin déjà complet.");
     const country = assertServiceCountry(data.country);
+    const city = defaultCityForCountry(country);
     const { error } = await supabase.from("profiles").update({
       country,
+      city: city ?? null,
       phone: data.phone,
       full_name: data.full_name,
       updated_at: new Date().toISOString(),
