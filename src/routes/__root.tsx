@@ -81,7 +81,7 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
   head: () => ({
     meta: [
       { charSet: "utf-8" },
-      { name: "viewport", content: "width=device-width, initial-scale=1, maximum-scale=1" },
+      { name: "viewport", content: "width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover" },
       { title: "Tibus Ride — VTC pour l'Afrique de l'Ouest" },
       { name: "description", content: "Commandez une voiture (Taxi, Éco, Confort, Confort+ ou VIP) à Dakar, Abidjan, Lomé, Cotonou, Niamey, Bamako, Ouagadougou, Accra, Lagos, Abuja et Conakry. Paiement Mobile Money, cash ou carte." },
       { name: "author", content: "Tibus Ride" },

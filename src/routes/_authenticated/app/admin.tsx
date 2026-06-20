@@ -17,14 +17,15 @@ import {
 } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { formatXof } from "@/lib/pricing";
+import { countriesMatch } from "@/lib/countries";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { toast } from "sonner";
 import {
   listUsers,
   setUserBanned,
   setUserRole,
-  setUserPassword,
   setUserCountry,
+  promoteCountryAdmin,
   ADMIN_COUNTRIES,
   updateDriverStatus,
   uploadDriverDocument,
@@ -59,6 +60,7 @@ import {
   Eye,
   FileText,
   Gift,
+  KeyRound,
   Lock,
   Receipt,
   Palette,
@@ -73,6 +75,7 @@ import {
   Users,
   Wallet,
 } from "lucide-react";
+import { RolesPermissionsTab } from "@/components/admin/RolesPermissionsTab";
 
 export const Route = createFileRoute("/_authenticated/app/admin")({
   head: () => ({ meta: [{ title: "Administration — Tibus Ride" }] }),
@@ -165,7 +168,8 @@ function AdminPage() {
 
   const sections: SectionDef[] = [
     { key: "drivers", title: "Chauffeurs", description: "Validation, documents et présence", keywords: ["chauffeur","driver","permis","document","validation"], icon: Car, defaultPalette: 0, group: "Opérations", roles: ["superadmin","admin","support"], countKey: "pendingDrivers", countLabel: "à valider" },
-    { key: "users", title: "Utilisateurs", description: "Comptes, rôles et mots de passe", keywords: ["utilisateur","user","compte","role","mot de passe","password"], icon: Users, defaultPalette: 1, group: "Opérations", roles: ["superadmin","admin"] },
+    { key: "users", title: "Utilisateurs", description: "Comptes, statut et export", keywords: ["utilisateur","user","compte","bloquer"], icon: Users, defaultPalette: 1, group: "Opérations", roles: ["superadmin","admin"] },
+    { key: "roles", title: "Rôles & permissions", description: "Rôles, mots de passe et admins pays", keywords: ["role","permission","mot de passe","password","admin pays","superadmin"], icon: KeyRound, defaultPalette: 11, group: "Sécurité", roles: ["superadmin"] },
     { key: "rides", title: "Courses", description: "Historique et détails par course", keywords: ["course","ride","trajet","historique"], icon: ScrollText, defaultPalette: 2, group: "Opérations", roles: ["superadmin","admin","support"] },
     { key: "pricing", title: "Tarifs & commissions", description: "Paliers, catégories et règles", keywords: ["tarif","prix","pricing","commission","paiement"], icon: Tag, defaultPalette: 3, group: "Finance", roles: ["superadmin","admin"] },
     { key: "commissions-report", title: "Rapport commissions", description: "Synthèse et exports", keywords: ["rapport","report","commission","export","paiement"], icon: BarChart3, defaultPalette: 4, group: "Finance", roles: ["superadmin","admin"] },
@@ -217,6 +221,7 @@ function AdminPage() {
         </div>
         {section === "drivers" && <DriversTab />}
         {section === "users" && <UsersTab />}
+        {section === "roles" && <RolesPermissionsTab />}
         {section === "rides" && <RidesTab />}
         {section === "pricing" && <PricingTab />}
         {section === "commissions-report" && <CommissionReportTab />}
@@ -738,12 +743,14 @@ function UsersTab() {
   const list = useServerFn(listUsers);
   const banFn = useServerFn(setUserBanned);
   const roleFn = useServerFn(setUserRole);
-  const pwdFn = useServerFn(setUserPassword);
   const countryFn = useServerFn(setUserCountry);
+  const countryAdminFn = useServerFn(promoteCountryAdmin);
   const [q, setQ] = useState("");
   const [roleFilter, setRoleFilter] = useState<string>("all");
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [countryFilter, setCountryFilter] = useState<string>("all");
+  const [countryAdminUser, setCountryAdminUser] = useState<any | null>(null);
+  const [countryAdminValue, setCountryAdminValue] = useState<string>(ADMIN_COUNTRIES[0]);
 
   const { data, isLoading, error } = useQuery({
     queryKey: ["admin-users"],
@@ -770,34 +777,26 @@ function UsersTab() {
     onError: (e: Error) => toast.error(e.message),
   });
 
-  const pwd = useMutation({
-    mutationFn: (v: { userId: string; password: string }) => pwdFn({ data: v }),
-    onSuccess: () => {
-      toast.success("Mot de passe mis à jour");
-      qc.invalidateQueries({ queryKey: ["admin-audit"] });
-    },
-    onError: (e: Error) => toast.error(e.message),
-  });
-
   const country = useMutation({
     mutationFn: (v: { userId: string; country: string | null }) => countryFn({ data: v }),
     onSuccess: () => {
-      toast.success("Pays mis à jour");
+      toast.success("Pays du profil mis à jour");
       qc.invalidateQueries({ queryKey: ["admin-users"] });
       qc.invalidateQueries({ queryKey: ["admin-audit"] });
     },
     onError: (e: Error) => toast.error(e.message),
   });
 
-  const askPassword = (u: any) => {
-    const pw = window.prompt(`Nouveau mot de passe pour ${u.email ?? u.id} (min. 8 caractères) :`, "");
-    if (pw === null) return;
-    if (pw.length < 8) { toast.error("Mot de passe trop court (min. 8 caractères)."); return; }
-    const confirm = window.prompt("Confirmer le nouveau mot de passe :", "");
-    if (confirm === null) return;
-    if (confirm !== pw) { toast.error("Les mots de passe ne correspondent pas."); return; }
-    pwd.mutate({ userId: u.id, password: pw });
-  };
+  const countryAdmin = useMutation({
+    mutationFn: (v: { userId: string; country: string }) => countryAdminFn({ data: v }),
+    onSuccess: (_d, v) => {
+      toast.success(`Admin pays nommé pour ${v.country}`);
+      setCountryAdminUser(null);
+      qc.invalidateQueries({ queryKey: ["admin-users"] });
+      qc.invalidateQueries({ queryKey: ["admin-audit"] });
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
 
   const filtered = useMemo(() => {
     return (data ?? []).filter((u: any) => {
@@ -810,7 +809,7 @@ function UsersTab() {
       if (countryFilter !== "all") {
         if (!u.roles.includes("admin") && !u.roles.includes("support")) return false;
         const c = u.profile?.country ?? null;
-        if (countryFilter === "__none" ? c !== null : c !== countryFilter) return false;
+        if (countryFilter === "__none" ? c !== null : !countriesMatch(c, countryFilter)) return false;
       }
       const isBanned = u.banned_until && new Date(u.banned_until) > new Date();
       if (statusFilter === "active" && isBanned) return false;
@@ -844,6 +843,11 @@ function UsersTab() {
 
   return (
     <div className="space-y-4">
+      {isSuperadmin && (
+        <div className="rounded-xl border border-primary/20 bg-primary/5 px-4 py-3 text-sm">
+          Rôles, mots de passe et admins pays → menu <strong>Rôles & permissions</strong> (accueil admin).
+        </div>
+      )}
       <div className="flex flex-wrap items-end gap-3">
         <div className="flex-1 min-w-[200px]">
           <Label className="text-xs text-muted-foreground">Recherche</Label>
@@ -875,7 +879,7 @@ function UsersTab() {
           </Select>
         </div>
         <div>
-          <Label className="text-xs text-muted-foreground">Pays (admins / support)</Label>
+          <Label className="text-xs text-muted-foreground">Pays (profil)</Label>
           <Select value={countryFilter} onValueChange={setCountryFilter}>
             <SelectTrigger className="w-[180px]"><SelectValue /></SelectTrigger>
             <SelectContent>
@@ -901,7 +905,7 @@ function UsersTab() {
               <tr>
                 <th className="px-4 py-3 text-left font-medium">Utilisateur</th>
                 <th className="px-4 py-3 text-left font-medium">Rôles</th>
-                <th className="px-4 py-3 text-left font-medium">Pays</th>
+                <th className="px-4 py-3 text-left font-medium">Pays (profil)</th>
                 <th className="px-4 py-3 text-left font-medium">Dernière connexion</th>
                 <th className="px-4 py-3 text-left font-medium">Statut</th>
                 <th className="px-4 py-3 text-right font-medium">Actions</th>
@@ -943,7 +947,7 @@ function UsersTab() {
                     <td className="px-4 py-3">
                       {hasSuper ? (
                         <span className="text-xs text-muted-foreground italic">Global (superadmin)</span>
-                      ) : (
+                      ) : isSuperadmin ? (
                         <Select
                           value={u.profile?.country ?? "__none"}
                           onValueChange={(v) => country.mutate({ userId: u.id, country: v === "__none" ? null : v })}
@@ -956,6 +960,8 @@ function UsersTab() {
                             ))}
                           </SelectContent>
                         </Select>
+                      ) : (
+                        <span className="text-xs">{u.profile?.country ?? "—"}</span>
                       )}
                     </td>
                     <td className="px-4 py-3 text-xs text-muted-foreground whitespace-nowrap">
@@ -968,31 +974,40 @@ function UsersTab() {
                     </td>
                     <td className="px-4 py-3 text-right">
                       <div className="inline-flex flex-wrap justify-end gap-2">
-                        {isSuperadmin && !isSelf && (hasSuper
-                          ? <Button size="sm" variant="outline" onClick={() => { if (confirm("Retirer le rôle superadmin ?")) role.mutate({ userId: u.id, role: "superadmin", grant: false }); }}><ShieldOff className="h-3.5 w-3.5 mr-1" />Retirer superadmin</Button>
-                          : (hasAdmin ? <Button size="sm" variant="outline" onClick={() => { if (confirm("Promouvoir ce compte au rôle superadmin (accès global) ?")) role.mutate({ userId: u.id, role: "superadmin", grant: true }); }}><ShieldCheck className="h-3.5 w-3.5 mr-1" />Promouvoir superadmin</Button> : null)
-                        )}
-                        {!isSelf && (hasAdmin
+                        {!isSuperadmin && !isSelf && (hasAdmin
                           ? <Button size="sm" variant="outline" onClick={() => role.mutate({ userId: u.id, role: "admin", grant: false })}><ShieldOff className="h-3.5 w-3.5 mr-1" />Retirer admin</Button>
-                          : <Button size="sm" variant="outline" onClick={() => role.mutate({ userId: u.id, role: "admin", grant: true })}><ShieldCheck className="h-3.5 w-3.5 mr-1" />Promouvoir admin</Button>
+                          : null
                         )}
-                        {!isSelf && (hasSupport
+                        {!isSuperadmin && !isSelf && (hasSupport
                           ? <Button size="sm" variant="outline" onClick={() => role.mutate({ userId: u.id, role: "support", grant: false })}>Retirer support</Button>
                           : <Button size="sm" variant="outline" onClick={() => role.mutate({ userId: u.id, role: "support", grant: true })}>Promouvoir support</Button>
                         )}
-                        {hasDriver
+                        {!isSuperadmin && (hasDriver
                           ? <Button size="sm" variant="outline" onClick={() => role.mutate({ userId: u.id, role: "driver", grant: false })}>Retirer chauffeur</Button>
                           : <Button size="sm" variant="outline" onClick={() => role.mutate({ userId: u.id, role: "driver", grant: true })}>Promouvoir chauffeur</Button>
-                        }
-                        {hasPassenger
+                        )}
+                        {!isSuperadmin && (hasPassenger
                           ? <Button size="sm" variant="outline" onClick={() => role.mutate({ userId: u.id, role: "passenger", grant: false })}>Retirer passager</Button>
                           : <Button size="sm" variant="outline" onClick={() => role.mutate({ userId: u.id, role: "passenger", grant: true })}>Ajouter passager</Button>
-                        }
+                        )}
                         {!isSelf && (isBanned
                           ? <Button size="sm" onClick={() => ban.mutate({ userId: u.id, banned: false })}><Unlock className="h-3.5 w-3.5 mr-1" />Déverrouiller</Button>
                           : <Button size="sm" variant="destructive" onClick={() => askBan(u)}><Lock className="h-3.5 w-3.5 mr-1" />Bloquer</Button>
                         )}
-                        <Button size="sm" variant="outline" onClick={() => askPassword(u)}><Lock className="h-3.5 w-3.5 mr-1" />Mot de passe</Button>
+                        {isSuperadmin && !isSelf && !hasSuper && !hasAdmin && (
+                          <Button
+                            size="sm"
+                            variant="default"
+                            onClick={() => {
+                              setCountryAdminUser(u);
+                              setCountryAdminValue(u.profile?.country && ADMIN_COUNTRIES.includes(u.profile.country as any)
+                                ? u.profile.country
+                                : ADMIN_COUNTRIES[0]);
+                            }}
+                          >
+                            <ShieldCheck className="h-3.5 w-3.5 mr-1" />Admin pays
+                          </Button>
+                        )}
                       </div>
                     </td>
                   </tr>
@@ -1002,6 +1017,37 @@ function UsersTab() {
           </table>
         </div>
       </div>
+
+      <Dialog open={!!countryAdminUser} onOpenChange={(o) => !o && setCountryAdminUser(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Nommer admin pays</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">
+            {countryAdminUser?.profile?.full_name ?? countryAdminUser?.email} recevra le rôle <strong>admin</strong> et le pays sélectionné.
+          </p>
+          <div>
+            <Label>Pays</Label>
+            <Select value={countryAdminValue} onValueChange={setCountryAdminValue}>
+              <SelectTrigger className="mt-1"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                {ADMIN_COUNTRIES.map((c) => (
+                  <SelectItem key={c} value={c}>{c}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setCountryAdminUser(null)}>Annuler</Button>
+            <Button
+              onClick={() => countryAdminUser && countryAdmin.mutate({ userId: countryAdminUser.id, country: countryAdminValue })}
+              disabled={countryAdmin.isPending}
+            >
+              Confirmer
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

@@ -196,4 +196,17 @@
       repeating-linear-gradient(45deg, oklch(0.32 0.13 258 / 0.06) 0 2px, transparent 2px 14px),
       repeating-linear-gradient(-45deg, oklch(0.32 0.13 258 / 0.06) 0 2px, transparent 2px 14px);
   }
+
+  .native-shell {
+    -webkit-tap-highlight-color: transparent;
+    overscroll-behavior-y: none;
+  }
+
+  .native-tabbar {
+    box-shadow: 0 -4px 24px oklch(0.2 0.05 255 / 0.08);
+  }
+
+  .native-cta-bar .shadow-soft {
+    box-shadow: var(--shadow-soft);
+  }
 }

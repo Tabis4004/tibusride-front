@@ -1,6 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
+import { assertServiceCountry } from "@/lib/countries";
 
 const rideIdInput = (d: unknown) => z.object({ rideId: z.string().uuid() }).parse(d);
 
@@ -115,24 +116,51 @@ export const updateNotificationPrefs = createServerFn({ method: "POST" })
     return { ok: true };
   });
 
-const COUNTRIES = [
-  "Senegal", "Côte d'Ivoire", "Togo", "Benin", "Niger",
-  "Nigeria", "Mali", "Burkina Faso", "Ghana", "Guinée",
-] as const;
+function parseCountryField(country: string) {
+  return assertServiceCountry(country);
+}
 
 /** Allow a user to change their country after sign-up. Re-scopes which rides they see. */
 export const updateMyCountry = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d) =>
-    z.object({ country: z.enum(COUNTRIES as unknown as [string, ...string[]]) }).parse(d),
-  )
+  .inputValidator((d) => {
+    const parsed = z.object({ country: z.string().min(1) }).parse(d);
+    return { country: parseCountryField(parsed.country) };
+  })
   .handler(async ({ data, context }) => {
     const { supabase, userId } = context;
     const { data: isSuper } = await supabase.rpc("has_role", { _user_id: userId, _role: "superadmin" });
     if (isSuper) throw new Error("Un superadmin ne peut pas être rattaché à un pays.");
+    const country = assertServiceCountry(data.country);
     const { error } = await supabase.from("profiles")
-      .update({ country: data.country, updated_at: new Date().toISOString() })
+      .update({ country, updated_at: new Date().toISOString() })
       .eq("id", userId);
     if (error) throw error;
-    return { ok: true, country: data.country };
+    return { ok: true, country };
+  });
+
+/** Compléter le profil après inscription Google (pays, téléphone, nom). */
+export const completeMyProfile = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d) => {
+    const parsed = z.object({
+      country: z.string().min(1),
+      phone: z.string().trim().min(8, "Téléphone requis").max(20),
+      full_name: z.string().trim().min(2, "Nom requis").max(80),
+    }).parse(d);
+    return { ...parsed, country: parseCountryField(parsed.country) };
+  })
+  .handler(async ({ data, context }) => {
+    const { supabase, userId } = context;
+    const { data: isSuper } = await supabase.rpc("has_role", { _user_id: userId, _role: "superadmin" });
+    if (isSuper) throw new Error("Profil superadmin déjà complet.");
+    const country = assertServiceCountry(data.country);
+    const { error } = await supabase.from("profiles").update({
+      country,
+      phone: data.phone,
+      full_name: data.full_name,
+      updated_at: new Date().toISOString(),
+    }).eq("id", userId);
+    if (error) throw error;
+    return { ok: true, country };
   });

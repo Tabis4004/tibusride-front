@@ -58,24 +58,38 @@ export function formatXof(n: number): string {
 }
 
 // Zones de service : centre de la ville + rayon couvert (km).
-export type ServiceZone = { value: string; country: string; lat: number; lng: number; radiusKm: number; districts: string[] };
+export type ServiceZone = { value: string; country: string; countryCode: string; lat: number; lng: number; radiusKm: number; districts: string[] };
 
 export const CITIES: ServiceZone[] = [
-  { value: "Dakar",       country: "Sénégal",        lat: 14.7167, lng: -17.4677, radiusKm: 25, districts: ["Plateau", "Médina", "Almadies", "Yoff", "Ouakam", "Mermoz", "Sacré-Cœur", "Point E", "Parcelles Assainies", "Pikine", "Guédiawaye"] },
-  { value: "Abidjan",     country: "Côte d'Ivoire",  lat: 5.3600,  lng: -4.0083,  radiusKm: 30, districts: ["Plateau", "Cocody", "Marcory", "Treichville", "Yopougon", "Abobo", "Adjamé", "Koumassi", "Port-Bouët"] },
-  { value: "Lomé",        country: "Togo",           lat: 6.1319,  lng:  1.2228,  radiusKm: 20, districts: ["Centre", "Tokoin", "Bè", "Adidogomé", "Agoè"] },
-  { value: "Cotonou",     country: "Bénin",          lat: 6.3703,  lng:  2.3912,  radiusKm: 22, districts: ["Cadjèhoun", "Akpakpa", "Ganhi", "Dantokpa", "Fidjrossè"] },
-  { value: "Niamey",      country: "Niger",          lat: 13.5117, lng:  2.1251,  radiusKm: 18, districts: ["Plateau", "Yantala", "Gamkalé", "Lazaret", "Goudel"] },
-  { value: "Bamako",      country: "Mali",           lat: 12.6392, lng: -8.0029,  radiusKm: 25, districts: ["ACI 2000", "Hamdallaye", "Badalabougou", "Faladié", "Magnambougou"] },
-  { value: "Ouagadougou", country: "Burkina Faso",   lat: 12.3714, lng: -1.5197,  radiusKm: 22, districts: ["Koulouba", "Zone du Bois", "Ouaga 2000", "Pissy", "Tampouy"] },
-  { value: "Accra",       country: "Ghana",          lat: 5.6037,  lng: -0.1870,  radiusKm: 30, districts: ["Osu", "Airport", "East Legon", "Adabraka", "Dansoman"] },
-  { value: "Lagos",       country: "Nigeria",        lat: 6.5244,  lng:  3.3792,  radiusKm: 40, districts: ["Ikeja", "Victoria Island", "Lekki", "Ikoyi", "Surulere", "Yaba"] },
-  { value: "Abuja",       country: "Nigeria",        lat: 9.0579,  lng:  7.4951,  radiusKm: 25, districts: ["Wuse", "Garki", "Maitama", "Asokoro", "Gwarinpa"] },
-  { value: "Conakry",     country: "Guinée",         lat: 9.6412,  lng: -13.5784, radiusKm: 22, districts: ["Kaloum", "Dixinn", "Ratoma", "Matam", "Matoto"] },
+  { value: "Dakar",       country: "Sénégal",        countryCode: "SN", lat: 14.7167, lng: -17.4677, radiusKm: 25, districts: ["Plateau", "Médina", "Almadies", "Yoff", "Ouakam", "Mermoz", "Sacré-Cœur", "Point E", "Parcelles Assainies", "Pikine", "Guédiawaye"] },
+  { value: "Abidjan",     country: "Côte d'Ivoire",  countryCode: "CI", lat: 5.3600,  lng: -4.0083,  radiusKm: 30, districts: ["Plateau", "Cocody", "Marcory", "Treichville", "Yopougon", "Abobo", "Adjamé", "Koumassi", "Port-Bouët"] },
+  { value: "Lomé",        country: "Togo",           countryCode: "TG", lat: 6.1319,  lng:  1.2228,  radiusKm: 20, districts: ["Centre", "Tokoin", "Bè", "Adidogomé", "Agoè"] },
+  { value: "Cotonou",     country: "Bénin",          countryCode: "BJ", lat: 6.3703,  lng:  2.3912,  radiusKm: 22, districts: ["Cadjèhoun", "Akpakpa", "Ganhi", "Dantokpa", "Fidjrossè"] },
+  { value: "Niamey",      country: "Niger",          countryCode: "NE", lat: 13.5117, lng:  2.1251,  radiusKm: 18, districts: ["Plateau", "Yantala", "Gamkalé", "Lazaret", "Goudel"] },
+  { value: "Bamako",      country: "Mali",           countryCode: "ML", lat: 12.6392, lng: -8.0029,  radiusKm: 25, districts: ["ACI 2000", "Hamdallaye", "Badalabougou", "Faladié", "Magnambougou"] },
+  { value: "Ouagadougou", country: "Burkina Faso",   countryCode: "BF", lat: 12.3714, lng: -1.5197,  radiusKm: 22, districts: ["Koulouba", "Zone du Bois", "Ouaga 2000", "Pissy", "Tampouy"] },
+  { value: "Accra",       country: "Ghana",          countryCode: "GH", lat: 5.6037,  lng: -0.1870,  radiusKm: 30, districts: ["Osu", "Airport", "East Legon", "Adabraka", "Dansoman"] },
+  { value: "Lagos",       country: "Nigeria",        countryCode: "NG", lat: 6.5244,  lng:  3.3792,  radiusKm: 40, districts: ["Ikeja", "Victoria Island", "Lekki", "Ikoyi", "Surulere", "Yaba"] },
+  { value: "Abuja",       country: "Nigeria",        countryCode: "NG", lat: 9.0579,  lng:  7.4951,  radiusKm: 25, districts: ["Wuse", "Garki", "Maitama", "Asokoro", "Gwarinpa"] },
+  { value: "Conakry",     country: "Guinée",         countryCode: "GN", lat: 9.6412,  lng: -13.5784, radiusKm: 22, districts: ["Kaloum", "Dixinn", "Ratoma", "Matam", "Matoto"] },
 ];
 
 export function getServiceZone(city: string): ServiceZone | undefined {
   return CITIES.find((c) => c.value === city);
+}
+
+/** Ville de service la plus proche d'un point GPS. */
+export function nearestServiceCity(point: { lat: number; lng: number }): string {
+  let best = CITIES[0];
+  let bestKm = Infinity;
+  for (const c of CITIES) {
+    const d = haversineKm({ lat: c.lat, lng: c.lng }, point);
+    if (d < bestKm) {
+      bestKm = d;
+      best = c;
+    }
+  }
+  return best.value;
 }
 
 function haversineKm(a: { lat: number; lng: number }, b: { lat: number; lng: number }): number {

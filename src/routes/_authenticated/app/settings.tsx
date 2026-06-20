@@ -8,13 +8,9 @@ import { toast } from "sonner";
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/use-auth";
+import { SERVICE_COUNTRIES } from "@/lib/countries";
 import { getNotificationPrefs, updateNotificationPrefs, updateMyCountry } from "@/lib/tracking.functions";
 import { Bell, BellOff, Globe } from "lucide-react";
-
-const COUNTRIES = [
-  "Senegal", "Côte d'Ivoire", "Togo", "Benin", "Niger",
-  "Nigeria", "Mali", "Burkina Faso", "Ghana", "Guinée",
-] as const;
 
 export const Route = createFileRoute("/_authenticated/app/settings")({
   head: () => ({ meta: [{ title: "Paramètres — Tibus Ride" }] }),
@@ -99,7 +95,7 @@ function SettingsPage() {
               className="mt-1 flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
             >
               <option value="" disabled>Sélectionnez votre pays</option>
-              {COUNTRIES.map((c) => <option key={c} value={c}>{c}</option>)}
+              {SERVICE_COUNTRIES.map((c) => <option key={c} value={c}>{c}</option>)}
             </select>
           </div>
           <Button

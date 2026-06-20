@@ -1,5 +1,5 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { z } from "zod";
@@ -8,16 +8,20 @@ import { useAuth } from "@/hooks/use-auth";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { CATEGORIES, CITIES, estimateDistance, estimateDuration, estimatePrice, formatXof, getPriceBreakdown, getServiceZone, isInServiceZone, type Category } from "@/lib/pricing";
+import { CATEGORIES, CITIES, estimateDistance, estimateDuration, estimatePrice, formatXof, getPriceBreakdown, getServiceZone, isInServiceZone, nearestServiceCity, type Category } from "@/lib/pricing";
 import { toast } from "sonner";
-import { Banknote, CreditCard, MapPin, Phone, Smartphone, MessageCircle, ExternalLink, AlertTriangle, History, RotateCcw } from "lucide-react";
+import { Banknote, Car, ChevronRight, CreditCard, MapPin, Phone, Smartphone, MessageCircle, ExternalLink, AlertTriangle, History, RotateCcw, Navigation2, UtensilsCrossed, Package } from "lucide-react";
 import { RideTrackingMap, type LatLng } from "@/components/RideTrackingMap";
-import { computeRoute, geocodeAddress, reverseGeocode } from "@/lib/maps.functions";
+import { computeRoute, reverseGeocode } from "@/lib/maps.functions";
 import { AddressAutocomplete } from "@/components/AddressAutocomplete";
+import { DeliveryPartnerAds } from "@/components/DeliveryPartnerAds";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { getNotificationPrefs } from "@/lib/tracking.functions";
+import { getCurrentPosition } from "@/lib/native-geolocation";
+import { useNativeApp } from "@/hooks/use-native-app";
 import { Link } from "@tanstack/react-router";
+import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/_authenticated/app/passenger")({
   head: () => ({ meta: [{ title: "Commander une course — Tibus Ride" }] }),
@@ -34,6 +38,7 @@ function PassengerPage() {
   const { user } = useAuth();
   const navigate = useNavigate();
   const qc = useQueryClient();
+  const isNative = useNativeApp();
   const [city, setCity] = useState("Dakar");
   const [pickup, setPickup] = useState("");
   const [dropoff, setDropoff] = useState("");
@@ -45,61 +50,73 @@ function PassengerPage() {
   const [pickupLL, setPickupLL] = useState<LatLng | null>(null);
   const [dropoffLL, setDropoffLL] = useState<LatLng | null>(null);
   const [routeInfo, setRouteInfo] = useState<{ seconds: number; distanceMeters: number; polyline?: string } | null>(null);
-  const geocodeFn = useServerFn(geocodeAddress);
   const routeFn = useServerFn(computeRoute);
   const reverseFn = useServerFn(reverseGeocode);
 
-  // Refs to avoid re-geocoding text that we just wrote from a reverse-geocode
-  const skipPickupGeoRef = useRef(false);
-  const skipDropoffGeoRef = useRef(false);
+  // Évite d'effacer les coordonnées quand le texte est mis à jour programmatiquement (carte, GPS, liste).
+  const programmaticPickupRef = useRef(false);
+  const programmaticDropoffRef = useRef(false);
+  const [pickupGeoLoading, setPickupGeoLoading] = useState(true);
+  const [tripOpen, setTripOpen] = useState(false);
+  const [pickupOpen, setPickupOpen] = useState(false);
 
-  // Auto-geolocate user once → set pickup point + fill address
+  const applyCurrentLocationPickup = useCallback(() => {
+    setPickupGeoLoading(true);
+    getCurrentPosition({ enableHighAccuracy: true, timeout: 12000, maximumAge: 30000 })
+      .then((pos) => {
+        const ll = { lat: pos.coords.lat, lng: pos.coords.lng };
+        setPickupLL(ll);
+        setCity(nearestServiceCity(ll));
+        return reverseFn({ data: ll })
+          .then((r) => {
+            programmaticPickupRef.current = true;
+            setPickup(r.ok ? r.formatted : "Ma position actuelle");
+          })
+          .catch(() => {
+            programmaticPickupRef.current = true;
+            setPickup("Ma position actuelle");
+          });
+      })
+      .catch((err: { code?: string }) => {
+        if (err?.code === "PERMISSION_DENIED") {
+          toast.error("Autorisez la localisation pour préremplir votre point de départ.");
+        }
+      })
+      .finally(() => setPickupGeoLoading(false));
+  }, [reverseFn]);
+
+  const onPickupChange = (v: string) => {
+    setPickup(v);
+    if (!programmaticPickupRef.current) setPickupLL(null);
+    programmaticPickupRef.current = false;
+  };
+  const onDropoffChange = (v: string) => {
+    setDropoff(v);
+    if (!programmaticDropoffRef.current) setDropoffLL(null);
+    programmaticDropoffRef.current = false;
+  };
+
   useEffect(() => {
-    if (typeof navigator === "undefined" || !navigator.geolocation) return;
-    navigator.geolocation.getCurrentPosition((pos) => {
-      const ll = { lat: pos.coords.latitude, lng: pos.coords.longitude };
-      setPickupLL(ll);
-      reverseFn({ data: ll }).then((r) => {
-        if (r.ok) { skipPickupGeoRef.current = true; setPickup(r.formatted); }
-      }).catch(() => {});
-    }, () => {}, { enableHighAccuracy: true, timeout: 8000 });
+    if (!user) return;
+    supabase.from("profiles").select("city").eq("id", user.id).maybeSingle()
+      .then(({ data }) => {
+        if (data?.city && CITIES.some((c) => c.value === data.city)) setCity(data.city);
+      });
+    applyCurrentLocationPickup();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  // Debounced geocoding when address text changes
-  useEffect(() => {
-    if (skipPickupGeoRef.current) { skipPickupGeoRef.current = false; return; }
-    if (pickup.trim().length < 3) return;
-    const t = setTimeout(() => {
-      geocodeFn({ data: { address: `${pickup}, ${city}` } })
-        .then((r) => { if (r.ok) setPickupLL({ lat: r.lat, lng: r.lng }); })
-        .catch(() => {});
-    }, 600);
-    return () => clearTimeout(t);
-  }, [pickup, city, geocodeFn]);
-
-  useEffect(() => {
-    if (skipDropoffGeoRef.current) { skipDropoffGeoRef.current = false; return; }
-    if (dropoff.trim().length < 3) return;
-    const t = setTimeout(() => {
-      geocodeFn({ data: { address: `${dropoff}, ${city}` } })
-        .then((r) => { if (r.ok) setDropoffLL({ lat: r.lat, lng: r.lng }); })
-        .catch(() => {});
-    }, 600);
-    return () => clearTimeout(t);
-  }, [dropoff, city, geocodeFn]);
+  }, [user?.id]);
 
   // Map interaction: clicking or dragging a marker updates LL + reverse-geocodes to fill input
   const handlePickupFromMap = (ll: LatLng) => {
     setPickupLL(ll);
     reverseFn({ data: ll }).then((r) => {
-      if (r.ok) { skipPickupGeoRef.current = true; setPickup(r.formatted); }
+      if (r.ok) { programmaticPickupRef.current = true; setPickup(r.formatted); }
     }).catch(() => {});
   };
   const handleDropoffFromMap = (ll: LatLng) => {
     setDropoffLL(ll);
     reverseFn({ data: ll }).then((r) => {
-      if (r.ok) { skipDropoffGeoRef.current = true; setDropoff(r.formatted); }
+      if (r.ok) { programmaticDropoffRef.current = true; setDropoff(r.formatted); }
     }).catch(() => {});
   };
 
@@ -113,7 +130,7 @@ function PassengerPage() {
 
   const km = routeInfo ? Math.max(1, Math.round(routeInfo.distanceMeters / 100) / 10) : estimateDistance(pickup, dropoff);
   const min = routeInfo ? Math.max(1, Math.round(routeInfo.seconds / 60)) : estimateDuration(km);
-  const hasTrip = !!((pickup || pickupLL) && (dropoff || dropoffLL));
+  const hasTrip = !!(pickupLL && dropoffLL);
   const breakdown = hasTrip ? getPriceBreakdown(category, km, min, 0) : null;
   const price = breakdown?.total ?? 0;
 
@@ -123,6 +140,12 @@ function PassengerPage() {
   const dropoffZone = isInServiceZone(city, dropoffLL);
   const outOfZone = (pickupLL && !pickupZone.ok) || (dropoffLL && !dropoffZone.ok);
   const mapBias = zone ? { lat: zone.lat, lng: zone.lng, radiusMeters: zone.radiusKm * 1000 } : undefined;
+  const pickupBias = pickupLL
+    ? { lat: pickupLL.lat, lng: pickupLL.lng, radiusMeters: 20000 }
+    : mapBias;
+  const nearbyPickupOption = pickupLL && pickup
+    ? { title: "Ma position actuelle", subtitle: pickup, lat: pickupLL.lat, lng: pickupLL.lng, formatted: pickup }
+    : undefined;
 
   // Recent rides — quick resume
   const recentRidesQ = useQuery({
@@ -142,16 +165,31 @@ function PassengerPage() {
   });
 
   const resumeRide = (r: any) => {
-    skipPickupGeoRef.current = true;
-    skipDropoffGeoRef.current = true;
+    programmaticPickupRef.current = true;
+    programmaticDropoffRef.current = true;
     setCity(r.city);
     setPickup(r.pickup_address);
     setDropoff(r.dropoff_address);
     setCategory(r.category as Category);
     if (r.pickup_lat && r.pickup_lng) setPickupLL({ lat: r.pickup_lat, lng: r.pickup_lng });
     if (r.dropoff_lat && r.dropoff_lng) setDropoffLL({ lat: r.dropoff_lat, lng: r.dropoff_lng });
+    setTripOpen(true);
     toast.success("Trajet repris — vérifiez et commandez");
   };
+
+  const quickDestination = (address: string, lat?: number | null, lng?: number | null) => {
+    programmaticDropoffRef.current = true;
+    setDropoff(address);
+    if (lat != null && lng != null) setDropoffLL({ lat, lng });
+    else setDropoffLL(null);
+    setTripOpen(true);
+  };
+
+  const pickupSummary = pickupGeoLoading
+    ? "Détection de votre position…"
+    : pickup
+      ? pickup.split(",")[0]
+      : "Position non définie";
 
 
 
@@ -184,6 +222,9 @@ function PassengerPage() {
       });
       const parsed = schema.safeParse({ pickup, dropoff });
       if (!parsed.success) throw new Error(parsed.error.issues[0].message);
+      if (!pickupLL || !dropoffLL) {
+        throw new Error("Sélectionnez chaque adresse dans la liste Google ou cliquez sur la carte.");
+      }
 
       const { error, data } = await supabase.from("rides").insert({
         passenger_id: user!.id,
@@ -218,215 +259,284 @@ function PassengerPage() {
   }
 
   return (
-    <div className="grid gap-6 lg:grid-cols-[1fr_380px]">
-      <section className="rounded-3xl border border-border bg-card p-6">
-        <h1 className="font-display text-2xl font-bold">Où allez-vous ?</h1>
-        <p className="text-sm text-muted-foreground">Renseignez votre trajet, choisissez votre véhicule.</p>
-
-        <div className="mt-6 space-y-4">
+    <div className={cn("grid gap-6", isNative ? "gap-4" : "lg:grid-cols-[1fr_340px]")}>
+      <div className="space-y-4">
+        {/* En-tête type Yango */}
+        <section className="rounded-3xl border border-border bg-card p-4 sm:p-5">
           <div>
-            <Label htmlFor="city">Ville</Label>
-            <Select value={city} onValueChange={setCity}>
-              <SelectTrigger id="city"><SelectValue /></SelectTrigger>
-              <SelectContent>
-                {CITIES.map((c) => (
-                  <SelectItem key={c.value} value={c.value}>{c.value} <span className="text-xs text-muted-foreground">— {c.country}</span></SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <p className="text-xs text-muted-foreground">{zone ? `${zone.value} — ${zone.country}` : "Détection de votre zone…"}</p>
+            <h1 className="font-display text-xl font-bold">Tibus Ride</h1>
           </div>
 
-          <div className="relative space-y-3">
-            <div className="absolute left-[14px] top-[34px] bottom-[34px] w-0.5 bg-border" />
-            <div className="relative flex items-start gap-3">
-              <div className="mt-3 h-3 w-3 shrink-0 rounded-full bg-success ring-4 ring-success/20" />
-              <AddressAutocomplete
-                value={pickup}
-                onChange={setPickup}
-                placeholder="Adresse de départ"
-                bias={mapBias}
-                onSelect={({ lat, lng, formatted }) => {
-                  skipPickupGeoRef.current = true;
-                  setPickup(formatted);
-                  setPickupLL({ lat, lng });
-                }}
-              />
-            </div>
-            <div className="relative flex items-start gap-3">
-              <div className="mt-3 h-3 w-3 shrink-0 rounded-sm bg-primary ring-4 ring-primary/20" />
-              <AddressAutocomplete
-                value={dropoff}
-                onChange={setDropoff}
-                placeholder="Adresse d'arrivée"
-                bias={mapBias}
-                onSelect={({ lat, lng, formatted }) => {
-                  skipDropoffGeoRef.current = true;
-                  setDropoff(formatted);
-                  setDropoffLL({ lat, lng });
-                }}
-              />
-            </div>
+          {/* Services rapides */}
+          <div className="mt-4 grid grid-cols-3 gap-2">
+            <button type="button" className="rounded-2xl border border-primary/30 bg-primary/5 p-3 text-left ring-1 ring-primary/20">
+              <Car className="h-5 w-5 text-primary" />
+              <div className="mt-2 text-xs font-semibold">Courses</div>
+              <div className="text-[10px] text-muted-foreground">dès 4 min</div>
+            </button>
+            <button type="button" onClick={() => setTripOpen(true)} className="rounded-2xl border border-border bg-muted/30 p-3 text-left opacity-80">
+              <Package className="h-5 w-5 text-muted-foreground" />
+              <div className="mt-2 text-xs font-semibold">Livraison</div>
+              <div className="text-[10px] text-muted-foreground">bientôt</div>
+            </button>
+            <button type="button" onClick={() => toast.info("Tibus Food — bientôt disponible")} className="rounded-2xl border border-border bg-muted/30 p-3 text-left opacity-80">
+              <UtensilsCrossed className="h-5 w-5 text-muted-foreground" />
+              <div className="mt-2 text-xs font-semibold">Food</div>
+              <div className="text-[10px] text-muted-foreground">restos</div>
+            </button>
           </div>
+        </section>
 
-          {outOfZone && (
-            <div className="flex items-start gap-2 rounded-xl border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs text-destructive">
-              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+        {/* Position actuelle — accordéon fermé */}
+        <section className="rounded-3xl border border-border bg-card px-4 py-1">
+          <Collapsible open={pickupOpen} onOpenChange={setPickupOpen}>
+            <CollapsibleTrigger className="flex w-full items-center gap-3 py-3 text-left">
+              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-success/10">
+                <Navigation2 className="h-4 w-4 text-success" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <div className="text-[11px] text-muted-foreground">Votre position</div>
+                <div className="truncate text-sm font-medium">{pickupSummary}</div>
+              </div>
+              <ChevronRight className={`h-4 w-4 shrink-0 text-muted-foreground transition-transform ${pickupOpen ? "rotate-90" : ""}`} />
+            </CollapsibleTrigger>
+            <CollapsibleContent className="space-y-3 pb-4">
+              <div className="flex items-start gap-2">
+                <AddressAutocomplete
+                  value={pickup}
+                  onChange={onPickupChange}
+                  placeholder={pickupGeoLoading ? "Détection de votre position…" : "Adresse de départ"}
+                  bias={pickupBias}
+                  regionCode={zone?.countryCode}
+                  resolved={!!pickupLL}
+                  nearbyOption={nearbyPickupOption}
+                  onSelect={({ lat, lng, formatted }) => {
+                    programmaticPickupRef.current = true;
+                    setPickup(formatted);
+                    setPickupLL({ lat, lng });
+                  }}
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="icon"
+                  className="shrink-0"
+                  title="Utiliser ma position actuelle"
+                  disabled={pickupGeoLoading}
+                  onClick={applyCurrentLocationPickup}
+                >
+                  <Navigation2 className={`h-4 w-4 ${pickupGeoLoading ? "animate-pulse text-primary" : ""}`} />
+                </Button>
+              </div>
+            </CollapsibleContent>
+          </Collapsible>
+        </section>
+
+        {/* Où allons-nous ? — accordéon fermé par défaut */}
+        <section className="rounded-3xl border border-border bg-card overflow-hidden">
+          <Collapsible open={tripOpen} onOpenChange={setTripOpen}>
+            <CollapsibleTrigger className="flex w-full items-center gap-3 px-4 py-4 text-left hover:bg-muted/30">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-muted">
+                <Car className="h-5 w-5 text-foreground" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <div className="text-base font-semibold">
+                  {dropoff ? dropoff.split(",")[0] : "Où allons-nous ?"}
+                </div>
+                {dropoff && (
+                  <div className="truncate text-xs text-muted-foreground">{dropoff}</div>
+                )}
+              </div>
+              <ChevronRight className={`h-5 w-5 shrink-0 text-muted-foreground transition-transform ${tripOpen ? "rotate-90" : ""}`} />
+            </CollapsibleTrigger>
+            <CollapsibleContent className="space-y-4 border-t border-border px-4 pb-5 pt-4">
+              <div className="relative flex items-start gap-3">
+                <div className="mt-3 h-3 w-3 shrink-0 rounded-sm bg-primary ring-4 ring-primary/20" />
+                <AddressAutocomplete
+                  value={dropoff}
+                  onChange={onDropoffChange}
+                  placeholder="Adresse d'arrivée"
+                  bias={mapBias}
+                  regionCode={zone?.countryCode}
+                  resolved={!!dropoffLL}
+                  onSelect={({ lat, lng, formatted }) => {
+                    programmaticDropoffRef.current = true;
+                    setDropoff(formatted);
+                    setDropoffLL({ lat, lng });
+                  }}
+                />
+              </div>
+
+              {outOfZone && (
+                <div className="flex items-start gap-2 rounded-xl border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs text-destructive">
+                  <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+                  <div>
+                    <strong>Hors zone de service.</strong> {zone?.value} — rayon {zone?.radiusKm} km.
+                  </div>
+                </div>
+              )}
+
+              <RideTrackingMap
+                pickup={pickupLL}
+                dropoff={dropoffLL}
+                polyline={routeInfo?.polyline}
+                height={isNative ? 280 : 220}
+                interactive
+                center={pickupLL ?? (zone ? { lat: zone.lat, lng: zone.lng } : undefined)}
+                onPickupChange={handlePickupFromMap}
+                onDropoffChange={handleDropoffFromMap}
+              />
+              {routeInfo && (
+                <div className="flex flex-wrap items-center gap-3 rounded-xl border border-border bg-muted/30 px-3 py-2 text-xs">
+                  <span className="inline-flex items-center gap-1"><MapPin className="h-3 w-3 text-primary" /> {(routeInfo.distanceMeters / 1000).toFixed(1)} km</span>
+                  <span className="text-muted-foreground">·</span>
+                  <span>⏱ {Math.round(routeInfo.seconds / 60)} min</span>
+                </div>
+              )}
+
               <div>
-                <strong>Hors zone de service.</strong> {zone?.value} est couverte dans un rayon de {zone?.radiusKm} km.
-                {pickupLL && !pickupZone.ok && pickupZone.distanceKm != null && (
-                  <div>Départ à ~{pickupZone.distanceKm.toFixed(1)} km du centre.</div>
-                )}
-                {dropoffLL && !dropoffZone.ok && dropoffZone.distanceKm != null && (
-                  <div>Arrivée à ~{dropoffZone.distanceKm.toFixed(1)} km du centre.</div>
-                )}
+                <Label className="text-xs">Véhicule</Label>
+                <div className="mt-2 grid grid-cols-3 gap-2 sm:grid-cols-5">
+                  {(Object.entries(CATEGORIES) as Array<[Category, typeof CATEGORIES[Category]]>).map(([key, c]) => {
+                    const selected = category === key;
+                    return (
+                      <button
+                        key={key}
+                        type="button"
+                        onClick={() => setCategory(key)}
+                        className={[
+                          "rounded-xl border p-2 text-center transition-all",
+                          selected ? "border-primary bg-primary/5 ring-2 ring-primary/20" : "border-border hover:border-primary/50",
+                        ].join(" ")}
+                      >
+                        <div className="text-xl">{c.emoji}</div>
+                        <div className="mt-0.5 text-[10px] font-semibold leading-tight">{c.label}</div>
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
-            </div>
-          )}
 
-          {zone && zone.districts.length > 0 && (
-            <div className="text-xs text-muted-foreground">
-              Quartiers couverts à {zone.value} : {zone.districts.join(" · ")}
-            </div>
-          )}
-
-          <div className="space-y-2">
-            <RideTrackingMap
-              pickup={pickupLL}
-              dropoff={dropoffLL}
-              polyline={routeInfo?.polyline}
-              height={260}
-              interactive
-              center={zone ? { lat: zone.lat, lng: zone.lng } : undefined}
-              onPickupChange={handlePickupFromMap}
-              onDropoffChange={handleDropoffFromMap}
-            />
-            {routeInfo && (
-              <div className="flex flex-wrap items-center gap-3 rounded-xl border border-border bg-muted/30 px-3 py-2 text-xs">
-                <span className="inline-flex items-center gap-1"><MapPin className="h-3 w-3 text-primary" /> {(routeInfo.distanceMeters / 1000).toFixed(1)} km</span>
-                <span className="text-muted-foreground">·</span>
-                <span>⏱ Durée estimée : <strong className="text-foreground">{Math.round(routeInfo.seconds / 60)} min</strong></span>
+              <div>
+                <Label className="text-xs">Paiement</Label>
+                <div className="mt-2 grid gap-2 sm:grid-cols-3">
+                  {PAYMENTS.map((p) => {
+                    const Icon = p.icon;
+                    const selected = payment === p.value;
+                    return (
+                      <button
+                        key={p.value}
+                        type="button"
+                        onClick={() => setPayment(p.value)}
+                        className={[
+                          "flex items-center gap-2 rounded-xl border p-2.5 text-left text-xs transition-all",
+                          selected ? "border-primary bg-primary/5 ring-2 ring-primary/20" : "border-border",
+                        ].join(" ")}
+                      >
+                        <Icon className="h-4 w-4 shrink-0 text-primary" />
+                        <span className="font-semibold">{p.label}</span>
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
-            )}
-            {(!pickupLL || !dropoffLL) && (
-              <p className="text-xs text-muted-foreground">
-                Astuce : tapez une adresse et choisissez une suggestion, ou cliquez sur la carte.
-              </p>
-            )}
-          </div>
 
-          <div>
-            <Label>Type de véhicule</Label>
-            <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
-              {(Object.entries(CATEGORIES) as Array<[Category, typeof CATEGORIES[Category]]>).map(([key, c]) => {
-                const selected = category === key;
-                return (
-                  <button
-                    key={key}
-                    type="button"
-                    onClick={() => setCategory(key)}
-                    className={[
-                      "rounded-xl border p-3 text-left transition-all",
-                      selected ? "border-primary bg-primary/5 ring-2 ring-primary/20" : "border-border hover:border-primary/50",
-                    ].join(" ")}
-                  >
-                    <div className="text-2xl">{c.emoji}</div>
-                    <div className="mt-1 text-sm font-semibold">{c.label}</div>
-                    <div className="text-xs text-muted-foreground">{c.capacity}</div>
-                    <div className="text-xs text-muted-foreground">{c.eta}</div>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
+              <div>
+                <Label htmlFor="phone" className="text-xs">Téléphone (optionnel)</Label>
+                <Input id="phone" type="tel" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="+225 …" maxLength={20} className="mt-1.5 h-9" />
+              </div>
 
-          <div>
-            <Label>Paiement</Label>
-            <div className="mt-2 grid gap-2 sm:grid-cols-3">
-              {PAYMENTS.map((p) => {
-                const Icon = p.icon;
-                const selected = payment === p.value;
-                return (
+              <Button
+                className="w-full"
+                size="lg"
+                disabled={!pickupLL || !dropoffLL || !!outOfZone || create.isPending}
+                onClick={() => create.mutate()}
+              >
+                {create.isPending ? "Envoi…" : outOfZone ? "Hors zone" : !pickupLL || !dropoffLL ? "Choisissez les adresses" : `Commander · ${price > 0 ? formatXof(price) : ""}`}
+              </Button>
+            </CollapsibleContent>
+          </Collapsible>
+        </section>
+
+        {/* Destinations récentes — raccourcis */}
+        {(recentRidesQ.data?.length ?? 0) > 0 && (
+          <section className="rounded-3xl border border-border bg-card p-4">
+            <h3 className="mb-2 text-xs font-medium text-muted-foreground">Adresses récentes</h3>
+            <ul className="divide-y divide-border">
+              {(recentRidesQ.data ?? []).slice(0, 4).map((r: any) => (
+                <li key={r.id}>
                   <button
-                    key={p.value}
                     type="button"
-                    onClick={() => setPayment(p.value)}
-                    className={[
-                      "flex items-start gap-3 rounded-xl border p-3 text-left transition-all",
-                      selected ? "border-primary bg-primary/5 ring-2 ring-primary/20" : "border-border hover:border-primary/50",
-                    ].join(" ")}
+                    onClick={() => quickDestination(r.dropoff_address, r.dropoff_lat, r.dropoff_lng)}
+                    className="flex w-full items-center gap-3 py-3 text-left hover:bg-muted/40"
                   >
-                    <Icon className="h-5 w-5 text-primary" />
-                    <div>
-                      <div className="text-sm font-semibold">{p.label}</div>
-                      <div className="text-xs text-muted-foreground">{p.hint}</div>
+                    <MapPin className="h-4 w-4 shrink-0 text-primary" />
+                    <div className="min-w-0 flex-1">
+                      <div className="truncate text-sm font-medium">{r.dropoff_address.split(",")[0]}</div>
+                      <div className="truncate text-xs text-muted-foreground">{r.dropoff_address}</div>
                     </div>
+                    {r.duration_min && (
+                      <span className="shrink-0 text-xs text-muted-foreground">{r.duration_min} min</span>
+                    )}
                   </button>
-                );
-              })}
-            </div>
-          </div>
+                </li>
+              ))}
+            </ul>
+          </section>
+        )}
 
-          <div>
-            <Label htmlFor="phone">Téléphone (optionnel — pour que le chauffeur vous joigne)</Label>
-            <Input id="phone" type="tel" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="+221 77 ..." maxLength={20} />
-          </div>
-        </div>
-      </section>
+        {/* Espace pub restaurants */}
+        <section className="rounded-3xl border border-border bg-card p-4">
+          <DeliveryPartnerAds city={city} />
+        </section>
+      </div>
 
-      <aside className="space-y-4">
+      {!isNative && (
+      <aside className="space-y-4 lg:sticky lg:top-4 lg:self-start">
         <div className="rounded-3xl border border-border bg-card p-6">
           <h3 className="font-display text-lg font-semibold">Tarif détaillé</h3>
-          <p className="text-xs text-muted-foreground">Estimation transparente, mise à jour en temps réel.</p>
+          <p className="text-xs text-muted-foreground">Estimation en temps réel.</p>
           <dl className="mt-4 space-y-2 text-sm">
             <div className="flex justify-between"><dt className="text-muted-foreground">Véhicule</dt><dd>{CATEGORIES[category].label}</dd></div>
             <div className="flex justify-between"><dt className="text-muted-foreground">Distance</dt><dd>{breakdown ? `${km} km` : "—"}</dd></div>
             <div className="flex justify-between"><dt className="text-muted-foreground">Durée</dt><dd>{breakdown ? `${min} min` : "—"}</dd></div>
             <div className="my-2 border-t border-border" />
-            <div className="flex justify-between"><dt className="text-muted-foreground">Prise en charge (base)</dt><dd>{breakdown ? formatXof(breakdown.base) : "—"}</dd></div>
-            <div className="flex justify-between">
-              <dt className="text-muted-foreground">Distance ({km > 0 ? `${km} × ${CATEGORIES[category].perKm}` : "—"})</dt>
-              <dd>{breakdown ? formatXof(breakdown.distance) : "—"}</dd>
-            </div>
-            <div className="flex justify-between">
-              <dt className="text-muted-foreground">Durée ({min > 0 ? `${min} × ${CATEGORIES[category].perMin}` : "—"})</dt>
-              <dd>{breakdown ? formatXof(breakdown.duration) : "—"}</dd>
-            </div>
-            <div className="flex justify-between"><dt className="text-muted-foreground">Frais de livraison</dt><dd>{breakdown ? formatXof(breakdown.delivery) : "—"}</dd></div>
+            <div className="flex justify-between"><dt className="text-muted-foreground">Base</dt><dd>{breakdown ? formatXof(breakdown.base) : "—"}</dd></div>
+            <div className="flex justify-between"><dt className="text-muted-foreground">Distance</dt><dd>{breakdown ? formatXof(breakdown.distance) : "—"}</dd></div>
+            <div className="flex justify-between"><dt className="text-muted-foreground">Durée</dt><dd>{breakdown ? formatXof(breakdown.duration) : "—"}</dd></div>
             <div className="my-2 border-t border-border" />
             <div className="flex items-baseline justify-between">
-              <dt className="text-muted-foreground">Total estimé</dt>
+              <dt className="text-muted-foreground">Total</dt>
               <dd className="font-display text-2xl font-bold text-primary">{price > 0 ? formatXof(price) : "—"}</dd>
             </div>
           </dl>
           <Button
             className="mt-6 w-full"
             size="lg"
-            disabled={!pickup || !dropoff || !!outOfZone || create.isPending}
+            disabled={!pickupLL || !dropoffLL || !!outOfZone || create.isPending}
             onClick={() => create.mutate()}
           >
-            {create.isPending ? "Envoi…" : outOfZone ? "Hors zone de service" : "Commander la course"}
+            {create.isPending ? "Envoi…" : "Commander la course"}
           </Button>
-          <p className="mt-3 text-xs text-muted-foreground">
-            Tarif indicatif. Le prix final peut varier selon le trafic.
-          </p>
+          {(!pickupLL || !dropoffLL) && (
+            <button type="button" onClick={() => setTripOpen(true)} className="mt-2 w-full text-center text-xs text-primary hover:underline">
+              Ouvrir le formulaire de course
+            </button>
+          )}
         </div>
 
         {(recentRidesQ.data?.length ?? 0) > 0 && (
-          <div className="rounded-3xl border border-border bg-card p-6">
-            <h3 className="flex items-center gap-2 font-display text-lg font-semibold">
+          <div className="hidden rounded-3xl border border-border bg-card p-5 lg:block">
+            <h3 className="flex items-center gap-2 text-sm font-semibold">
               <History className="h-4 w-4 text-primary" /> Trajets récents
             </h3>
             <ul className="mt-3 space-y-2">
-              {(recentRidesQ.data ?? []).map((r: any) => (
+              {(recentRidesQ.data ?? []).slice(0, 3).map((r: any) => (
                 <li key={r.id} className="rounded-xl border border-border p-3 text-xs">
-                  <div className="mb-1 flex items-center justify-between text-[10px] text-muted-foreground">
-                    <span>{new Date(r.created_at).toLocaleDateString("fr-FR")}</span>
-                    <span>{r.city} · {CATEGORIES[r.category as Category]?.label}</span>
-                  </div>
-                  <div className="flex items-start gap-1.5"><MapPin className="mt-0.5 h-3 w-3 shrink-0 text-success" /><span className="truncate">{r.pickup_address}</span></div>
-                  <div className="flex items-start gap-1.5"><MapPin className="mt-0.5 h-3 w-3 shrink-0 text-primary" /><span className="truncate">{r.dropoff_address}</span></div>
+                  <div className="truncate font-medium">{r.dropoff_address.split(",")[0]}</div>
                   <Button size="sm" variant="outline" className="mt-2 h-7 w-full text-xs" onClick={() => resumeRide(r)}>
-                    <RotateCcw className="mr-1 h-3 w-3" /> Reprendre ce trajet
+                    <RotateCcw className="mr-1 h-3 w-3" /> Reprendre
                   </Button>
                 </li>
               ))}
@@ -434,6 +544,34 @@ function PassengerPage() {
           </div>
         )}
       </aside>
+      )}
+
+      {isNative && (
+        <div className="native-cta-bar fixed inset-x-0 bottom-[calc(4.5rem+env(safe-area-inset-bottom))] z-30 px-3">
+          <div className="mx-auto max-w-lg rounded-2xl border border-border bg-card/95 p-3 shadow-soft backdrop-blur">
+            <div className="mb-2 flex items-center justify-between text-sm">
+              <span className="text-muted-foreground">{CATEGORIES[category].label}</span>
+              <span className="font-display text-lg font-bold text-primary">{price > 0 ? formatXof(price) : "—"}</span>
+            </div>
+            <Button
+              className="w-full"
+              size="lg"
+              disabled={!pickupLL || !dropoffLL || !!outOfZone || create.isPending}
+              onClick={() => (tripOpen ? create.mutate() : setTripOpen(true))}
+            >
+              {create.isPending
+                ? "Envoi…"
+                : !tripOpen
+                  ? "Où allons-nous ?"
+                  : outOfZone
+                    ? "Hors zone"
+                    : !pickupLL || !dropoffLL
+                      ? "Choisissez les adresses"
+                      : `Commander · ${price > 0 ? formatXof(price) : ""}`}
+            </Button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

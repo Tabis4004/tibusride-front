@@ -83,11 +83,63 @@ await test("Routes API (itinéraire)", async () => {
     }),
   });
   const json = await res.json();
-  if (!json.routes?.[0]) throw new Error(json.error?.message || `HTTP ${res.status}`);
+  if (!json.routes?.[0]) {
+    const reason = json.error?.details?.find((d) => d.reason)?.reason;
+    const msg = json.error?.message || `HTTP ${res.status}`;
+    if (reason === "API_KEY_HTTP_REFERRER_BLOCKED" || msg.includes("referer")) {
+      throw new Error(
+        `${msg} → la clé GOOGLE_MAPS_API_KEY est encore une clé « Sites web ». Utilisez la clé serveur (restriction application : Aucune).`,
+      );
+    }
+    if (msg.includes("not been used") || msg.includes("disabled") || reason === "SERVICE_DISABLED") {
+      throw new Error(`${msg} → activez « Routes API » dans APIs et services → Bibliothèque.`);
+    }
+    throw new Error(
+      `${msg}${reason ? ` (${reason})` : ""} → ajoutez « Routes API » aux restrictions API de la clé serveur.`,
+    );
+  }
   return "polyline OK";
 });
 
-console.log("\n📋 Si Maps JS échoue : Google Cloud → Identifiants → clé navigateur");
-console.log("   → Sites web : http://localhost:8080/* + https://tibusride-front.vercel.app/*");
-console.log("   → Restrictions API : « Ne pas restreindre la clé » (dev)\n");
-console.log("📋 Si Geocoding/Routes échoue : créez une 2e clé serveur sans restriction « Sites web »\n");
+await test("Places API (autocomplete)", async () => {
+  if (!serverKey) throw new Error("GOOGLE_MAPS_API_KEY absente");
+  const res = await fetch("https://places.googleapis.com/v1/places:autocomplete", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "X-Goog-Api-Key": serverKey,
+    },
+    body: JSON.stringify({ input: "Plateau Abidjan", languageCode: "fr", includedRegionCodes: ["ci"] }),
+  });
+  const json = await res.json();
+  if (!json.suggestions?.length) {
+    const reason = json.error?.details?.find((d) => d.reason)?.reason;
+    const msg = json.error?.message || "aucune suggestion";
+    if (reason === "API_KEY_HTTP_REFERRER_BLOCKED" || msg.includes("referer")) {
+      throw new Error(`${msg} → clé serveur avec restriction « Sites web » (mettre Aucune).`);
+    }
+    throw new Error(`${msg} → activez « Places API (New) » et ajoutez-la à la clé serveur.`);
+  }
+  return `${json.suggestions.length} suggestion(s)`;
+});
+
+await test("Maps JavaScript (referer Vercel prod)", async () => {
+  if (!browserKey) throw new Error("clé navigateur absente");
+  const res = await fetch(`https://maps.googleapis.com/maps/api/js?key=${browserKey}`, {
+    headers: { Referer: "https://tibusride-front.vercel.app/" },
+  });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  const text = await res.text();
+  if (text.includes("ApiTargetBlocked")) {
+    throw new Error("ApiTargetBlocked — ajoutez https://tibusride-front.vercel.app/* à la clé navigateur");
+  }
+  return "OK";
+});
+
+console.log("\n📋 Clé navigateur (VITE_GOOGLE_MAPS_BROWSER_KEY)");
+console.log("   Google Cloud → Identifiants → restriction « Sites web » :");
+console.log("   http://localhost:8080/*  +  https://tibusride-front.vercel.app/*");
+console.log("   APIs autorisées : Maps JavaScript API\n");
+console.log("📋 Clé serveur (GOOGLE_MAPS_API_KEY)");
+console.log("   Restriction application : Aucune (pas « Sites web »)");
+console.log("   APIs autorisées : Geocoding API, Routes API, Places API (New)\n");

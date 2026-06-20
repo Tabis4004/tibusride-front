@@ -104,10 +104,17 @@ export const placesAutocomplete = createServerFn({ method: "POST" })
     z.object({
       input: z.string().trim().min(2).max(200),
       bias: z.object({ lat: z.number(), lng: z.number(), radiusMeters: z.number().max(50000).optional() }).optional(),
+      regionCode: z.string().length(2).optional(),
     }).parse(d),
   )
   .handler(async ({ data }) => {
-    const body: any = { input: data.input };
+    const body: any = {
+      input: data.input,
+      languageCode: "fr",
+    };
+    if (data.regionCode) {
+      body.includedRegionCodes = [data.regionCode.toLowerCase()];
+    }
     if (data.bias) {
       body.locationBias = {
         circle: {

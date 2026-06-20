@@ -1,9 +1,13 @@
-import { createFileRoute, Outlet, redirect, Link, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, Outlet, redirect, Link, useNavigate, useRouterState } from "@tanstack/react-router";
+import { useEffect } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/use-auth";
+import { useNativeApp } from "@/hooks/use-native-app";
+import { MobileShell } from "@/components/mobile/MobileShell";
 import { Logo } from "@/components/Logo";
 import { Button } from "@/components/ui/button";
-import { Car, Compass, LayoutDashboard, LifeBuoy, LogOut, ShieldCheck, Sparkles, Inbox } from "lucide-react";
+import { Car, Compass, LayoutDashboard, LifeBuoy, LogOut, Settings, ShieldCheck, Sparkles, Inbox } from "lucide-react";
 
 export const Route = createFileRoute("/_authenticated")({
   ssr: false,
@@ -18,13 +22,42 @@ export const Route = createFileRoute("/_authenticated")({
 });
 
 function AppLayout() {
-  const { roles, primaryRole, user } = useAuth();
+  const { roles, primaryRole, user, hasRole } = useAuth();
   const navigate = useNavigate();
+  const pathname = useRouterState({ select: (s) => s.location.pathname });
+  const isNative = useNativeApp();
+
+  const profileQ = useQuery({
+    queryKey: ["self-profile-gate", user?.id],
+    enabled: !!user && !hasRole("superadmin"),
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("profiles")
+        .select("country, phone")
+        .eq("id", user!.id)
+        .maybeSingle();
+      if (error) throw error;
+      return data;
+    },
+  });
+
+  useEffect(() => {
+    if (!user || hasRole("superadmin")) return;
+    if (profileQ.isLoading) return;
+    const incomplete = !profileQ.data?.country?.trim() || !profileQ.data?.phone?.trim();
+    if (incomplete && pathname !== "/app/complete-profile") {
+      navigate({ to: "/app/complete-profile", replace: true });
+    }
+  }, [user, hasRole, profileQ.data, profileQ.isLoading, pathname, navigate]);
 
   const handleSignOut = async () => {
     await supabase.auth.signOut();
     navigate({ to: "/auth", replace: true });
   };
+
+  if (isNative) {
+    return <MobileShell><Outlet /></MobileShell>;
+  }
 
   return (
     <div className="min-h-screen bg-background">
@@ -61,6 +94,9 @@ function AppLayout() {
             <Link to="/app/support">
               <Button variant="ghost" size="sm" className="gap-2"><LifeBuoy className="h-4 w-4" />Aide</Button>
             </Link>
+            <Link to="/app/settings">
+              <Button variant="ghost" size="sm" className="gap-2"><Settings className="h-4 w-4" />Paramètres</Button>
+            </Link>
           </nav>
           <div className="flex items-center gap-3">
             <div className="hidden text-right sm:block">
@@ -89,6 +125,7 @@ function AppLayout() {
           <Link to="/app/rides"><Button variant="ghost" size="sm">Courses</Button></Link>
           <Link to="/app/rewards"><Button variant="ghost" size="sm">Récompenses</Button></Link>
           <Link to="/app/support"><Button variant="ghost" size="sm">Aide</Button></Link>
+          <Link to="/app/settings"><Button variant="ghost" size="sm">Réglages</Button></Link>
         </nav>
       </header>
       <main className="mx-auto max-w-6xl px-4 py-6 sm:px-6">

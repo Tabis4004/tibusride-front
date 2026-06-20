@@ -1,6 +1,14 @@
 import { createServerFn } from "@tanstack/react-start";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { z } from "zod";
+import {
+  SERVICE_COUNTRIES,
+  assertServiceCountry,
+  countriesMatch,
+  normalizeCountry,
+} from "@/lib/countries";
+
+export { SERVICE_COUNTRIES as ADMIN_COUNTRIES };
 
 async function assertAdmin(supabase: any, userId: string) {
   const { data: isSuper, error: superErr } = await supabase.rpc("is_superadmin", { _uid: userId });
@@ -46,7 +54,7 @@ async function assertUserInScope(actorCountry: string | null, targetUserId: stri
     .eq("id", targetUserId)
     .maybeSingle();
   const c = ((data as any)?.country ?? null) as string | null;
-  if (c !== actorCountry) {
+  if (!countriesMatch(c, actorCountry)) {
     throw new Error(`Action limitée aux utilisateurs du pays « ${actorCountry} ».`);
   }
 }
@@ -133,8 +141,7 @@ export const listUsers = createServerFn({ method: "GET" })
     }));
 
     if (!scope.isSuper) {
-      // Country admins only see users tagged with their country
-      users = users.filter((u: any) => (u.profile?.country ?? null) === scope.country);
+      users = users.filter((u: any) => countriesMatch(u.profile?.country ?? null, scope.country));
     }
     return users;
   });
@@ -173,13 +180,22 @@ export const setUserPassword = createServerFn({ method: "POST" })
   )
   .handler(async ({ data, context }) => {
     const scope = await requireAdminScope(context.supabase, context.userId);
+    if (!scope.isSuper) {
+      throw new Error("Seul un superadmin peut réinitialiser un mot de passe.");
+    }
     await assertUserInScope(scope.country, data.userId);
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const { data: target } = await supabaseAdmin.auth.admin.getUserById(data.userId);
     const { error } = await supabaseAdmin.auth.admin.updateUserById(data.userId, {
       password: data.password,
     });
-    if (error) throw new Error(error.message);
+    if (error) {
+      throw new Error(
+        error.message.includes("service_role")
+          ? "Clé SUPABASE_SERVICE_ROLE_KEY manquante côté serveur (Vercel)."
+          : error.message,
+      );
+    }
     await logAudit(await getActor(context), {
       action: "user.password.reset",
       target_type: "user",
@@ -189,19 +205,6 @@ export const setUserPassword = createServerFn({ method: "POST" })
     });
     return { ok: true };
   });
-
-export const ADMIN_COUNTRIES = [
-  "Sénégal",
-  "Côte d'Ivoire",
-  "Togo",
-  "Bénin",
-  "Niger",
-  "Nigeria",
-  "Mali",
-  "Burkina Faso",
-  "Ghana",
-  "Guinée",
-] as const;
 
 export const setUserCountry = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
@@ -217,37 +220,33 @@ export const setUserCountry = createServerFn({ method: "POST" })
     const scope = await requireAdminScope(context.supabase, context.userId);
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
 
-    // 1) Country must be in the allowed list (if not null)
-    if (data.country !== null && !(ADMIN_COUNTRIES as readonly string[]).includes(data.country)) {
+    const normalizedCountry = data.country === null ? null : assertServiceCountry(data.country);
+
+    if (normalizedCountry !== null && !(SERVICE_COUNTRIES as readonly string[]).includes(normalizedCountry)) {
       throw new Error(`Pays « ${data.country} » non autorisé.`);
     }
 
-    // 2) Country admins can only act inside their own country, and assign that same country
     if (!scope.isSuper) {
       await assertUserInScope(scope.country, data.userId);
-      if (data.country !== null && data.country !== scope.country) {
+      if (normalizedCountry !== null && !countriesMatch(normalizedCountry, scope.country)) {
         throw new Error(`Vous ne pouvez assigner que le pays « ${scope.country} ».`);
       }
     }
 
-    // 3) Target account must be admin or support (incompatible role rejected)
     const { data: rolesRows } = await supabaseAdmin
       .from("user_roles")
       .select("role")
       .eq("user_id", data.userId);
     const roles = (rolesRows ?? []).map((r: any) => r.role as string);
-    const isAdminOrSupport = roles.includes("admin") || roles.includes("support");
     const isSuperTarget = roles.includes("superadmin");
-    if (data.country !== null && isSuperTarget) {
+    if (normalizedCountry !== null && isSuperTarget) {
       throw new Error("Un superadmin est global et ne peut pas être rattaché à un pays.");
     }
-    if (data.country !== null && !isAdminOrSupport) {
-      throw new Error("Pays incompatible : seul un compte admin ou support peut être rattaché à un pays.");
-    }
+    // profiles.country = pays du profil (passager, chauffeur, admin). Tout compte peut en avoir un.
 
     const { error } = await supabaseAdmin
       .from("profiles")
-      .update({ country: data.country })
+      .update({ country: normalizedCountry })
       .eq("id", data.userId);
     if (error) throw new Error(error.message);
     const { data: target } = await supabaseAdmin.auth.admin.getUserById(data.userId);
@@ -256,9 +255,60 @@ export const setUserCountry = createServerFn({ method: "POST" })
       target_type: "user",
       target_id: data.userId,
       target_label: target?.user?.email ?? undefined,
-      details: { country: data.country, roles },
+      details: { country: normalizedCountry, roles },
     });
     return { ok: true };
+  });
+
+/** Superadmin : promouvoir admin + assigner un pays en une seule opération. */
+export const promoteCountryAdmin = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input: unknown) =>
+    z.object({
+      userId: z.string().uuid(),
+      country: z.string().min(1).max(80),
+    }).parse(input),
+  )
+  .handler(async ({ data, context }) => {
+    const scope = await requireAdminScope(context.supabase, context.userId);
+    if (!scope.isSuper) {
+      throw new Error("Seul un superadmin peut nommer un admin pays.");
+    }
+    if (data.userId === context.userId) {
+      throw new Error("Vous ne pouvez pas vous promouvoir vous-même.");
+    }
+    const country = assertServiceCountry(data.country);
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+
+    const { data: rolesRows } = await supabaseAdmin
+      .from("user_roles")
+      .select("role")
+      .eq("user_id", data.userId);
+    const roles = (rolesRows ?? []).map((r: any) => r.role as string);
+    if (roles.includes("superadmin")) {
+      throw new Error("Un superadmin ne peut pas devenir admin pays.");
+    }
+
+    const { error: roleErr } = await supabaseAdmin
+      .from("user_roles")
+      .upsert({ user_id: data.userId, role: "admin" }, { onConflict: "user_id,role" });
+    if (roleErr) throw new Error(roleErr.message);
+
+    const { error: profErr } = await supabaseAdmin
+      .from("profiles")
+      .update({ country })
+      .eq("id", data.userId);
+    if (profErr) throw new Error(profErr.message);
+
+    const { data: target } = await supabaseAdmin.auth.admin.getUserById(data.userId);
+    await logAudit(await getActor(context), {
+      action: "role.country_admin.grant",
+      target_type: "user",
+      target_id: data.userId,
+      target_label: target?.user?.email ?? undefined,
+      details: { country, role: "admin" },
+    });
+    return { ok: true, country };
   });
 
 export const setUserRole = createServerFn({ method: "POST" })

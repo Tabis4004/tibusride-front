@@ -23,6 +23,7 @@ import { Route as AuthenticatedAppRidesRouteImport } from './routes/_authenticat
 import { Route as AuthenticatedAppRewardsRouteImport } from './routes/_authenticated/app/rewards'
 import { Route as AuthenticatedAppPassengerRouteImport } from './routes/_authenticated/app/passenger'
 import { Route as AuthenticatedAppDriverRouteImport } from './routes/_authenticated/app/driver'
+import { Route as AuthenticatedAppCompleteProfileRouteImport } from './routes/_authenticated/app/complete-profile'
 import { Route as AuthenticatedAppAdminRouteImport } from './routes/_authenticated/app/admin'
 import { Route as ApiPublicWebhooksTopupRouteImport } from './routes/api/public/webhooks/topup'
 import { Route as AuthenticatedAppSupportTicketIdRouteImport } from './routes/_authenticated/app/support.$ticketId'
@@ -100,6 +101,12 @@ const AuthenticatedAppDriverRoute = AuthenticatedAppDriverRouteImport.update({
   path: '/driver',
   getParentRoute: () => AuthenticatedAppRouteRoute,
 } as any)
+const AuthenticatedAppCompleteProfileRoute =
+  AuthenticatedAppCompleteProfileRouteImport.update({
+    id: '/complete-profile',
+    path: '/complete-profile',
+    getParentRoute: () => AuthenticatedAppRouteRoute,
+  } as any)
 const AuthenticatedAppAdminRoute = AuthenticatedAppAdminRouteImport.update({
   id: '/admin',
   path: '/admin',
@@ -130,6 +137,7 @@ export interface FileRoutesByFullPath {
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/app': typeof AuthenticatedAppRouteRouteWithChildren
   '/app/admin': typeof AuthenticatedAppAdminRoute
+  '/app/complete-profile': typeof AuthenticatedAppCompleteProfileRoute
   '/app/driver': typeof AuthenticatedAppDriverRoute
   '/app/passenger': typeof AuthenticatedAppPassengerRoute
   '/app/rewards': typeof AuthenticatedAppRewardsRoute
@@ -148,6 +156,7 @@ export interface FileRoutesByTo {
   '/reset-password': typeof ResetPasswordRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/app/admin': typeof AuthenticatedAppAdminRoute
+  '/app/complete-profile': typeof AuthenticatedAppCompleteProfileRoute
   '/app/driver': typeof AuthenticatedAppDriverRoute
   '/app/passenger': typeof AuthenticatedAppPassengerRoute
   '/app/rewards': typeof AuthenticatedAppRewardsRoute
@@ -169,6 +178,7 @@ export interface FileRoutesById {
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/_authenticated/app': typeof AuthenticatedAppRouteRouteWithChildren
   '/_authenticated/app/admin': typeof AuthenticatedAppAdminRoute
+  '/_authenticated/app/complete-profile': typeof AuthenticatedAppCompleteProfileRoute
   '/_authenticated/app/driver': typeof AuthenticatedAppDriverRoute
   '/_authenticated/app/passenger': typeof AuthenticatedAppPassengerRoute
   '/_authenticated/app/rewards': typeof AuthenticatedAppRewardsRoute
@@ -190,6 +200,7 @@ export interface FileRouteTypes {
     | '/sitemap.xml'
     | '/app'
     | '/app/admin'
+    | '/app/complete-profile'
     | '/app/driver'
     | '/app/passenger'
     | '/app/rewards'
@@ -208,6 +219,7 @@ export interface FileRouteTypes {
     | '/reset-password'
     | '/sitemap.xml'
     | '/app/admin'
+    | '/app/complete-profile'
     | '/app/driver'
     | '/app/passenger'
     | '/app/rewards'
@@ -228,6 +240,7 @@ export interface FileRouteTypes {
     | '/sitemap.xml'
     | '/_authenticated/app'
     | '/_authenticated/app/admin'
+    | '/_authenticated/app/complete-profile'
     | '/_authenticated/app/driver'
     | '/_authenticated/app/passenger'
     | '/_authenticated/app/rewards'
@@ -350,6 +363,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAppDriverRouteImport
       parentRoute: typeof AuthenticatedAppRouteRoute
     }
+    '/_authenticated/app/complete-profile': {
+      id: '/_authenticated/app/complete-profile'
+      path: '/complete-profile'
+      fullPath: '/app/complete-profile'
+      preLoaderRoute: typeof AuthenticatedAppCompleteProfileRouteImport
+      parentRoute: typeof AuthenticatedAppRouteRoute
+    }
     '/_authenticated/app/admin': {
       id: '/_authenticated/app/admin'
       path: '/admin'
@@ -397,6 +417,7 @@ const AuthenticatedAppSupportRouteWithChildren =
 
 interface AuthenticatedAppRouteRouteChildren {
   AuthenticatedAppAdminRoute: typeof AuthenticatedAppAdminRoute
+  AuthenticatedAppCompleteProfileRoute: typeof AuthenticatedAppCompleteProfileRoute
   AuthenticatedAppDriverRoute: typeof AuthenticatedAppDriverRoute
   AuthenticatedAppPassengerRoute: typeof AuthenticatedAppPassengerRoute
   AuthenticatedAppRewardsRoute: typeof AuthenticatedAppRewardsRoute
@@ -410,6 +431,7 @@ interface AuthenticatedAppRouteRouteChildren {
 
 const AuthenticatedAppRouteRouteChildren: AuthenticatedAppRouteRouteChildren = {
   AuthenticatedAppAdminRoute: AuthenticatedAppAdminRoute,
+  AuthenticatedAppCompleteProfileRoute: AuthenticatedAppCompleteProfileRoute,
   AuthenticatedAppDriverRoute: AuthenticatedAppDriverRoute,
   AuthenticatedAppPassengerRoute: AuthenticatedAppPassengerRoute,
   AuthenticatedAppRewardsRoute: AuthenticatedAppRewardsRoute,
