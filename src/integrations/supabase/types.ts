@@ -148,14 +148,20 @@ export type Database = {
       }
       driver_profiles: {
         Row: {
+          assigned_category: string | null
           city: string | null
           created_at: string
           current_lat: number | null
           current_lng: number | null
+          enrollment_notes: string | null
+          enrollment_submitted_at: string | null
           id_document_url: string | null
           is_online: boolean
           license_document_url: string | null
           license_number: string | null
+          partner_type: string
+          physical_verified_at: string | null
+          physical_verified_by: string | null
           rating_avg: number | null
           rejection_reason: string | null
           rides_count: number
@@ -165,7 +171,11 @@ export type Database = {
           total_earnings: number
           updated_at: string
           user_id: string
+          vehicle_condition_url: string | null
           vehicle_document_url: string | null
+          vehicle_model: string | null
+          vehicle_plate: string | null
+          vehicle_type: string | null
         }
         Insert: {
           city?: string | null

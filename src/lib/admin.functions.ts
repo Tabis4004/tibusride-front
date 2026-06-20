@@ -387,6 +387,23 @@ export const updateDriverStatus = createServerFn({ method: "POST" })
     } else {
       update.rejection_reason = null;
     }
+    if (data.status === "approved") {
+      const { data: prof, error: profErr } = await supabaseAdmin
+        .from("driver_profiles")
+        .select("license_document_url, vehicle_document_url, vehicle_condition_url, physical_verified_at, assigned_category")
+        .eq("user_id", data.userId)
+        .maybeSingle();
+      if (profErr) throw new Error(profErr.message);
+      if (!prof?.license_document_url || !prof?.vehicle_document_url || !prof?.vehicle_condition_url) {
+        throw new Error("Validation impossible : permis, carte grise et photos véhicule requis.");
+      }
+      if (!prof.physical_verified_at) {
+        throw new Error("Validation impossible : marquez d'abord la vérification physique.");
+      }
+      if (!prof.assigned_category?.trim()) {
+        throw new Error("Validation impossible : assignez une catégorie (taxi, éco, livraison…).");
+      }
+    }
     const { error } = await supabaseAdmin.from("driver_profiles").update(update).eq("user_id", data.userId);
     if (error) throw new Error(error.message);
 
@@ -407,7 +424,7 @@ export const uploadDriverDocument = createServerFn({ method: "POST" })
     z
       .object({
         userId: z.string().uuid(),
-        kind: z.enum(["id", "license", "vehicle"]),
+        kind: z.enum(["id", "license", "vehicle", "vehicle_condition"]),
         filename: z.string().max(200),
         contentType: z.string().max(100),
         // base64-encoded file content
@@ -434,7 +451,10 @@ export const uploadDriverDocument = createServerFn({ method: "POST" })
     if (upErr) throw new Error(upErr.message);
 
     const col =
-      data.kind === "id" ? "id_document_url" : data.kind === "license" ? "license_document_url" : "vehicle_document_url";
+      data.kind === "id" ? "id_document_url"
+      : data.kind === "license" ? "license_document_url"
+      : data.kind === "vehicle_condition" ? "vehicle_condition_url"
+      : "vehicle_document_url";
     const { error: updErr } = await supabaseAdmin
       .from("driver_profiles")
       .update({ [col]: path } as any)
@@ -448,6 +468,45 @@ export const uploadDriverDocument = createServerFn({ method: "POST" })
       details: { kind: data.kind, path, size: buf.byteLength },
     });
     return { ok: true, path };
+  });
+
+/** Admin : vérification physique + catégorie avant approbation. */
+export const assignDriverEnrollment = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input: unknown) =>
+    z.object({
+      userId: z.string().uuid(),
+      assigned_category: z.string().trim().min(1).max(40).optional(),
+      physical_verified: z.boolean().optional(),
+      enrollment_notes: z.string().max(1000).optional(),
+    }).parse(input),
+  )
+  .handler(async ({ data, context }) => {
+    const scope = await requireAdminScope(context.supabase, context.userId);
+    await assertUserInScope(scope.country, data.userId);
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const update: Record<string, unknown> = { updated_at: new Date().toISOString() };
+    if (data.assigned_category !== undefined) update.assigned_category = data.assigned_category;
+    if (data.enrollment_notes !== undefined) update.enrollment_notes = data.enrollment_notes;
+    if (data.physical_verified === true) {
+      update.physical_verified_at = new Date().toISOString();
+      update.physical_verified_by = context.userId;
+    } else if (data.physical_verified === false) {
+      update.physical_verified_at = null;
+      update.physical_verified_by = null;
+    }
+    const { error } = await supabaseAdmin.from("driver_profiles").update(update).eq("user_id", data.userId);
+    if (error) throw new Error(error.message);
+
+    const { data: target } = await supabaseAdmin.auth.admin.getUserById(data.userId);
+    await logAudit(await getActor(context), {
+      action: "driver.enrollment.assign",
+      target_type: "driver",
+      target_id: data.userId,
+      target_label: target?.user?.email ?? undefined,
+      details: { assigned_category: data.assigned_category, physical_verified: data.physical_verified },
+    });
+    return { ok: true };
   });
 
 export const getDocumentSignedUrl = createServerFn({ method: "POST" })

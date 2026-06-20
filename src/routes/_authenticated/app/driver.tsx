@@ -5,15 +5,17 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/use-auth";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
-import { CATEGORIES, CITIES, formatXof } from "@/lib/pricing";
+import { CATEGORIES, formatXof } from "@/lib/pricing";
 import { toast } from "sonner";
 import { Car, Clock, MapPin, Wallet } from "lucide-react";
 import { useServerFn } from "@tanstack/react-start";
 import { getMyWallet } from "@/lib/wallet.functions";
 import { getNotificationPrefs } from "@/lib/tracking.functions";
+import { EnrollmentWizard } from "@/components/driver/EnrollmentWizard";
+import { PARTNER_TYPES, VEHICLE_TYPES, RIDE_CATEGORIES, DELIVERY_CATEGORIES } from "@/lib/driver-enrollment";
 
 export const Route = createFileRoute("/_authenticated/app/driver")({
-  head: () => ({ meta: [{ title: "Tableau de bord chauffeur — Tibus Ride" }] }),
+  head: () => ({ meta: [{ title: "Espace chauffeur & livreur — Tibus Ride" }] }),
   component: DriverPage,
 });
 
@@ -156,23 +158,32 @@ function DriverPage() {
 
   if (driverQ.data.status !== "approved") {
     return (
-      <div className="mx-auto max-w-xl rounded-3xl border border-warning/40 bg-warning/10 p-8 text-center">
-        <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-warning/20"><Clock className="h-5 w-5 text-warning-foreground" /></div>
-        <h2 className="mt-4 font-display text-xl font-bold">Compte en attente de validation</h2>
-        <p className="mt-2 text-sm text-muted-foreground">
-          Statut : <span className="font-medium capitalize">{driverQ.data.status}</span>. Notre équipe vérifie vos informations sous 72h.
-        </p>
-        <DriverInfoForm profile={driverQ.data} onSaved={() => qc.invalidateQueries({ queryKey: ["driver-profile"] })} />
-      </div>
+      <EnrollmentWizard
+        profile={driverQ.data}
+        onRefresh={() => qc.invalidateQueries({ queryKey: ["driver-profile"] })}
+      />
     );
   }
+
+  const partnerLabel = PARTNER_TYPES.find((p) => p.value === driverQ.data.partner_type)?.label ?? "Partenaire";
+  const vehicleLabel = VEHICLE_TYPES.find((v) => v.value === driverQ.data.vehicle_type)?.label;
+  const categoryLabel =
+    driverQ.data.partner_type === "delivery"
+      ? DELIVERY_CATEGORIES.find((c) => c.value === driverQ.data.assigned_category)?.label
+      : RIDE_CATEGORIES.find((c) => c.value === driverQ.data.assigned_category)?.label;
 
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-4 rounded-3xl border border-border bg-card p-6">
         <div>
           <h1 className="font-display text-2xl font-bold">Tableau de bord</h1>
-          <p className="text-sm text-muted-foreground">{driverQ.data.city ?? "Ville non définie"} — {driverQ.data.rides_count} courses</p>
+          <p className="text-sm text-muted-foreground">
+            {partnerLabel}
+            {vehicleLabel ? ` · ${vehicleLabel}` : ""}
+            {categoryLabel ? ` · ${categoryLabel}` : ""}
+            {" — "}
+            {driverQ.data.city ?? "Ville non définie"} — {driverQ.data.rides_count} courses
+          </p>
         </div>
         <div className="flex items-center gap-3">
           <span className="text-sm font-medium">{driverQ.data.is_online ? "En ligne" : "Hors ligne"}</span>
@@ -297,38 +308,11 @@ function CityBootstrap({ onCreated }: { onCreated: () => void }) {
   });
   return (
     <div className="mx-auto max-w-xl rounded-3xl border border-border bg-card p-8 text-center">
-      <h2 className="font-display text-xl font-bold">Initialiser votre profil chauffeur</h2>
-      <p className="mt-2 text-sm text-muted-foreground">Créez votre profil pour commencer.</p>
-      <Button className="mt-4" onClick={() => mut.mutate()} disabled={mut.isPending}>Créer mon profil</Button>
-    </div>
-  );
-}
-
-function DriverInfoForm({ profile, onSaved }: { profile: any; onSaved: () => void }) {
-  const { user } = useAuth();
-  const [city, setCity] = useState(profile.city ?? "");
-  const [license, setLicense] = useState(profile.license_number ?? "");
-  const save = useMutation({
-    mutationFn: async () => {
-      const { error } = await supabase.from("driver_profiles").update({ city, license_number: license }).eq("user_id", user!.id);
-      if (error) throw error;
-    },
-    onSuccess: () => { toast.success("Informations enregistrées"); onSaved(); },
-  });
-  return (
-    <div className="mt-6 space-y-3 text-left">
-      <div>
-        <label className="text-sm font-medium">Ville</label>
-        <select className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm" value={city} onChange={(e) => setCity(e.target.value)}>
-          <option value="">— choisir —</option>
-          {CITIES.map((c) => <option key={c.value} value={c.value}>{c.value}</option>)}
-        </select>
-      </div>
-      <div>
-        <label className="text-sm font-medium">N° permis de conduire</label>
-        <input className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm" value={license} onChange={(e) => setLicense(e.target.value)} maxLength={50} />
-      </div>
-      <Button className="w-full" onClick={() => save.mutate()} disabled={save.isPending}>Enregistrer</Button>
+      <h2 className="font-display text-xl font-bold">Devenir chauffeur ou livreur</h2>
+      <p className="mt-2 text-sm text-muted-foreground">
+        Créez votre dossier d'enrôlement : permis, carte grise et photos du véhicule pour vérification physique.
+      </p>
+      <Button className="mt-4" onClick={() => mut.mutate()} disabled={mut.isPending}>Commencer l'enrôlement</Button>
     </div>
   );
 }

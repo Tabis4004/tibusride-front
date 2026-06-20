@@ -28,6 +28,7 @@ import {
   promoteCountryAdmin,
   ADMIN_COUNTRIES,
   updateDriverStatus,
+  assignDriverEnrollment,
   uploadDriverDocument,
   getDocumentSignedUrl,
   listAuditLogs,
@@ -76,6 +77,7 @@ import {
   Wallet,
 } from "lucide-react";
 import { RolesPermissionsTab } from "@/components/admin/RolesPermissionsTab";
+import { DELIVERY_CATEGORIES, PARTNER_TYPES, RIDE_CATEGORIES, VEHICLE_TYPES } from "@/lib/driver-enrollment";
 
 export const Route = createFileRoute("/_authenticated/app/admin")({
   head: () => ({ meta: [{ title: "Administration — Tibus Ride" }] }),
@@ -167,7 +169,7 @@ function AdminPage() {
   });
 
   const sections: SectionDef[] = [
-    { key: "drivers", title: "Chauffeurs", description: "Validation, documents et présence", keywords: ["chauffeur","driver","permis","document","validation"], icon: Car, defaultPalette: 0, group: "Opérations", roles: ["superadmin","admin","support"], countKey: "pendingDrivers", countLabel: "à valider" },
+    { key: "drivers", title: "Chauffeurs & livreurs", description: "Enrôlement, documents, contrôle physique et catégories", keywords: ["chauffeur","livreur","driver","permis","carte grise","document","validation"], icon: Car, defaultPalette: 0, group: "Opérations", roles: ["superadmin","admin","support"], countKey: "pendingDrivers", countLabel: "à valider" },
     { key: "users", title: "Utilisateurs", description: "Comptes, statut et export", keywords: ["utilisateur","user","compte","bloquer"], icon: Users, defaultPalette: 1, group: "Opérations", roles: ["superadmin","admin"] },
     { key: "roles", title: "Rôles & permissions", description: "Rôles, mots de passe et admins pays", keywords: ["role","permission","mot de passe","password","admin pays","superadmin"], icon: KeyRound, defaultPalette: 11, group: "Sécurité", roles: ["superadmin"] },
     { key: "rides", title: "Courses", description: "Historique et détails par course", keywords: ["course","ride","trajet","historique"], icon: ScrollText, defaultPalette: 2, group: "Opérations", roles: ["superadmin","admin","support"] },
@@ -442,8 +444,12 @@ function DriversTab() {
     const rows = filtered.map((d: any) => ({
       nom: d.profiles?.full_name ?? "",
       telephone: d.profiles?.phone ?? "",
+      type: PARTNER_TYPES.find((p) => p.value === d.partner_type)?.label ?? "",
+      vehicule: VEHICLE_TYPES.find((v) => v.value === d.vehicle_type)?.label ?? "",
       ville: d.city ?? "",
       permis: d.license_number ?? "",
+      categorie: d.assigned_category ?? "",
+      controle_physique: d.physical_verified_at ? "oui" : "non",
       statut: DRIVER_STATUS_LABEL[d.status] ?? d.status,
       en_ligne: d.is_online ? "oui" : "non",
       courses: d.rides_count ?? 0,
@@ -504,7 +510,9 @@ function DriversTab() {
             <thead className="bg-secondary text-secondary-foreground">
               <tr>
                 <th className="px-4 py-3 text-left font-medium">Chauffeur</th>
+                <th className="px-4 py-3 text-left font-medium">Type</th>
                 <th className="px-4 py-3 text-left font-medium">Ville</th>
+                <th className="px-4 py-3 text-left font-medium">Catégorie</th>
                 <th className="px-4 py-3 text-left font-medium">Statut</th>
                 <th className="px-4 py-3 text-left font-medium">En ligne</th>
                 <th className="px-4 py-3 text-left font-medium">Courses</th>
@@ -521,7 +529,22 @@ function DriversTab() {
                       <div className="mt-1 text-xs text-destructive">Motif : {d.rejection_reason}</div>
                     )}
                   </td>
+                  <td className="px-4 py-3">
+                    <div className="text-xs">
+                      {PARTNER_TYPES.find((p) => p.value === d.partner_type)?.label ?? "—"}
+                    </div>
+                    <div className="text-[10px] text-muted-foreground">
+                      {VEHICLE_TYPES.find((v) => v.value === d.vehicle_type)?.label ?? ""}
+                      {d.license_number ? ` · ${d.license_number}` : ""}
+                    </div>
+                  </td>
                   <td className="px-4 py-3">{d.city ?? "—"}</td>
+                  <td className="px-4 py-3 text-xs">
+                    {d.assigned_category ?? "—"}
+                    {d.physical_verified_at && (
+                      <div className="text-[10px] text-success">Contrôle physique OK</div>
+                    )}
+                  </td>
                   <td className="px-4 py-3"><StatusBadge status={d.status} /></td>
                   <td className="px-4 py-3">
                     <span className={`inline-flex items-center gap-1.5 text-xs ${d.is_online ? "text-success" : "text-muted-foreground"}`}>
@@ -538,7 +561,7 @@ function DriversTab() {
                 </tr>
               ))}
               {filtered.length === 0 && (
-                <tr><td colSpan={6} className="px-4 py-8 text-center text-muted-foreground">Aucun chauffeur.</td></tr>
+                <tr><td colSpan={8} className="px-4 py-8 text-center text-muted-foreground">Aucun partenaire.</td></tr>
               )}
             </tbody>
           </table>
@@ -553,8 +576,17 @@ function DriversTab() {
 function DriverManageDialog({ driver, onClose }: { driver: any; onClose: () => void }) {
   const qc = useQueryClient();
   const updateStatus = useServerFn(updateDriverStatus);
+  const assignEnrollment = useServerFn(assignDriverEnrollment);
   const [nextStatus, setNextStatus] = useState<string>(driver.status);
   const [reason, setReason] = useState<string>(driver.rejection_reason ?? "");
+  const [category, setCategory] = useState<string>(driver.assigned_category ?? "");
+  const [physicalOk, setPhysicalOk] = useState(!!driver.physical_verified_at);
+  const [notes, setNotes] = useState<string>(driver.enrollment_notes ?? "");
+
+  const categories =
+    driver.partner_type === "delivery"
+      ? DELIVERY_CATEGORIES.map((c) => ({ value: c.value, label: c.label }))
+      : RIDE_CATEGORIES.map((c) => ({ value: c.value, label: c.label }));
 
   const status = useMutation({
     mutationFn: (v: { status: string; reason?: string }) =>
@@ -568,16 +600,83 @@ function DriverManageDialog({ driver, onClose }: { driver: any; onClose: () => v
     onError: (e: Error) => toast.error(e.message),
   });
 
+  const saveEnrollment = useMutation({
+    mutationFn: () =>
+      assignEnrollment({
+        data: {
+          userId: driver.user_id,
+          assigned_category: category || undefined,
+          physical_verified: physicalOk,
+          enrollment_notes: notes.trim() || undefined,
+        },
+      }),
+    onSuccess: () => {
+      toast.success("Contrôle physique et catégorie enregistrés");
+      qc.invalidateQueries({ queryKey: ["admin-drivers"] });
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
   const reasonRequired = nextStatus === "rejected" || nextStatus === "suspended";
+  const partnerLabel = PARTNER_TYPES.find((p) => p.value === driver.partner_type)?.label;
+  const vehicleLabel = VEHICLE_TYPES.find((v) => v.value === driver.vehicle_type)?.label;
 
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
       <DialogContent className="max-w-xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>Chauffeur — {driver.profiles?.full_name ?? driver.user_id}</DialogTitle>
+          <DialogTitle>{driver.profiles?.full_name ?? driver.user_id}</DialogTitle>
         </DialogHeader>
 
         <div className="space-y-5">
+          <div className="rounded-xl border border-border bg-muted/20 p-3 text-sm">
+            <div><span className="text-muted-foreground">Type :</span> {partnerLabel ?? "—"} · {vehicleLabel ?? "—"}</div>
+            <div><span className="text-muted-foreground">Ville :</span> {driver.city ?? "—"} · <span className="text-muted-foreground">Permis :</span> {driver.license_number ?? "—"}</div>
+            {(driver.vehicle_plate || driver.vehicle_model) && (
+              <div><span className="text-muted-foreground">Véhicule :</span> {[driver.vehicle_model, driver.vehicle_plate].filter(Boolean).join(" · ")}</div>
+            )}
+          </div>
+
+          <div className="rounded-xl border border-border p-3 space-y-3">
+            <Label className="text-xs text-muted-foreground">Contrôle physique & catégorie</Label>
+            <p className="text-xs text-muted-foreground">
+              Après inspection du véhicule/moto sur place, cochez la vérification et assignez la catégorie avant d'approuver.
+            </p>
+            <label className="flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={physicalOk}
+                onChange={(e) => setPhysicalOk(e.target.checked)}
+                className="h-4 w-4 rounded border-border"
+              />
+              Vérification physique effectuée
+              {driver.physical_verified_at && (
+                <span className="text-xs text-muted-foreground">
+                  ({new Date(driver.physical_verified_at).toLocaleDateString("fr-FR")})
+                </span>
+              )}
+            </label>
+            <div>
+              <Label className="text-xs">Catégorie assignée</Label>
+              <Select value={category || "_none"} onValueChange={(v) => setCategory(v === "_none" ? "" : v)}>
+                <SelectTrigger className="mt-1"><SelectValue placeholder="Choisir une catégorie" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="_none">— Non assignée —</SelectItem>
+                  {categories.map((c) => (
+                    <SelectItem key={c.value} value={c.value}>{c.label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label className="text-xs">Notes inspection</Label>
+              <Textarea className="mt-1" rows={2} value={notes} onChange={(e) => setNotes(e.target.value)} maxLength={1000} placeholder="État carrosserie, équipements, conformité…" />
+            </div>
+            <Button size="sm" onClick={() => saveEnrollment.mutate()} disabled={saveEnrollment.isPending}>
+              {saveEnrollment.isPending ? "Enregistrement…" : "Enregistrer contrôle & catégorie"}
+            </Button>
+          </div>
+
           <div className="rounded-xl border border-border p-3">
             <Label className="text-xs text-muted-foreground">Workflow de validation</Label>
             <div className="mt-2 flex items-center gap-2">
@@ -599,9 +698,14 @@ function DriverManageDialog({ driver, onClose }: { driver: any; onClose: () => v
                   value={reason}
                   onChange={(e) => setReason(e.target.value)}
                   maxLength={500}
-                  placeholder="Expliquez la décision (visible dans le journal)…"
+                  placeholder="Expliquez la décision…"
                 />
               </div>
+            )}
+            {nextStatus === "approved" && (
+              <p className="mt-2 text-xs text-amber-700 dark:text-amber-400">
+                L'approbation exige : permis + carte grise + photos véhicule, contrôle physique et catégorie assignée.
+              </p>
             )}
             <div className="mt-3 flex justify-end">
               <Button
@@ -620,10 +724,11 @@ function DriverManageDialog({ driver, onClose }: { driver: any; onClose: () => v
           </div>
 
           <div className="space-y-3">
-            <Label className="text-xs text-muted-foreground">Documents</Label>
-            <DocRow driver={driver} kind="id" label="Pièce d'identité" pathOrUrl={driver.id_document_url} />
+            <Label className="text-xs text-muted-foreground">Documents d'enrôlement</Label>
             <DocRow driver={driver} kind="license" label="Permis de conduire" pathOrUrl={driver.license_document_url} />
-            <DocRow driver={driver} kind="vehicle" label="Carte grise / véhicule" pathOrUrl={driver.vehicle_document_url} />
+            <DocRow driver={driver} kind="vehicle" label="Carte grise" pathOrUrl={driver.vehicle_document_url} />
+            <DocRow driver={driver} kind="vehicle_condition" label="État véhicule / moto" pathOrUrl={driver.vehicle_condition_url} />
+            <DocRow driver={driver} kind="id" label="Pièce d'identité (optionnel)" pathOrUrl={driver.id_document_url} />
           </div>
         </div>
 
@@ -642,7 +747,7 @@ function DocRow({
   pathOrUrl,
 }: {
   driver: any;
-  kind: "id" | "license" | "vehicle";
+  kind: "id" | "license" | "vehicle" | "vehicle_condition";
   label: string;
   pathOrUrl: string | null;
 }) {
