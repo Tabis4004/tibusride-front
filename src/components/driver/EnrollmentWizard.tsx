@@ -31,6 +31,7 @@ type Profile = {
   license_number?: string | null;
   vehicle_plate?: string | null;
   vehicle_model?: string | null;
+  vehicle_color?: string | null;
   license_document_url?: string | null;
   vehicle_document_url?: string | null;
   vehicle_condition_url?: string | null;
@@ -47,6 +48,7 @@ export function EnrollmentWizard({ profile, onRefresh }: { profile: Profile; onR
   const [license, setLicense] = useState(profile.license_number ?? "");
   const [plate, setPlate] = useState(profile.vehicle_plate ?? "");
   const [model, setVehicleModel] = useState(profile.vehicle_model ?? "");
+  const [color, setVehicleColor] = useState(profile.vehicle_color ?? "");
 
   const progress = enrollmentProgress({
     ...profile,
@@ -70,6 +72,7 @@ export function EnrollmentWizard({ profile, onRefresh }: { profile: Profile; onR
         license_number: license,
         vehicle_plate: plate || undefined,
         vehicle_model: model || undefined,
+        vehicle_color: color || undefined,
       },
     }),
     onSuccess: () => { toast.success("Informations enregistrées"); onRefresh(); setStep(1); },
@@ -155,7 +158,7 @@ export function EnrollmentWizard({ profile, onRefresh }: { profile: Profile; onR
                 <button
                   key={p.value}
                   type="button"
-                  onClick={() => { setPartnerType(p.value); setVehicleType(p.value === "delivery" ? "motorcycle" : "car"); }}
+                  onClick={() => { setPartnerType(p.value); setVehicleType(p.value === "delivery" ? "two_wheel" : "car"); }}
                   className={cn(
                     "rounded-2xl border p-4 text-left transition-all",
                     partnerType === p.value ? "border-primary bg-primary/5 ring-2 ring-primary/20" : "border-border",
@@ -204,12 +207,16 @@ export function EnrollmentWizard({ profile, onRefresh }: { profile: Profile; onR
               <Input className="mt-1" value={license} onChange={(e) => setLicense(e.target.value)} maxLength={50} />
             </div>
             <div>
-              <Label>Plaque (optionnel)</Label>
-              <Input className="mt-1" value={plate} onChange={(e) => setPlate(e.target.value)} maxLength={30} />
+              <Label>N° plaque</Label>
+              <Input className="mt-1" value={plate} onChange={(e) => setPlate(e.target.value)} placeholder="ex. DK-1234-AB" maxLength={30} />
+            </div>
+            <div>
+              <Label>Marque / modèle</Label>
+              <Input className="mt-1" value={model} onChange={(e) => setVehicleModel(e.target.value)} placeholder="ex. Toyota Corolla" maxLength={80} />
             </div>
             <div className="sm:col-span-2">
-              <Label>Modèle véhicule (optionnel)</Label>
-              <Input className="mt-1" value={model} onChange={(e) => setVehicleModel(e.target.value)} placeholder="ex. Toyota Corolla 2019" maxLength={80} />
+              <Label>Couleur</Label>
+              <Input className="mt-1" value={color} onChange={(e) => setVehicleColor(e.target.value)} placeholder="ex. blanche, grise, rouge…" maxLength={40} />
             </div>
           </div>
 

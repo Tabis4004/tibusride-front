@@ -632,8 +632,8 @@ function DriverManageDialog({ driver, onClose }: { driver: any; onClose: () => v
           <div className="rounded-xl border border-border bg-muted/20 p-3 text-sm">
             <div><span className="text-muted-foreground">Type :</span> {partnerLabel ?? "—"} · {vehicleLabel ?? "—"}</div>
             <div><span className="text-muted-foreground">Ville :</span> {driver.city ?? "—"} · <span className="text-muted-foreground">Permis :</span> {driver.license_number ?? "—"}</div>
-            {(driver.vehicle_plate || driver.vehicle_model) && (
-              <div><span className="text-muted-foreground">Véhicule :</span> {[driver.vehicle_model, driver.vehicle_plate].filter(Boolean).join(" · ")}</div>
+            {(driver.vehicle_plate || driver.vehicle_model || driver.vehicle_color) && (
+              <div><span className="text-muted-foreground">Véhicule :</span> {[driver.vehicle_model, driver.vehicle_color, driver.vehicle_plate].filter(Boolean).join(" · ")}</div>
             )}
           </div>
 

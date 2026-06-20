@@ -10,7 +10,18 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { CATEGORIES, estimateDistance, estimateDuration, formatXof, getServiceZone, isInServiceZone, resolveServiceCity, type Category } from "@/lib/pricing";
+import { Switch } from "@/components/ui/switch";
 import { computeDynamicPrice, estimateDriverWaitMin, type DynamicPriceBreakdown, type WeatherKind } from "@/lib/dynamic-pricing";
+import {
+  computeDeliveryPrice,
+  DELIVERY_EXTRAS,
+  DELIVERY_VEHICLES,
+  estimateDeliveryWaitMin,
+  PACKAGE_TYPES,
+  type DeliveryPriceBreakdown,
+  type DeliveryVehicle,
+  type PackageType,
+} from "@/lib/delivery-pricing";
 import { toast } from "sonner";
 import { Banknote, Car, ChevronRight, CreditCard, MapPin, Phone, Smartphone, MessageCircle, ExternalLink, AlertTriangle, History, RotateCcw, Navigation2, UtensilsCrossed, Package } from "lucide-react";
 import { RideTrackingMap, type LatLng } from "@/components/RideTrackingMap";
@@ -23,6 +34,7 @@ import { getCurrentPosition } from "@/lib/native-geolocation";
 import { useNativeApp } from "@/hooks/use-native-app";
 import { Link } from "@tanstack/react-router";
 import { cn } from "@/lib/utils";
+import { formatDriverArrivalMessage, formatDriverVehicleDescription, type DriverVehiclePublic } from "@/lib/driver-vehicle";
 
 export const Route = createFileRoute("/_authenticated/app/passenger")({
   head: () => ({ meta: [{ title: "Commander une course — Tibus Ride" }] }),
@@ -45,6 +57,11 @@ function PassengerPage() {
   const [pickup, setPickup] = useState("");
   const [dropoff, setDropoff] = useState("");
   const [category, setCategory] = useState<Category>("eco");
+  const [serviceMode, setServiceMode] = useState<"ride" | "delivery">("ride");
+  const [deliveryVehicle, setDeliveryVehicle] = useState<DeliveryVehicle>("motorcycle");
+  const [packageType, setPackageType] = useState<PackageType>("small");
+  const [deliveryUrgent, setDeliveryUrgent] = useState(false);
+  const [deliveryInsulatedBag, setDeliveryInsulatedBag] = useState(false);
   const [payment, setPayment] = useState<"mobile_money" | "cash" | "card">("mobile_money");
   const [phone, setPhone] = useState("");
 
@@ -166,9 +183,24 @@ function PassengerPage() {
   const min = routeInfo ? Math.max(1, Math.round(routeInfo.seconds / 60)) : estimateDuration(km);
   const staticMin = routeInfo ? Math.max(1, Math.round(routeInfo.staticSeconds / 60)) : min;
   const hasTrip = !!(pickupLL && dropoffLL);
-  const breakdown: DynamicPriceBreakdown | null = hasTrip
-    ? computeDynamicPrice({ category, km, durationMin: min, staticDurationMin: staticMin, weather })
-    : null;
+  const rideBreakdown: DynamicPriceBreakdown | null =
+    serviceMode === "ride" && hasTrip
+      ? computeDynamicPrice({ category, km, durationMin: min, staticDurationMin: staticMin, weather })
+      : null;
+  const deliveryBreakdown: DeliveryPriceBreakdown | null =
+    serviceMode === "delivery" && hasTrip
+      ? computeDeliveryPrice({
+          vehicle: deliveryVehicle,
+          packageType,
+          km,
+          durationMin: min,
+          staticDurationMin: staticMin,
+          weather,
+          urgent: deliveryUrgent,
+          insulatedBag: deliveryInsulatedBag,
+        })
+      : null;
+  const breakdown = serviceMode === "delivery" ? deliveryBreakdown : rideBreakdown;
   const price = breakdown?.total ?? 0;
 
   // Service zone checks
@@ -266,7 +298,7 @@ function PassengerPage() {
         throw new Error("Sélectionnez chaque adresse dans la liste Google ou cliquez sur la carte.");
       }
 
-      const { error, data } = await supabase.from("rides").insert({
+      const insertPayload: Record<string, unknown> = {
         passenger_id: user!.id,
         pickup_address: pickup,
         dropoff_address: dropoff,
@@ -275,21 +307,40 @@ function PassengerPage() {
         dropoff_lat: dropoffLL?.lat ?? null,
         dropoff_lng: dropoffLL?.lng ?? null,
         city,
-        category,
+        category: serviceMode === "delivery" ? "eco" : category,
+        service_type: serviceMode,
         distance_km: km,
         duration_min: min,
         price_xof: price,
         payment_method: payment,
         passenger_phone: phone || null,
         status: "requested",
-      }).select().single();
+      };
+      if (serviceMode === "delivery") {
+        insertPayload.delivery_vehicle = deliveryVehicle;
+        insertPayload.package_type = packageType;
+        insertPayload.delivery_urgent = deliveryUrgent;
+        insertPayload.delivery_insulated_bag = deliveryInsulatedBag;
+        const pkg = PACKAGE_TYPES[packageType];
+        const extras = [
+          deliveryUrgent ? "urgent" : null,
+          deliveryInsulatedBag ? "sac isotherme" : null,
+        ].filter(Boolean).join(", ");
+        insertPayload.notes = `Livraison ${DELIVERY_VEHICLES[deliveryVehicle].label} · ${pkg.label}${extras ? ` · ${extras}` : ""}`;
+      }
+
+      const { error, data } = await supabase.from("rides").insert(insertPayload as never).select().single();
       if (error) throw error;
       return data;
     },
     onSuccess: () => {
-      const waitEst = estimateDriverWaitMin(category);
-      toast.success("Course demandée !", {
-        description: `Recherche d'un chauffeur… temps d'attente estimé ~${waitEst} min`,
+      const waitEst = serviceMode === "delivery"
+        ? estimateDeliveryWaitMin(deliveryVehicle)
+        : estimateDriverWaitMin(category);
+      toast.success(serviceMode === "delivery" ? "Livraison demandée !" : "Course demandée !", {
+        description: serviceMode === "delivery"
+          ? `Recherche d'un livreur… attente estimée ~${waitEst} min`
+          : `Recherche d'un chauffeur… temps d'attente estimé ~${waitEst} min`,
         duration: 8000,
       });
       qc.invalidateQueries({ queryKey: ["current-ride"] });
@@ -313,15 +364,29 @@ function PassengerPage() {
 
           {/* Services rapides */}
           <div className="mt-4 grid grid-cols-3 gap-2">
-            <button type="button" className="rounded-2xl border border-primary/30 bg-primary/5 p-3 text-left ring-1 ring-primary/20">
-              <Car className="h-5 w-5 text-primary" />
+            <button
+              type="button"
+              onClick={() => setServiceMode("ride")}
+              className={cn(
+                "rounded-2xl border p-3 text-left transition-all",
+                serviceMode === "ride" ? "border-primary/30 bg-primary/5 ring-1 ring-primary/20" : "border-border bg-muted/30",
+              )}
+            >
+              <Car className={cn("h-5 w-5", serviceMode === "ride" ? "text-primary" : "text-muted-foreground")} />
               <div className="mt-2 text-xs font-semibold">Courses</div>
               <div className="text-[10px] text-muted-foreground">dès 4 min</div>
             </button>
-            <button type="button" onClick={() => setTripOpen(true)} className="rounded-2xl border border-border bg-muted/30 p-3 text-left opacity-80">
-              <Package className="h-5 w-5 text-muted-foreground" />
+            <button
+              type="button"
+              onClick={() => { setServiceMode("delivery"); setTripOpen(true); }}
+              className={cn(
+                "rounded-2xl border p-3 text-left transition-all",
+                serviceMode === "delivery" ? "border-primary/30 bg-primary/5 ring-1 ring-primary/20" : "border-border bg-muted/30",
+              )}
+            >
+              <Package className={cn("h-5 w-5", serviceMode === "delivery" ? "text-primary" : "text-muted-foreground")} />
               <div className="mt-2 text-xs font-semibold">Livraison</div>
-              <div className="text-[10px] text-muted-foreground">bientôt</div>
+              <div className="text-[10px] text-muted-foreground">colis & repas</div>
             </button>
             <button type="button" onClick={() => toast.info("Tibus Food — bientôt disponible")} className="rounded-2xl border border-border bg-muted/30 p-3 text-left opacity-80">
               <UtensilsCrossed className="h-5 w-5 text-muted-foreground" />
@@ -385,7 +450,11 @@ function PassengerPage() {
               </div>
               <div className="min-w-0 flex-1">
                 <div className="text-base font-semibold">
-                  {dropoff ? dropoff.split(",")[0] : "Où allons-nous ?"}
+                  {dropoff
+                    ? dropoff.split(",")[0]
+                    : serviceMode === "delivery"
+                      ? "Où livrer ?"
+                      : "Où allons-nous ?"}
                 </div>
                 {dropoff && (
                   <div className="truncate text-xs text-muted-foreground">{dropoff}</div>
@@ -399,7 +468,7 @@ function PassengerPage() {
                 <AddressAutocomplete
                   value={dropoff}
                   onChange={onDropoffChange}
-                  placeholder="Adresse d'arrivée"
+                  placeholder={serviceMode === "delivery" ? "Adresse de livraison" : "Adresse d'arrivée"}
                   bias={dropoffBias}
                   regionCode={zone?.countryCode}
                   resolved={!!dropoffLL}
@@ -456,16 +525,17 @@ function PassengerPage() {
                   <span className="text-muted-foreground">·</span>
                   <span>⏱ {Math.round(routeInfo.seconds / 60)} min</span>
                   {breakdown && (
-                    <>
-                      <span className="text-muted-foreground">·</span>
-                      <span>{breakdown.factors.trafficLabel}</span>
-                      <span className="text-muted-foreground">·</span>
-                      <span>{breakdown.factors.weatherLabel}</span>
-                    </>
-                  )}
+                <>
+                  <span className="text-muted-foreground">·</span>
+                  <span>{"factors" in breakdown && "trafficLabel" in breakdown.factors ? breakdown.factors.trafficLabel : ""}</span>
+                  <span className="text-muted-foreground">·</span>
+                  <span>{breakdown.factors.weatherLabel}</span>
+                </>
+              )}
                 </div>
               )}
 
+              {serviceMode === "ride" ? (
               <div>
                 <Label className="text-xs">Véhicule</Label>
                 <div className="mt-2 grid grid-cols-3 gap-2 sm:grid-cols-5">
@@ -488,6 +558,76 @@ function PassengerPage() {
                   })}
                 </div>
               </div>
+              ) : (
+              <>
+              <div>
+                <Label className="text-xs">Véhicule livreur</Label>
+                <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-3">
+                  {(Object.entries(DELIVERY_VEHICLES) as Array<[DeliveryVehicle, typeof DELIVERY_VEHICLES[DeliveryVehicle]]>).map(([key, v]) => {
+                    const selected = deliveryVehicle === key;
+                    return (
+                      <button
+                        key={key}
+                        type="button"
+                        onClick={() => setDeliveryVehicle(key)}
+                        className={cn(
+                          "rounded-xl border p-2.5 text-left transition-all",
+                          selected ? "border-primary bg-primary/5 ring-2 ring-primary/20" : "border-border",
+                        )}
+                      >
+                        <div className="text-lg">{v.emoji}</div>
+                        <div className="text-xs font-semibold">{v.label}</div>
+                        <div className="text-[10px] text-muted-foreground">{v.eta}</div>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div>
+                <Label className="text-xs">Type de colis</Label>
+                <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-3">
+                  {(Object.entries(PACKAGE_TYPES) as Array<[PackageType, typeof PACKAGE_TYPES[PackageType]]>).map(([key, p]) => {
+                    const selected = packageType === key;
+                    return (
+                      <button
+                        key={key}
+                        type="button"
+                        onClick={() => setPackageType(key)}
+                        className={cn(
+                          "rounded-xl border p-2 text-left transition-all",
+                          selected ? "border-primary bg-primary/5 ring-2 ring-primary/20" : "border-border",
+                        )}
+                      >
+                        <div className="flex items-center gap-1.5">
+                          <span>{p.emoji}</span>
+                          <span className="text-xs font-semibold">{p.label}</span>
+                        </div>
+                        <div className="mt-0.5 text-[10px] text-muted-foreground">{p.hint}</div>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div className="space-y-3 rounded-xl border border-border bg-muted/20 p-3">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <div className="text-sm font-medium">{DELIVERY_EXTRAS.urgent.label}</div>
+                    <div className="text-[11px] text-muted-foreground">{DELIVERY_EXTRAS.urgent.description}</div>
+                  </div>
+                  <Switch checked={deliveryUrgent} onCheckedChange={setDeliveryUrgent} />
+                </div>
+                <div className="flex items-center justify-between gap-3 border-t border-border pt-3">
+                  <div>
+                    <div className="text-sm font-medium">{DELIVERY_EXTRAS.insulated_bag.label}</div>
+                    <div className="text-[11px] text-muted-foreground">{DELIVERY_EXTRAS.insulated_bag.description} (+{DELIVERY_EXTRAS.insulated_bag.fee} F)</div>
+                  </div>
+                  <Switch checked={deliveryInsulatedBag} onCheckedChange={setDeliveryInsulatedBag} />
+                </div>
+              </div>
+              </>
+              )}
 
               <div>
                 <Label className="text-xs">Paiement</Label>
@@ -524,7 +664,7 @@ function PassengerPage() {
                 disabled={!pickupLL || !dropoffLL || !!outOfZone || create.isPending}
                 onClick={() => create.mutate()}
               >
-                {create.isPending ? "Envoi…" : outOfZone ? "Hors zone" : !pickupLL || !dropoffLL ? "Choisissez les adresses" : `Commander · ${price > 0 ? formatXof(price) : ""}`}
+                {create.isPending ? "Envoi…" : outOfZone ? "Hors zone" : !pickupLL || !dropoffLL ? "Choisissez les adresses" : `${serviceMode === "delivery" ? "Commander livraison" : "Commander"} · ${price > 0 ? formatXof(price) : ""}`}
               </Button>
             </CollapsibleContent>
           </Collapsible>
@@ -539,10 +679,17 @@ function PassengerPage() {
       {!isNative && (
       <aside className="space-y-4 lg:sticky lg:top-4 lg:self-start">
         <div className="rounded-3xl border border-border bg-card p-6">
-          <h3 className="font-display text-lg font-semibold">Tarif dynamique</h3>
-          <p className="text-xs text-muted-foreground">Distance, trafic, durée et météo en temps réel.</p>
+          <h3 className="font-display text-lg font-semibold">{serviceMode === "delivery" ? "Tarif livraison" : "Tarif dynamique"}</h3>
+          <p className="text-xs text-muted-foreground">Distance, trafic, durée et météo{serviceMode === "delivery" ? " + colis et options" : ""}.</p>
           <dl className="mt-4 space-y-2 text-sm">
-            <div className="flex justify-between"><dt className="text-muted-foreground">Véhicule</dt><dd>{CATEGORIES[category].label}</dd></div>
+            {serviceMode === "ride" ? (
+              <div className="flex justify-between"><dt className="text-muted-foreground">Véhicule</dt><dd>{CATEGORIES[category].label}</dd></div>
+            ) : deliveryBreakdown && (
+              <>
+                <div className="flex justify-between"><dt className="text-muted-foreground">Livreur</dt><dd>{DELIVERY_VEHICLES[deliveryVehicle].label}</dd></div>
+                <div className="flex justify-between"><dt className="text-muted-foreground">Colis</dt><dd>{deliveryBreakdown.factors.packageLabel}</dd></div>
+              </>
+            )}
             <div className="flex justify-between"><dt className="text-muted-foreground">Distance</dt><dd>{breakdown ? `${km} km` : "—"}</dd></div>
             <div className="flex justify-between"><dt className="text-muted-foreground">Durée</dt><dd>{breakdown ? `${min} min` : "—"}</dd></div>
             <div className="flex justify-between"><dt className="text-muted-foreground">Trafic</dt><dd>{breakdown ? breakdown.factors.trafficLabel : "—"}</dd></div>
@@ -551,11 +698,20 @@ function PassengerPage() {
             <div className="flex justify-between"><dt className="text-muted-foreground">Base</dt><dd>{breakdown ? formatXof(breakdown.base) : "—"}</dd></div>
             <div className="flex justify-between"><dt className="text-muted-foreground">Distance</dt><dd>{breakdown ? formatXof(breakdown.distance) : "—"}</dd></div>
             <div className="flex justify-between"><dt className="text-muted-foreground">Durée</dt><dd>{breakdown ? formatXof(breakdown.duration) : "—"}</dd></div>
-            {breakdown && breakdown.trafficSurcharge > 0 && (
-              <div className="flex justify-between"><dt className="text-muted-foreground">Trafic</dt><dd>+{formatXof(breakdown.trafficSurcharge)}</dd></div>
+            {deliveryBreakdown && deliveryBreakdown.packageSurcharge > 0 && (
+              <div className="flex justify-between"><dt className="text-muted-foreground">Colis (taille)</dt><dd>+{formatXof(deliveryBreakdown.packageSurcharge)}</dd></div>
             )}
-            {breakdown && breakdown.weatherSurcharge > 0 && (
-              <div className="flex justify-between"><dt className="text-muted-foreground">Météo</dt><dd>+{formatXof(breakdown.weatherSurcharge)}</dd></div>
+            {deliveryBreakdown && deliveryBreakdown.urgentFee > 0 && (
+              <div className="flex justify-between"><dt className="text-muted-foreground">Urgent</dt><dd>+{formatXof(deliveryBreakdown.urgentFee)}</dd></div>
+            )}
+            {deliveryBreakdown && deliveryBreakdown.insulatedBagFee > 0 && (
+              <div className="flex justify-between"><dt className="text-muted-foreground">Sac isotherme</dt><dd>+{formatXof(deliveryBreakdown.insulatedBagFee)}</dd></div>
+            )}
+            {(rideBreakdown?.trafficSurcharge ?? deliveryBreakdown?.trafficSurcharge ?? 0) > 0 && (
+              <div className="flex justify-between"><dt className="text-muted-foreground">Suppl. trafic</dt><dd>+{formatXof((rideBreakdown ?? deliveryBreakdown)!.trafficSurcharge)}</dd></div>
+            )}
+            {(rideBreakdown?.weatherSurcharge ?? deliveryBreakdown?.weatherSurcharge ?? 0) > 0 && (
+              <div className="flex justify-between"><dt className="text-muted-foreground">Suppl. météo</dt><dd>+{formatXof((rideBreakdown ?? deliveryBreakdown)!.weatherSurcharge)}</dd></div>
             )}
             <div className="my-2 border-t border-border" />
             <div className="flex items-baseline justify-between">
@@ -569,7 +725,7 @@ function PassengerPage() {
             disabled={!pickupLL || !dropoffLL || !!outOfZone || create.isPending}
             onClick={() => create.mutate()}
           >
-            {create.isPending ? "Envoi…" : "Commander la course"}
+            {create.isPending ? "Envoi…" : serviceMode === "delivery" ? "Commander la livraison" : "Commander la course"}
           </Button>
           {(!pickupLL || !dropoffLL) && (
             <button type="button" onClick={() => setTripOpen(true)} className="mt-2 w-full text-center text-xs text-primary hover:underline">
@@ -602,7 +758,11 @@ function PassengerPage() {
         <div className="native-cta-bar fixed inset-x-0 bottom-[calc(4.5rem+env(safe-area-inset-bottom))] z-30 px-3">
           <div className="mx-auto max-w-lg rounded-2xl border border-border bg-card/95 p-3 shadow-soft backdrop-blur">
             <div className="mb-2 flex items-center justify-between text-sm">
-              <span className="text-muted-foreground">{CATEGORIES[category].label}</span>
+              <span className="text-muted-foreground">
+                {serviceMode === "delivery"
+                  ? `${DELIVERY_VEHICLES[deliveryVehicle].label} · ${PACKAGE_TYPES[packageType].label}`
+                  : CATEGORIES[category].label}
+              </span>
               <span className="font-display text-lg font-bold text-primary">{price > 0 ? formatXof(price) : "—"}</span>
             </div>
             <Button
@@ -703,11 +863,11 @@ function CurrentRideBanner({ ride: initialRide, onCancel }: { ride: any; onCance
 
   // Driver contact — via security-definer RPC (only safe vehicle / contact fields)
   const driverQ = useQuery({
-    queryKey: ["ride-driver", ride.id, ride.driver_id],
-    enabled: !!ride.driver_id,
+    queryKey: ["ride-driver", activeRide.id, activeRide.driver_id],
+    enabled: !!activeRide.driver_id,
     queryFn: async () => {
       const { data, error } = await supabase
-        .rpc("get_ride_driver_public", { _ride_id: ride.id })
+        .rpc("get_ride_driver_public", { _ride_id: activeRide.id })
         .maybeSingle();
       if (error) throw error;
       return data;
@@ -760,13 +920,10 @@ function CurrentRideBanner({ ride: initialRide, onCancel }: { ride: any; onCance
         // status change notification
         if (next.status !== lastStatusNotifiedRef.current) {
           lastStatusNotifiedRef.current = next.status;
-          const label = STATUS_LABEL[next.status] ?? next.status;
-          notify("Mise à jour de la course", label, "status");
-        }
-        // arrival notification
-        if (next.status === "arriving" && !alertedArrivingRef.current) {
-          alertedArrivingRef.current = true;
-          notify("Votre chauffeur est arrivé !", "Rejoignez-le au point de départ.", "arriving");
+          if (next.status !== "arriving") {
+            const label = STATUS_LABEL[next.status] ?? next.status;
+            notify("Mise à jour de la course", label, "status");
+          }
         }
         if (next.status === "completed" || next.status === "cancelled") {
           qc.invalidateQueries({ queryKey: ["current-ride"] });
@@ -792,7 +949,11 @@ function CurrentRideBanner({ ride: initialRide, onCancel }: { ride: any; onCance
     const distM = 2 * R * Math.asin(Math.sqrt(a));
     if (distM < 300 && !alertedNearbyRef.current && activeRide.status !== "in_progress") {
       alertedNearbyRef.current = true;
-      notify("Chauffeur à proximité", `À ~${Math.round(distM)} m de votre point de départ.`, "nearby");
+      const vehicle = formatDriverVehicleDescription(driverQ.data as DriverVehiclePublic | undefined);
+      const body = vehicle
+        ? `${vehicle} — à ~${Math.round(distM)} m de votre point de départ`
+        : `À ~${Math.round(distM)} m de votre point de départ.`;
+      notify("Chauffeur à proximité", body, "nearby");
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [driverPos?.lat, driverPos?.lng, pickup?.lat, pickup?.lng, activeRide.status]);
@@ -828,8 +989,10 @@ function CurrentRideBanner({ ride: initialRide, onCancel }: { ride: any; onCance
   });
 
   const etaText = etaSec != null ? (etaSec < 60 ? `${etaSec}s` : `${Math.round(etaSec / 60)} min`) : "—";
-  const driverPhone = (driverQ.data as any)?.phone as string | undefined;
-  const driverName = (driverQ.data as any)?.full_name as string | undefined;
+  const driverInfo = driverQ.data as (DriverVehiclePublic & { full_name?: string; phone?: string; rating_avg?: number }) | null | undefined;
+  const driverPhone = driverInfo?.phone;
+  const driverName = driverInfo?.full_name;
+  const driverVehicleLine = formatDriverVehicleDescription(driverInfo);
 
   const statusMessage = useMemo(() => {
     switch (activeRide.status) {
@@ -838,13 +1001,16 @@ function CurrentRideBanner({ ride: initialRide, onCancel }: { ride: any; onCance
           ? `Recherche d'un chauffeur… attente estimée ~${estimatedWait} min`
           : `Recherche en cours — ${waitMin} min d'attente (estimé ~${estimatedWait} min)`;
       case "accepted":
+        if (driverVehicleLine) {
+          return etaSec != null
+            ? `${driverName ? `${driverName} · ` : ""}${driverVehicleLine} — arrivée dans ${etaSec < 60 ? `${etaSec} s` : `${Math.ceil(etaSec / 60)} min`}`
+            : `${driverVehicleLine} — votre chauffeur est en route`;
+        }
         return etaSec != null
           ? `${driverName ? `${driverName} arrive` : "Chauffeur en route"} dans ${etaSec < 60 ? `${etaSec} s` : `${Math.ceil(etaSec / 60)} min`}`
           : "Votre chauffeur est en route vers vous";
       case "arriving":
-        return etaSec != null && etaSec <= 90
-          ? "Votre chauffeur est à quelques instants — rejoignez le point de départ"
-          : "Votre chauffeur vous attend au point de départ";
+        return formatDriverArrivalMessage(driverInfo, etaSec == null || etaSec > 90);
       case "in_progress":
         return etaSec != null
           ? `Course en cours — destination dans ~${Math.ceil(etaSec / 60)} min`
@@ -852,7 +1018,7 @@ function CurrentRideBanner({ ride: initialRide, onCancel }: { ride: any; onCance
       default:
         return STATUS_LABEL[activeRide.status] ?? activeRide.status;
     }
-  }, [activeRide.status, waitMin, estimatedWait, etaSec, driverName]);
+  }, [activeRide.status, waitMin, estimatedWait, etaSec, driverName, driverVehicleLine, driverInfo]);
 
   useEffect(() => {
     if (activeRide.status !== "requested" || requestedNotifiedRef.current) return;
@@ -880,6 +1046,15 @@ function CurrentRideBanner({ ride: initialRide, onCancel }: { ride: any; onCance
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [waitMin, activeRide.status, estimatedWait]);
+
+  useEffect(() => {
+    if (activeRide.status !== "arriving" || alertedArrivingRef.current) return;
+    if (activeRide.driver_id && driverQ.isLoading) return;
+    alertedArrivingRef.current = true;
+    const body = formatDriverArrivalMessage(driverInfo, true);
+    notify("Votre chauffeur est arrivé !", body, "arriving");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeRide.status, activeRide.driver_id, driverQ.isLoading, driverInfo]);
 
   return (
     <div className="space-y-4 rounded-3xl border border-primary/30 bg-primary/5 p-4 sm:p-6">
@@ -929,18 +1104,22 @@ function CurrentRideBanner({ ride: initialRide, onCancel }: { ride: any; onCance
         <div className="flex items-start gap-2"><MapPin className="h-4 w-4 text-primary mt-0.5" /><div><div className="text-xs text-muted-foreground">Arrivée</div>{ride.dropoff_address}</div></div>
       </div>
 
-      {ride.driver_id && driverQ.data && (
+      {activeRide.driver_id && driverQ.data && (
         <div className="rounded-2xl border border-border bg-card p-4">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
               <div className="text-xs text-muted-foreground">Votre chauffeur</div>
-              <div className="font-semibold">{(driverQ.data as any).full_name ?? "Chauffeur"}</div>
-              <div className="text-xs text-muted-foreground">
-                {(driverQ.data as any).vehicle_model ?? ""} {(driverQ.data as any).vehicle_plate ? `· ${(driverQ.data as any).vehicle_plate}` : ""}
-                {(driverQ.data as any).rating_avg ? ` · ★ ${Number((driverQ.data as any).rating_avg).toFixed(1)}` : ""}
-              </div>
+              <div className="font-semibold">{driverInfo?.full_name ?? "Chauffeur"}</div>
+              {driverVehicleLine ? (
+                <div className="mt-1 text-xs text-muted-foreground">{driverVehicleLine}</div>
+              ) : (
+                <div className="mt-1 text-xs text-muted-foreground">Informations véhicule non renseignées</div>
+              )}
+              {driverInfo?.rating_avg ? (
+                <div className="text-xs text-muted-foreground">★ {Number(driverInfo.rating_avg).toFixed(1)}</div>
+              ) : null}
             </div>
-            {driverPhone && ride.driver_shares_phone ? (
+            {driverPhone && activeRide.driver_shares_phone ? (
               <div className="flex gap-2">
                 <Button asChild size="sm" variant="outline"><a href={`tel:${driverPhone}`}><Phone className="mr-1 h-4 w-4" />Appeler</a></Button>
                 <Button asChild size="sm" variant="outline">
@@ -950,7 +1129,7 @@ function CurrentRideBanner({ ride: initialRide, onCancel }: { ride: any; onCance
                 </Button>
               </div>
             ) : (
-              <div className="text-xs text-muted-foreground">{ride.driver_shares_phone === false ? "Numéro masqué par le chauffeur" : "Téléphone non renseigné"}</div>
+              <div className="text-xs text-muted-foreground">{activeRide.driver_shares_phone === false ? "Numéro masqué par le chauffeur" : "Téléphone non renseigné"}</div>
             )}
           </div>
           <div className="mt-3 border-t border-border pt-3">

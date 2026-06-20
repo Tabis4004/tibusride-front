@@ -173,6 +173,7 @@ export type Database = {
           user_id: string
           vehicle_condition_url: string | null
           vehicle_document_url: string | null
+          vehicle_color: string | null
           vehicle_model: string | null
           vehicle_plate: string | null
           vehicle_type: string | null
@@ -898,6 +899,9 @@ export type Database = {
           country: string | null
           created_at: string
           currency: string
+          delivery_insulated_bag: boolean
+          delivery_urgent: boolean
+          delivery_vehicle: string | null
           distance_km: number | null
           driver_earnings_xof: number | null
           driver_id: string | null
@@ -912,6 +916,7 @@ export type Database = {
           eta_seconds: number | null
           id: string
           notes: string | null
+          package_type: string | null
           passenger_id: string
           passenger_phone: string | null
           passenger_shares_phone: boolean
@@ -921,6 +926,7 @@ export type Database = {
           pickup_lng: number | null
           price_xof: number
           requested_at: string
+          service_type: string
           started_at: string | null
           status: Database["public"]["Enums"]["ride_status"]
           updated_at: string
@@ -936,6 +942,9 @@ export type Database = {
           country?: string | null
           created_at?: string
           currency?: string
+          delivery_insulated_bag?: boolean
+          delivery_urgent?: boolean
+          delivery_vehicle?: string | null
           distance_km?: number | null
           driver_earnings_xof?: number | null
           driver_id?: string | null
@@ -950,6 +959,7 @@ export type Database = {
           eta_seconds?: number | null
           id?: string
           notes?: string | null
+          package_type?: string | null
           passenger_id: string
           passenger_phone?: string | null
           passenger_shares_phone?: boolean
@@ -959,6 +969,7 @@ export type Database = {
           pickup_lng?: number | null
           price_xof: number
           requested_at?: string
+          service_type?: string
           started_at?: string | null
           status?: Database["public"]["Enums"]["ride_status"]
           updated_at?: string
@@ -974,6 +985,9 @@ export type Database = {
           country?: string | null
           created_at?: string
           currency?: string
+          delivery_insulated_bag?: boolean
+          delivery_urgent?: boolean
+          delivery_vehicle?: string | null
           distance_km?: number | null
           driver_earnings_xof?: number | null
           driver_id?: string | null
@@ -988,6 +1002,7 @@ export type Database = {
           eta_seconds?: number | null
           id?: string
           notes?: string | null
+          package_type?: string | null
           passenger_id?: string
           passenger_phone?: string | null
           passenger_shares_phone?: boolean
@@ -997,6 +1012,7 @@ export type Database = {
           pickup_lng?: number | null
           price_xof?: number
           requested_at?: string
+          service_type?: string
           started_at?: string | null
           status?: Database["public"]["Enums"]["ride_status"]
           updated_at?: string
@@ -1305,6 +1321,7 @@ export type Database = {
           rating_avg: number
           vehicle_model: string
           vehicle_plate: string
+          vehicle_color: string
         }[]
       }
       has_role: {

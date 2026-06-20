@@ -82,11 +82,12 @@ export const updateMyEnrollment = createServerFn({ method: "POST" })
   .inputValidator((d) =>
     z.object({
       partner_type: z.enum(["ride", "delivery"]),
-      vehicle_type: z.enum(["car", "motorcycle", "van"]),
+      vehicle_type: z.enum(["car", "motorcycle", "van", "tricycle", "two_wheel"]),
       city: z.string().trim().min(1).max(80),
       license_number: z.string().trim().min(3).max(50),
       vehicle_plate: z.string().trim().max(30).optional(),
       vehicle_model: z.string().trim().max(80).optional(),
+      vehicle_color: z.string().trim().max(40).optional(),
     }).parse(d),
   )
   .handler(async ({ data, context }) => {
@@ -101,6 +102,7 @@ export const updateMyEnrollment = createServerFn({ method: "POST" })
       license_number: data.license_number,
       vehicle_plate: data.vehicle_plate ?? null,
       vehicle_model: data.vehicle_model ?? null,
+      vehicle_color: data.vehicle_color ?? null,
       updated_at: new Date().toISOString(),
     }).eq("user_id", userId);
     if (error) throw error;

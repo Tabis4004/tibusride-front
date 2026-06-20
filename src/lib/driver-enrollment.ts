@@ -1,17 +1,19 @@
 import type { Category } from "@/lib/pricing";
 
 export type PartnerType = "ride" | "delivery";
-export type VehicleType = "car" | "motorcycle" | "van";
+export type VehicleType = "car" | "motorcycle" | "van" | "tricycle" | "two_wheel";
 export type EnrollmentDocKind = "license" | "vehicle" | "vehicle_condition";
 
 export const PARTNER_TYPES: { value: PartnerType; label: string; description: string }[] = [
   { value: "ride", label: "Chauffeur (courses)", description: "Transport de passagers — taxi, éco, confort…" },
-  { value: "delivery", label: "Livreur", description: "Livraison colis et repas — moto ou voiture" },
+  { value: "delivery", label: "Livreur", description: "Colis et repas — deux-roues, moto, tricycle, voiture" },
 ];
 
 export const VEHICLE_TYPES: { value: VehicleType; label: string; forPartner: PartnerType[] }[] = [
-  { value: "car", label: "Voiture", forPartner: ["ride", "delivery"] },
+  { value: "two_wheel", label: "Deux-roues", forPartner: ["delivery"] },
   { value: "motorcycle", label: "Moto", forPartner: ["ride", "delivery"] },
+  { value: "tricycle", label: "Tricycle", forPartner: ["delivery"] },
+  { value: "car", label: "Voiture", forPartner: ["ride", "delivery"] },
   { value: "van", label: "Fourgonnette", forPartner: ["delivery"] },
 ];
 
@@ -24,10 +26,7 @@ export const RIDE_CATEGORIES: { value: Category; label: string }[] = [
   { value: "vip", label: "VIP" },
 ];
 
-export const DELIVERY_CATEGORIES = [
-  { value: "delivery_standard", label: "Livraison standard" },
-  { value: "delivery_express", label: "Livraison express" },
-] as const;
+export { DELIVERY_ASSIGNMENT_CATEGORIES as DELIVERY_CATEGORIES } from "@/lib/delivery-pricing";
 
 export const ENROLLMENT_DOCS: { kind: EnrollmentDocKind; label: string; hint: string }[] = [
   { kind: "license", label: "Permis de conduire", hint: "Photo ou scan lisible (recto/verso si nécessaire)" },

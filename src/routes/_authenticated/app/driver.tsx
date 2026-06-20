@@ -13,6 +13,7 @@ import { getMyWallet } from "@/lib/wallet.functions";
 import { getNotificationPrefs } from "@/lib/tracking.functions";
 import { EnrollmentWizard } from "@/components/driver/EnrollmentWizard";
 import { PARTNER_TYPES, VEHICLE_TYPES, RIDE_CATEGORIES, DELIVERY_CATEGORIES } from "@/lib/driver-enrollment";
+import { DELIVERY_VEHICLES, PACKAGE_TYPES, vehicleFromAssignedCategory } from "@/lib/delivery-pricing";
 
 export const Route = createFileRoute("/_authenticated/app/driver")({
   head: () => ({ meta: [{ title: "Espace chauffeur & livreur — Tibus Ride" }] }),
@@ -61,13 +62,22 @@ function DriverPage() {
   });
 
   const openRidesQ = useQuery({
-    queryKey: ["open-rides", driverQ.data?.is_online, driverQ.data?.city, myCountry],
+    queryKey: ["open-rides", driverQ.data?.is_online, driverQ.data?.city, myCountry, driverQ.data?.partner_type, driverQ.data?.assigned_category],
     enabled: !!driverQ.data?.is_online && driverQ.data?.status === "approved" && !!myCountry,
     refetchInterval: 4000,
     queryFn: async () => {
-      let q = supabase.from("rides").select("*").eq("status", "requested").order("requested_at", { ascending: true }).limit(20);
+      const dp = driverQ.data!;
+      let q = supabase.from("rides").select("*").eq("status", "requested").order("requested_at", { ascending: true }).limit(30);
       if (myCountry) q = q.eq("country", myCountry);
-      if (driverQ.data?.city) q = q.eq("city", driverQ.data.city);
+      if (dp.city) q = q.eq("city", dp.city);
+      if (dp.partner_type === "delivery") {
+        const vehicle = vehicleFromAssignedCategory(dp.assigned_category);
+        q = q.eq("service_type", "delivery");
+        if (vehicle) q = q.eq("delivery_vehicle", vehicle);
+      } else {
+        q = q.eq("service_type", "ride");
+        if (dp.assigned_category) q = q.eq("category", dp.assigned_category);
+      }
       const { data, error } = await q;
       if (error) throw error;
       return data ?? [];
@@ -95,12 +105,19 @@ function DriverPage() {
         const r: any = payload.new;
         if (r?.status !== "requested") return;
         if (driverQ.data?.city && r.city !== driverQ.data.city) return;
+        const isDelivery = r.service_type === "delivery";
+        if (driverQ.data?.partner_type === "delivery") {
+          if (!isDelivery) return;
+          const vehicle = vehicleFromAssignedCategory(driverQ.data.assigned_category);
+          if (vehicle && r.delivery_vehicle !== vehicle) return;
+        } else if (isDelivery) return;
+        const title = isDelivery ? "Nouvelle livraison disponible !" : "Nouvelle course disponible !";
         if (prefs.channel_toast) {
-          toast.success("Nouvelle course disponible !", { description: `${r.pickup_address ?? ""} → ${r.dropoff_address ?? ""}`.slice(0, 120), duration: 9000 });
+          toast.success(title, { description: `${r.pickup_address ?? ""} → ${r.dropoff_address ?? ""}`.slice(0, 120), duration: 9000 });
         }
         try {
           if (prefs.channel_system && typeof Notification !== "undefined" && Notification.permission === "granted") {
-            new Notification("Nouvelle livraison à proximité", { body: `${r.pickup_address ?? "Point de départ"} → ${r.dropoff_address ?? ""}`, tag: `ride-new-${r.id}`, icon: "/favicon.ico" });
+            new Notification(isDelivery ? "Nouvelle livraison à proximité" : "Nouvelle course à proximité", { body: `${r.pickup_address ?? "Point de départ"} → ${r.dropoff_address ?? ""}`, tag: `ride-new-${r.id}`, icon: "/favicon.ico" });
           }
           if (prefs.sound_enabled) {
             const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
@@ -240,7 +257,13 @@ function DriverPage() {
 
       <section>
         <h2 className="mb-3 font-display text-lg font-semibold">
-          {driverQ.data.is_online ? `Courses disponibles${driverQ.data.city ? ` à ${driverQ.data.city}` : ""}` : "Activez-vous pour voir les courses"}
+          {driverQ.data.is_online
+            ? driverQ.data.partner_type === "delivery"
+              ? `Livraisons disponibles${driverQ.data.city ? ` à ${driverQ.data.city}` : ""}`
+              : `Courses disponibles${driverQ.data.city ? ` à ${driverQ.data.city}` : ""}`
+            : driverQ.data.partner_type === "delivery"
+              ? "Activez-vous pour voir les livraisons"
+              : "Activez-vous pour voir les courses"}
         </h2>
         {!driverQ.data.is_online ? (
           <div className="rounded-2xl border border-dashed border-border p-8 text-center text-sm text-muted-foreground">
@@ -275,16 +298,39 @@ function Stat({ icon: Icon, label, value }: { icon: any; label: string; value: s
 }
 
 function RideCard({ ride, actions }: { ride: any; actions: React.ReactNode }) {
+  const isDelivery = ride.service_type === "delivery";
+  const deliveryVehicle = ride.delivery_vehicle as keyof typeof DELIVERY_VEHICLES | undefined;
+  const packageType = ride.package_type as keyof typeof PACKAGE_TYPES | undefined;
+  const vehicleEmoji = isDelivery && deliveryVehicle
+    ? DELIVERY_VEHICLES[deliveryVehicle]?.emoji
+    : CATEGORIES[ride.category as keyof typeof CATEGORIES]?.emoji;
+  const vehicleLabel = isDelivery && deliveryVehicle
+    ? DELIVERY_VEHICLES[deliveryVehicle]?.label
+    : CATEGORIES[ride.category as keyof typeof CATEGORIES]?.label;
+
   return (
     <div className="rounded-2xl border border-border bg-card p-4">
       <div className="flex items-center justify-between gap-3">
-        <div className="flex items-center gap-2 text-sm">
-          <span className="text-2xl">{CATEGORIES[ride.category as keyof typeof CATEGORIES]?.emoji}</span>
+        <div className="flex flex-wrap items-center gap-2 text-sm">
+          <span className="text-2xl">{vehicleEmoji ?? "📦"}</span>
+          {isDelivery && (
+            <span className="rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary">Livraison</span>
+          )}
+          {vehicleLabel && <span className="rounded-full bg-secondary px-2 py-0.5 text-xs">{vehicleLabel}</span>}
           <span className="rounded-full bg-secondary px-2 py-0.5 text-xs">{ride.city}</span>
           <span className="text-xs text-muted-foreground">{ride.distance_km} km · {ride.duration_min} min</span>
         </div>
         <div className="font-display text-lg font-bold text-primary">{formatXof(ride.price_xof)}</div>
       </div>
+      {isDelivery && (
+        <div className="mt-2 flex flex-wrap gap-1.5 text-[11px]">
+          {packageType && PACKAGE_TYPES[packageType] && (
+            <span className="rounded-full border border-border px-2 py-0.5">{PACKAGE_TYPES[packageType].emoji} {PACKAGE_TYPES[packageType].label}</span>
+          )}
+          {ride.delivery_urgent && <span className="rounded-full border border-amber-500/40 bg-amber-500/10 px-2 py-0.5 text-amber-700">Urgent</span>}
+          {ride.delivery_insulated_bag && <span className="rounded-full border border-border px-2 py-0.5">Sac isotherme</span>}
+        </div>
+      )}
       <div className="mt-3 grid gap-2 text-sm sm:grid-cols-2">
         <div className="flex items-start gap-2"><MapPin className="h-4 w-4 text-success mt-0.5 shrink-0" /><div className="truncate">{ride.pickup_address}</div></div>
         <div className="flex items-start gap-2"><MapPin className="h-4 w-4 text-primary mt-0.5 shrink-0" /><div className="truncate">{ride.dropoff_address}</div></div>
