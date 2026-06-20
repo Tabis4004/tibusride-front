@@ -23,6 +23,9 @@ import {
   listUsers,
   setUserBanned,
   setUserRole,
+  setUserPassword,
+  setUserCountry,
+  ADMIN_COUNTRIES,
   updateDriverStatus,
   uploadDriverDocument,
   getDocumentSignedUrl,
@@ -47,15 +50,28 @@ import {
 } from "@/lib/admin.functions";
 import { listDriverWallets, adminWalletTopup, adminWalletAdjust } from "@/lib/wallet.functions";
 import {
+  ArrowLeft,
+  BarChart3,
+  Car,
+  Coins,
   Download,
   ExternalLink,
   Eye,
   FileText,
+  Gift,
   Lock,
+  Receipt,
+  Palette,
+  Search,
+  ScrollText,
+  ShieldAlert,
   ShieldCheck,
   ShieldOff,
+  Tag,
   Unlock,
   Upload,
+  Users,
+  Wallet,
 } from "lucide-react";
 
 export const Route = createFileRoute("/_authenticated/app/admin")({
@@ -72,10 +88,97 @@ const DRIVER_STATUS_LABEL: Record<string, string> = {
 };
 const DRIVER_STATUSES = ["pending", "under_review", "approved", "rejected", "suspended"] as const;
 
+type AdminRole = "superadmin" | "admin" | "support";
+
+type SectionDef = {
+  key: string;
+  title: string;
+  description: string;
+  keywords: string[];
+  icon: any;
+  defaultPalette: number; // index into PASTEL_PALETTE
+  group: string;
+  roles: AdminRole[];
+  countKey?: "pendingDrivers" | "openTickets" | "fraudAlerts" | "unpaidInvoices" | "auditToday";
+  countLabel?: string;
+};
+
+const PASTEL_PALETTE: { name: string; bg: string; iconBg: string }[] = [
+  { name: "Émeraude", bg: "bg-emerald-50 border-emerald-100", iconBg: "bg-emerald-500" },
+  { name: "Ciel", bg: "bg-sky-50 border-sky-100", iconBg: "bg-sky-500" },
+  { name: "Ambre", bg: "bg-amber-50 border-amber-100", iconBg: "bg-amber-500" },
+  { name: "Violet", bg: "bg-violet-50 border-violet-100", iconBg: "bg-violet-500" },
+  { name: "Rose", bg: "bg-rose-50 border-rose-100", iconBg: "bg-rose-500" },
+  { name: "Sarcelle", bg: "bg-teal-50 border-teal-100", iconBg: "bg-teal-500" },
+  { name: "Citron", bg: "bg-lime-50 border-lime-100", iconBg: "bg-lime-500" },
+  { name: "Indigo", bg: "bg-indigo-50 border-indigo-100", iconBg: "bg-indigo-500" },
+  { name: "Orange", bg: "bg-orange-50 border-orange-100", iconBg: "bg-orange-500" },
+  { name: "Magenta", bg: "bg-pink-50 border-pink-100", iconBg: "bg-pink-500" },
+  { name: "Cyan", bg: "bg-cyan-50 border-cyan-100", iconBg: "bg-cyan-500" },
+  { name: "Pierre", bg: "bg-stone-50 border-stone-200", iconBg: "bg-stone-500" },
+];
+
+const COLOR_STORAGE_KEY = "tibus.admin.cardColors.v1";
+
 function AdminPage() {
-  const { hasRole, loading } = useAuth();
+  const { hasRole, roles, loading } = useAuth();
+  const [section, setSection] = useState<string | null>(null);
+  const [query, setQuery] = useState("");
+  const [roleFilter, setRoleFilter] = useState<"all" | AdminRole>("all");
+  const [customizing, setCustomizing] = useState(false);
+  const [colorOverrides, setColorOverrides] = useState<Record<string, { bg: string; iconBg: string }>>(() => {
+    if (typeof window === "undefined") return {};
+    try { return JSON.parse(localStorage.getItem(COLOR_STORAGE_KEY) ?? "{}"); } catch { return {}; }
+  });
+
+  const setSectionColor = (key: string, c: { bg: string; iconBg: string } | null) => {
+    setColorOverrides((prev) => {
+      const next = { ...prev };
+      if (!c) delete next[key]; else next[key] = c;
+      try { localStorage.setItem(COLOR_STORAGE_KEY, JSON.stringify(next)); } catch {}
+      return next;
+    });
+  };
+
+  const counts = useQuery({
+    queryKey: ["admin-overview-counts"],
+    enabled: hasRole("admin") || hasRole("support"),
+    queryFn: async () => {
+      const today = new Date(); today.setHours(0, 0, 0, 0);
+      const dayAgo = new Date(Date.now() - 24 * 3600 * 1000).toISOString();
+      const [drivers, tickets, fraud, invoices, audit] = await Promise.all([
+        supabase.from("driver_profiles").select("user_id", { count: "exact", head: true }).in("status", ["pending", "under_review"]),
+        supabase.from("support_tickets").select("id", { count: "exact", head: true }).in("status", ["open", "pending"]),
+        supabase.from("fraud_logs").select("id", { count: "exact", head: true }).in("severity", ["warn", "high"]).gte("created_at", dayAgo),
+        supabase.from("invoices").select("id", { count: "exact", head: true }).neq("status", "paid"),
+        supabase.from("audit_logs").select("id", { count: "exact", head: true }).gte("created_at", today.toISOString()),
+      ]);
+      return {
+        pendingDrivers: drivers.count ?? 0,
+        openTickets: tickets.count ?? 0,
+        fraudAlerts: fraud.count ?? 0,
+        unpaidInvoices: invoices.count ?? 0,
+        auditToday: audit.count ?? 0,
+      };
+    },
+  });
+
+  const sections: SectionDef[] = [
+    { key: "drivers", title: "Chauffeurs", description: "Validation, documents et présence", keywords: ["chauffeur","driver","permis","document","validation"], icon: Car, defaultPalette: 0, group: "Opérations", roles: ["superadmin","admin","support"], countKey: "pendingDrivers", countLabel: "à valider" },
+    { key: "users", title: "Utilisateurs", description: "Comptes, rôles et mots de passe", keywords: ["utilisateur","user","compte","role","mot de passe","password"], icon: Users, defaultPalette: 1, group: "Opérations", roles: ["superadmin","admin"] },
+    { key: "rides", title: "Courses", description: "Historique et détails par course", keywords: ["course","ride","trajet","historique"], icon: ScrollText, defaultPalette: 2, group: "Opérations", roles: ["superadmin","admin","support"] },
+    { key: "pricing", title: "Tarifs & commissions", description: "Paliers, catégories et règles", keywords: ["tarif","prix","pricing","commission","paiement"], icon: Tag, defaultPalette: 3, group: "Finance", roles: ["superadmin","admin"] },
+    { key: "commissions-report", title: "Rapport commissions", description: "Synthèse et exports", keywords: ["rapport","report","commission","export","paiement"], icon: BarChart3, defaultPalette: 4, group: "Finance", roles: ["superadmin","admin"] },
+    { key: "billing", title: "Facturation", description: "Comptes corporates et factures", keywords: ["facture","invoice","facturation","paiement","corporate"], icon: Receipt, defaultPalette: 5, group: "Finance", roles: ["superadmin","admin"], countKey: "unpaidInvoices", countLabel: "factures impayées" },
+    { key: "wallets", title: "Wallets", description: "Soldes et ajustements chauffeurs", keywords: ["wallet","solde","paiement","chauffeur"], icon: Wallet, defaultPalette: 6, group: "Finance", roles: ["superadmin","admin"] },
+    { key: "audit", title: "Journal d'audit", description: "Historique des actions admin", keywords: ["audit","journal","historique","log"], icon: FileText, defaultPalette: 7, group: "Sécurité", roles: ["superadmin","admin"], countKey: "auditToday", countLabel: "aujourd'hui" },
+    { key: "fraud", title: "Anti-fraude", description: "Signaux et alertes", keywords: ["fraude","fraud","alerte","sécurité"], icon: ShieldAlert, defaultPalette: 8, group: "Sécurité", roles: ["superadmin","admin","support"], countKey: "fraudAlerts", countLabel: "alertes 24h" },
+    { key: "rewards", title: "Récompenses", description: "Programmes de fidélité et bonus", keywords: ["récompense","reward","bonus","fidélité"], icon: Gift, defaultPalette: 9, group: "Croissance", roles: ["superadmin","admin"] },
+    { key: "metrics", title: "Métriques", description: "Indicateurs et KPIs", keywords: ["métrique","kpi","statistique","metric"], icon: Coins, defaultPalette: 10, group: "Croissance", roles: ["superadmin","admin"] },
+  ];
+
   if (loading) return <div className="py-12 text-center text-muted-foreground">Chargement…</div>;
-  if (!hasRole("admin")) {
+  if (!hasRole("admin") && !hasRole("support")) {
     return (
       <div className="rounded-3xl border border-destructive/30 bg-destructive/5 p-8 text-center">
         <h2 className="font-display text-xl font-bold text-destructive">Accès refusé</h2>
@@ -83,35 +186,185 @@ function AdminPage() {
       </div>
     );
   }
+
+  // Map current user's app roles → admin grid roles
+  const myRoles: AdminRole[] = [];
+  if (roles.includes("superadmin")) myRoles.push("superadmin", "admin");
+  else if (roles.includes("admin")) myRoles.push("admin");
+  if (roles.includes("support")) myRoles.push("support");
+
+  const getColors = (s: SectionDef) => {
+    const o = colorOverrides[s.key];
+    if (o) return o;
+    const p = PASTEL_PALETTE[s.defaultPalette] ?? PASTEL_PALETTE[0];
+    return { bg: p.bg, iconBg: p.iconBg };
+  };
+
+  const countOf = (s: SectionDef): number | null => {
+    if (!s.countKey || !counts.data) return null;
+    return counts.data[s.countKey] ?? 0;
+  };
+
+  if (section) {
+    const current = sections.find((s) => s.key === section);
+    return (
+      <div className="space-y-6">
+        <div className="flex items-center gap-3">
+          <Button variant="ghost" size="sm" onClick={() => setSection(null)} className="gap-1.5">
+            <ArrowLeft className="h-4 w-4" /> Retour
+          </Button>
+          <h1 className="font-display text-2xl font-bold">{current?.title ?? "Administration"}</h1>
+        </div>
+        {section === "drivers" && <DriversTab />}
+        {section === "users" && <UsersTab />}
+        {section === "rides" && <RidesTab />}
+        {section === "pricing" && <PricingTab />}
+        {section === "commissions-report" && <CommissionReportTab />}
+        {section === "billing" && <BillingTab />}
+        {section === "wallets" && <WalletsTab />}
+        {section === "audit" && <AuditTab />}
+        {section === "fraud" && <FraudTab />}
+        {section === "rewards" && <RewardsTab />}
+        {section === "metrics" && <MetricsTab />}
+      </div>
+    );
+  }
+
+  const q = query.trim().toLowerCase();
+  const visible = sections.filter((s) => {
+    // Role filter pill
+    if (roleFilter !== "all" && !s.roles.includes(roleFilter)) return false;
+    // Only show modules the current user is allowed in
+    if (!s.roles.some((r) => myRoles.includes(r))) return false;
+    if (!q) return true;
+    const hay = `${s.title} ${s.description} ${s.keywords.join(" ")}`.toLowerCase();
+    return hay.includes(q);
+  });
+
+  const groups = Array.from(new Set(visible.map((s) => s.group)));
+  const roleChips: { key: "all" | AdminRole; label: string }[] = [
+    { key: "all", label: "Tous" },
+    { key: "superadmin", label: "Super admin" },
+    { key: "admin", label: "Admin" },
+    { key: "support", label: "Support" },
+  ];
+
   return (
-    <div className="space-y-6">
-      <h1 className="font-display text-3xl font-bold">Administration</h1>
-      <Tabs defaultValue="drivers">
-        <TabsList className="flex-wrap">
-          <TabsTrigger value="drivers">Chauffeurs</TabsTrigger>
-          <TabsTrigger value="users">Utilisateurs</TabsTrigger>
-          <TabsTrigger value="rides">Courses</TabsTrigger>
-          <TabsTrigger value="pricing">Tarifs & commissions</TabsTrigger>
-          <TabsTrigger value="commissions-report">Rapport commissions</TabsTrigger>
-          <TabsTrigger value="billing">Facturation</TabsTrigger>
-          <TabsTrigger value="wallets">Wallets</TabsTrigger>
-          <TabsTrigger value="audit">Journal d'audit</TabsTrigger>
-          <TabsTrigger value="fraud">Anti-fraude</TabsTrigger>
-          <TabsTrigger value="rewards">Récompenses</TabsTrigger>
-          <TabsTrigger value="metrics">Métriques</TabsTrigger>
-        </TabsList>
-        <TabsContent value="drivers"><DriversTab /></TabsContent>
-        <TabsContent value="users"><UsersTab /></TabsContent>
-        <TabsContent value="rides"><RidesTab /></TabsContent>
-        <TabsContent value="pricing"><PricingTab /></TabsContent>
-        <TabsContent value="commissions-report"><CommissionReportTab /></TabsContent>
-        <TabsContent value="billing"><BillingTab /></TabsContent>
-        <TabsContent value="wallets"><WalletsTab /></TabsContent>
-        <TabsContent value="audit"><AuditTab /></TabsContent>
-        <TabsContent value="fraud"><FraudTab /></TabsContent>
-        <TabsContent value="rewards"><RewardsTab /></TabsContent>
-        <TabsContent value="metrics"><MetricsTab /></TabsContent>
-      </Tabs>
+    <div className="space-y-8">
+      <div>
+        <h1 className="font-display text-3xl font-bold">Panneau d'administration</h1>
+        <p className="mt-1 text-sm text-muted-foreground">Pilotez la plateforme Tibus Ride depuis un seul endroit.</p>
+      </div>
+
+      {/* Search + filters toolbar */}
+      <div className="space-y-3">
+        <div className="relative">
+          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Rechercher une section, action ou page (utilisateurs, paiements, audit…)"
+            className="h-11 pl-9"
+          />
+        </div>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex flex-wrap gap-1.5">
+            {roleChips.map((r) => (
+              <button
+                key={r.key}
+                onClick={() => setRoleFilter(r.key)}
+                className={`rounded-full border px-3 py-1 text-xs font-medium transition-colors ${
+                  roleFilter === r.key
+                    ? "border-primary bg-primary text-primary-foreground"
+                    : "border-border bg-background text-muted-foreground hover:bg-accent"
+                }`}
+              >
+                {r.label}
+              </button>
+            ))}
+          </div>
+          <Button variant={customizing ? "default" : "outline"} size="sm" onClick={() => setCustomizing((v) => !v)} className="gap-1.5">
+            <Palette className="h-4 w-4" />
+            {customizing ? "Terminer" : "Personnaliser les couleurs"}
+          </Button>
+        </div>
+      </div>
+
+      {visible.length === 0 && (
+        <div className="rounded-2xl border border-dashed border-border bg-muted/30 p-8 text-center text-sm text-muted-foreground">
+          Aucun module ne correspond à votre recherche.
+        </div>
+      )}
+
+      {groups.map((g) => (
+        <section key={g} className="space-y-3">
+          <h2 className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">{g}</h2>
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {visible.filter((s) => s.group === g).map((s) => {
+              const Icon = s.icon;
+              const c = getColors(s);
+              const count = countOf(s);
+              return (
+                <div key={s.key} className={`relative rounded-2xl border ${c.bg} p-5 transition-all hover:-translate-y-0.5 hover:shadow-md`}>
+                  <button
+                    onClick={() => setSection(s.key)}
+                    className="w-full text-left focus:outline-none"
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div className={`inline-flex h-12 w-12 items-center justify-center rounded-xl ${c.iconBg} shadow-sm`}>
+                        <Icon className="h-6 w-6 text-white" />
+                      </div>
+                      {count !== null && count > 0 && (
+                        <span className="rounded-full bg-white/80 px-2.5 py-1 text-xs font-semibold text-foreground shadow-sm backdrop-blur">
+                          {count} {s.countLabel}
+                        </span>
+                      )}
+                      {count === 0 && s.countLabel && (
+                        <span className="rounded-full bg-white/60 px-2.5 py-1 text-xs font-medium text-muted-foreground">
+                          0 {s.countLabel}
+                        </span>
+                      )}
+                    </div>
+                    <div className="mt-4 font-display text-lg font-semibold text-foreground">{s.title}</div>
+                    <div className="mt-1 text-sm text-muted-foreground">{s.description}</div>
+                    <div className="mt-3 flex flex-wrap gap-1.5">
+                      {s.roles.map((r) => (
+                        <span key={r} className="rounded-md bg-white/70 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+                          {r}
+                        </span>
+                      ))}
+                    </div>
+                  </button>
+                  {customizing && (
+                    <div className="mt-4 border-t border-white/60 pt-3">
+                      <div className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Couleur pastel</div>
+                      <div className="flex flex-wrap gap-1.5">
+                        {PASTEL_PALETTE.map((p) => {
+                          const active = (colorOverrides[s.key]?.iconBg ?? PASTEL_PALETTE[s.defaultPalette]?.iconBg) === p.iconBg;
+                          return (
+                            <button
+                              key={p.name}
+                              title={p.name}
+                              onClick={() => setSectionColor(s.key, p)}
+                              className={`h-6 w-6 rounded-full border-2 ${p.iconBg} ${active ? "border-foreground" : "border-white/80"}`}
+                            />
+                          );
+                        })}
+                        <button
+                          onClick={() => setSectionColor(s.key, null)}
+                          className="rounded-md border border-border bg-white/80 px-2 py-0.5 text-[10px] font-medium text-muted-foreground hover:bg-white"
+                        >
+                          Défaut
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </section>
+      ))}
     </div>
   );
 }
@@ -480,13 +733,17 @@ function DocRow({
 /* ------------------------------ Users ------------------------------ */
 function UsersTab() {
   const qc = useQueryClient();
-  const { user: me } = useAuth();
+  const { user: me, hasRole: hasAuthRole } = useAuth();
+  const isSuperadmin = hasAuthRole("superadmin");
   const list = useServerFn(listUsers);
   const banFn = useServerFn(setUserBanned);
   const roleFn = useServerFn(setUserRole);
+  const pwdFn = useServerFn(setUserPassword);
+  const countryFn = useServerFn(setUserCountry);
   const [q, setQ] = useState("");
   const [roleFilter, setRoleFilter] = useState<string>("all");
   const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [countryFilter, setCountryFilter] = useState<string>("all");
 
   const { data, isLoading, error } = useQuery({
     queryKey: ["admin-users"],
@@ -504,7 +761,7 @@ function UsersTab() {
   });
 
   const role = useMutation({
-    mutationFn: (v: { userId: string; role: "admin" | "driver" | "passenger" | "support"; grant: boolean }) => roleFn({ data: v }),
+    mutationFn: (v: { userId: string; role: "superadmin" | "admin" | "driver" | "passenger" | "support"; grant: boolean }) => roleFn({ data: v }),
     onSuccess: () => {
       toast.success("Rôle mis à jour");
       qc.invalidateQueries({ queryKey: ["admin-users"] });
@@ -512,6 +769,35 @@ function UsersTab() {
     },
     onError: (e: Error) => toast.error(e.message),
   });
+
+  const pwd = useMutation({
+    mutationFn: (v: { userId: string; password: string }) => pwdFn({ data: v }),
+    onSuccess: () => {
+      toast.success("Mot de passe mis à jour");
+      qc.invalidateQueries({ queryKey: ["admin-audit"] });
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  const country = useMutation({
+    mutationFn: (v: { userId: string; country: string | null }) => countryFn({ data: v }),
+    onSuccess: () => {
+      toast.success("Pays mis à jour");
+      qc.invalidateQueries({ queryKey: ["admin-users"] });
+      qc.invalidateQueries({ queryKey: ["admin-audit"] });
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  const askPassword = (u: any) => {
+    const pw = window.prompt(`Nouveau mot de passe pour ${u.email ?? u.id} (min. 8 caractères) :`, "");
+    if (pw === null) return;
+    if (pw.length < 8) { toast.error("Mot de passe trop court (min. 8 caractères)."); return; }
+    const confirm = window.prompt("Confirmer le nouveau mot de passe :", "");
+    if (confirm === null) return;
+    if (confirm !== pw) { toast.error("Les mots de passe ne correspondent pas."); return; }
+    pwd.mutate({ userId: u.id, password: pw });
+  };
 
   const filtered = useMemo(() => {
     return (data ?? []).filter((u: any) => {
@@ -521,12 +807,17 @@ function UsersTab() {
         if (!hay.includes(s)) return false;
       }
       if (roleFilter !== "all" && !u.roles.includes(roleFilter)) return false;
+      if (countryFilter !== "all") {
+        if (!u.roles.includes("admin") && !u.roles.includes("support")) return false;
+        const c = u.profile?.country ?? null;
+        if (countryFilter === "__none" ? c !== null : c !== countryFilter) return false;
+      }
       const isBanned = u.banned_until && new Date(u.banned_until) > new Date();
       if (statusFilter === "active" && isBanned) return false;
       if (statusFilter === "banned" && !isBanned) return false;
       return true;
     });
-  }, [data, q, roleFilter, statusFilter]);
+  }, [data, q, roleFilter, statusFilter, countryFilter]);
 
   const exportCsv = () => {
     const rows = filtered.map((u: any) => {
@@ -564,7 +855,9 @@ function UsersTab() {
             <SelectTrigger className="w-[160px]"><SelectValue /></SelectTrigger>
             <SelectContent>
               <SelectItem value="all">Tous</SelectItem>
+              <SelectItem value="superadmin">Superadmin</SelectItem>
               <SelectItem value="admin">Admin</SelectItem>
+              <SelectItem value="support">Support</SelectItem>
               <SelectItem value="driver">Chauffeur</SelectItem>
               <SelectItem value="passenger">Passager</SelectItem>
             </SelectContent>
@@ -578,6 +871,19 @@ function UsersTab() {
               <SelectItem value="all">Tous</SelectItem>
               <SelectItem value="active">Actif</SelectItem>
               <SelectItem value="banned">Bloqué</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+        <div>
+          <Label className="text-xs text-muted-foreground">Pays (admins / support)</Label>
+          <Select value={countryFilter} onValueChange={setCountryFilter}>
+            <SelectTrigger className="w-[180px]"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Tous</SelectItem>
+              <SelectItem value="__none">Sans pays</SelectItem>
+              {ADMIN_COUNTRIES.map((c) => (
+                <SelectItem key={c} value={c}>{c}</SelectItem>
+              ))}
             </SelectContent>
           </Select>
         </div>
@@ -595,17 +901,19 @@ function UsersTab() {
               <tr>
                 <th className="px-4 py-3 text-left font-medium">Utilisateur</th>
                 <th className="px-4 py-3 text-left font-medium">Rôles</th>
+                <th className="px-4 py-3 text-left font-medium">Pays</th>
                 <th className="px-4 py-3 text-left font-medium">Dernière connexion</th>
                 <th className="px-4 py-3 text-left font-medium">Statut</th>
                 <th className="px-4 py-3 text-right font-medium">Actions</th>
               </tr>
             </thead>
             <tbody>
-              {isLoading && <tr><td colSpan={5} className="px-4 py-8 text-center text-muted-foreground">Chargement…</td></tr>}
-              {!isLoading && filtered.length === 0 && <tr><td colSpan={5} className="px-4 py-8 text-center text-muted-foreground">Aucun utilisateur.</td></tr>}
+              {isLoading && <tr><td colSpan={6} className="px-4 py-8 text-center text-muted-foreground">Chargement…</td></tr>}
+              {!isLoading && filtered.length === 0 && <tr><td colSpan={6} className="px-4 py-8 text-center text-muted-foreground">Aucun utilisateur.</td></tr>}
               {filtered.map((u: any) => {
                 const isBanned = u.banned_until && new Date(u.banned_until) > new Date();
                 const isSelf = u.id === me?.id;
+                const hasSuper = u.roles.includes("superadmin");
                 const hasAdmin = u.roles.includes("admin");
                 const hasSupport = u.roles.includes("support");
                 const hasDriver = u.roles.includes("driver");
@@ -621,9 +929,34 @@ function UsersTab() {
                       <div className="flex flex-wrap gap-1">
                         {u.roles.length === 0 && <span className="text-xs text-muted-foreground">aucun</span>}
                         {u.roles.map((r: string) => (
-                          <span key={r} className="rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary">{r}</span>
+                          <span
+                            key={r}
+                            className={
+                              r === "superadmin"
+                                ? "rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-900 dark:bg-amber-500/20 dark:text-amber-300"
+                                : "rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary"
+                            }
+                          >{r}</span>
                         ))}
                       </div>
+                    </td>
+                    <td className="px-4 py-3">
+                      {hasSuper ? (
+                        <span className="text-xs text-muted-foreground italic">Global (superadmin)</span>
+                      ) : (
+                        <Select
+                          value={u.profile?.country ?? "__none"}
+                          onValueChange={(v) => country.mutate({ userId: u.id, country: v === "__none" ? null : v })}
+                        >
+                          <SelectTrigger className="w-[170px] h-8 text-xs"><SelectValue placeholder="—" /></SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="__none">— Aucun —</SelectItem>
+                            {ADMIN_COUNTRIES.map((c) => (
+                              <SelectItem key={c} value={c}>{c}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      )}
                     </td>
                     <td className="px-4 py-3 text-xs text-muted-foreground whitespace-nowrap">
                       {u.last_sign_in_at ? new Date(u.last_sign_in_at).toLocaleString("fr-FR") : "jamais"}
@@ -635,6 +968,10 @@ function UsersTab() {
                     </td>
                     <td className="px-4 py-3 text-right">
                       <div className="inline-flex flex-wrap justify-end gap-2">
+                        {isSuperadmin && !isSelf && (hasSuper
+                          ? <Button size="sm" variant="outline" onClick={() => { if (confirm("Retirer le rôle superadmin ?")) role.mutate({ userId: u.id, role: "superadmin", grant: false }); }}><ShieldOff className="h-3.5 w-3.5 mr-1" />Retirer superadmin</Button>
+                          : (hasAdmin ? <Button size="sm" variant="outline" onClick={() => { if (confirm("Promouvoir ce compte au rôle superadmin (accès global) ?")) role.mutate({ userId: u.id, role: "superadmin", grant: true }); }}><ShieldCheck className="h-3.5 w-3.5 mr-1" />Promouvoir superadmin</Button> : null)
+                        )}
                         {!isSelf && (hasAdmin
                           ? <Button size="sm" variant="outline" onClick={() => role.mutate({ userId: u.id, role: "admin", grant: false })}><ShieldOff className="h-3.5 w-3.5 mr-1" />Retirer admin</Button>
                           : <Button size="sm" variant="outline" onClick={() => role.mutate({ userId: u.id, role: "admin", grant: true })}><ShieldCheck className="h-3.5 w-3.5 mr-1" />Promouvoir admin</Button>
@@ -655,6 +992,7 @@ function UsersTab() {
                           ? <Button size="sm" onClick={() => ban.mutate({ userId: u.id, banned: false })}><Unlock className="h-3.5 w-3.5 mr-1" />Déverrouiller</Button>
                           : <Button size="sm" variant="destructive" onClick={() => askBan(u)}><Lock className="h-3.5 w-3.5 mr-1" />Bloquer</Button>
                         )}
+                        <Button size="sm" variant="outline" onClick={() => askPassword(u)}><Lock className="h-3.5 w-3.5 mr-1" />Mot de passe</Button>
                       </div>
                     </td>
                   </tr>
@@ -786,13 +1124,43 @@ function RideDetailDialog({ rideId, onClose }: { rideId: string | null; onClose:
 /* ------------------------------ Audit ------------------------------ */
 function AuditTab() {
   const list = useServerFn(listAuditLogs);
+  const usersFn = useServerFn(listUsers);
   const [q, setQ] = useState("");
   const [actionFilter, setActionFilter] = useState<string>("all");
+  const [countryFilter, setCountryFilter] = useState<string>("all");
+  const [onlyCountryEvents, setOnlyCountryEvents] = useState(false);
 
   const { data, isLoading } = useQuery({
     queryKey: ["admin-audit"],
     queryFn: () => list(),
   });
+
+  const { data: users } = useQuery({
+    queryKey: ["admin-users"],
+    queryFn: () => usersFn(),
+  });
+
+  const userCountryMap = useMemo(() => {
+    const m = new Map<string, string | null>();
+    (users ?? []).forEach((u: any) => m.set(u.id, u.profile?.country ?? null));
+    return m;
+  }, [users]);
+
+
+  const COUNTRY_EVENT_ACTIONS = new Set([
+    "user.country.set",
+    "user.ban",
+    "user.unban",
+    "user.password.reset",
+    "role.grant",
+    "role.revoke",
+    "driver.status.pending",
+    "driver.status.under_review",
+    "driver.status.approved",
+    "driver.status.rejected",
+    "driver.status.suspended",
+    "driver.document.upload",
+  ]);
 
   const actions = useMemo(() => {
     const set = new Set<string>();
@@ -803,6 +1171,21 @@ function AuditTab() {
   const filtered = useMemo(() => {
     return (data ?? []).filter((l: any) => {
       if (actionFilter !== "all" && l.action !== actionFilter) return false;
+      if (onlyCountryEvents && !COUNTRY_EVENT_ACTIONS.has(l.action)) return false;
+      if (countryFilter !== "all") {
+        const actorC = l.actor_id ? userCountryMap.get(l.actor_id) ?? null : null;
+        const targetC =
+          (l.target_type === "user" || l.target_type === "driver") && l.target_id
+            ? userCountryMap.get(l.target_id) ?? null
+            : null;
+        const detailsC =
+          l.details && typeof l.details === "object" ? ((l.details as any).country ?? null) : null;
+        const match =
+          countryFilter === "__none"
+            ? actorC === null && targetC === null && detailsC === null
+            : actorC === countryFilter || targetC === countryFilter || detailsC === countryFilter;
+        if (!match) return false;
+      }
       if (q) {
         const s = q.toLowerCase();
         const hay = `${l.actor_email ?? ""} ${l.target_label ?? ""} ${l.target_id ?? ""} ${JSON.stringify(l.details ?? {})}`.toLowerCase();
@@ -810,15 +1193,17 @@ function AuditTab() {
       }
       return true;
     });
-  }, [data, q, actionFilter]);
+  }, [data, q, actionFilter, countryFilter, onlyCountryEvents, userCountryMap]);
 
   const exportCsv = () => {
     const rows = filtered.map((l: any) => ({
       date: l.created_at,
       action: l.action,
       acteur: l.actor_email ?? l.actor_id,
+      acteur_pays: l.actor_id ? userCountryMap.get(l.actor_id) ?? "" : "",
       cible_type: l.target_type ?? "",
       cible: l.target_label ?? l.target_id ?? "",
+      cible_pays: l.target_id ? userCountryMap.get(l.target_id) ?? "" : "",
       details: l.details ? JSON.stringify(l.details) : "",
     }));
     downloadCsv(`audit-${new Date().toISOString().slice(0, 10)}.csv`, rows);
@@ -841,8 +1226,29 @@ function AuditTab() {
             </SelectContent>
           </Select>
         </div>
+        <div>
+          <Label className="text-xs text-muted-foreground">Pays</Label>
+          <Select value={countryFilter} onValueChange={setCountryFilter}>
+            <SelectTrigger className="w-[180px]"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Tous</SelectItem>
+              <SelectItem value="__none">Sans pays</SelectItem>
+              {ADMIN_COUNTRIES.map((c) => (
+                <SelectItem key={c} value={c}>{c}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        <Button
+          variant={onlyCountryEvents ? "default" : "outline"}
+          onClick={() => setOnlyCountryEvents((v) => !v)}
+          size="sm"
+        >
+          Événements pays
+        </Button>
         <Button variant="outline" onClick={exportCsv}><Download className="h-4 w-4 mr-2" />Exporter CSV</Button>
       </div>
+
 
       <div className="text-xs text-muted-foreground">{filtered.length} entrée{filtered.length > 1 ? "s" : ""}</div>
 

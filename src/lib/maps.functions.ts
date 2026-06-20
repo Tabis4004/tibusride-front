@@ -2,32 +2,48 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 
-const GATEWAY_URL = "https://connector-gateway.lovable.dev/google_maps";
+const GEOCODE_URL = "https://maps.googleapis.com/maps/api/geocode/json";
+const ROUTES_URL = "https://routes.googleapis.com/directions/v2:computeRoutes";
+const PLACES_URL = "https://places.googleapis.com/v1";
 
-function gatewayHeaders(): HeadersInit {
-  const lovKey = process.env.LOVABLE_API_KEY;
-  const gmKey = process.env.GOOGLE_MAPS_API_KEY;
-  if (!lovKey || !gmKey) throw new Error("Google Maps credentials missing");
-  return {
-    Authorization: `Bearer ${lovKey}`,
-    "X-Connection-Api-Key": gmKey,
-    "Content-Type": "application/json",
-  };
+function getServerApiKey(): string {
+  const key = process.env.GOOGLE_MAPS_API_KEY?.trim();
+  if (!key) {
+    throw new Error(
+      "GOOGLE_MAPS_API_KEY manquante — créez une clé serveur dans Google Cloud Console (Geocoding, Routes, Places API New)",
+    );
+  }
+  return key;
 }
 
-/** Geocode a free-form address to { lat, lng } via the connector gateway. */
+function googleJsonHeaders(fieldMask?: string): HeadersInit {
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+    "X-Goog-Api-Key": getServerApiKey(),
+  };
+  if (fieldMask) headers["X-Goog-FieldMask"] = fieldMask;
+  return headers;
+}
+
+/** Geocode a free-form address to { lat, lng }. */
 export const geocodeAddress = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d) => z.object({ address: z.string().trim().min(2).max(300) }).parse(d))
   .handler(async ({ data }) => {
-    const url = `${GATEWAY_URL}/maps/api/geocode/json?address=${encodeURIComponent(data.address)}`;
-    const res = await fetch(url, { headers: gatewayHeaders() });
+    const key = getServerApiKey();
+    const url = `${GEOCODE_URL}?address=${encodeURIComponent(data.address)}&key=${key}`;
+    const res = await fetch(url);
     const json: any = await res.json();
     if (!res.ok || json.status !== "OK" || !json.results?.[0]) {
-      return { ok: false as const, error: json.status ?? `HTTP ${res.status}` };
+      return { ok: false as const, error: json.error_message ?? json.status ?? `HTTP ${res.status}` };
     }
     const loc = json.results[0].geometry.location;
-    return { ok: true as const, lat: loc.lat as number, lng: loc.lng as number, formatted: json.results[0].formatted_address as string };
+    return {
+      ok: true as const,
+      lat: loc.lat as number,
+      lng: loc.lng as number,
+      formatted: json.results[0].formatted_address as string,
+    };
   });
 
 /** Compute a route between two points using the Routes API (v2). */
@@ -46,12 +62,9 @@ export const computeRoute = createServerFn({ method: "POST" })
       travelMode: "DRIVE",
       routingPreference: "TRAFFIC_AWARE",
     };
-    const res = await fetch(`${GATEWAY_URL}/routes/directions/v2:computeRoutes`, {
+    const res = await fetch(ROUTES_URL, {
       method: "POST",
-      headers: {
-        ...gatewayHeaders(),
-        "X-Goog-FieldMask": "routes.duration,routes.distanceMeters,routes.polyline.encodedPolyline",
-      },
+      headers: googleJsonHeaders("routes.duration,routes.distanceMeters,routes.polyline.encodedPolyline"),
       body: JSON.stringify(body),
     });
     const json: any = await res.json();
@@ -69,16 +82,17 @@ export const computeRoute = createServerFn({ method: "POST" })
     };
   });
 
-/** Reverse geocode lat/lng → formatted address via the connector gateway. */
+/** Reverse geocode lat/lng → formatted address. */
 export const reverseGeocode = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d) => z.object({ lat: z.number(), lng: z.number() }).parse(d))
   .handler(async ({ data }) => {
-    const url = `${GATEWAY_URL}/maps/api/geocode/json?latlng=${data.lat},${data.lng}`;
-    const res = await fetch(url, { headers: gatewayHeaders() });
+    const key = getServerApiKey();
+    const url = `${GEOCODE_URL}?latlng=${data.lat},${data.lng}&key=${key}`;
+    const res = await fetch(url);
     const json: any = await res.json();
     if (!res.ok || json.status !== "OK" || !json.results?.[0]) {
-      return { ok: false as const, error: json.status ?? `HTTP ${res.status}` };
+      return { ok: false as const, error: json.error_message ?? json.status ?? `HTTP ${res.status}` };
     }
     return { ok: true as const, formatted: json.results[0].formatted_address as string };
   });
@@ -102,13 +116,15 @@ export const placesAutocomplete = createServerFn({ method: "POST" })
         },
       };
     }
-    const res = await fetch(`${GATEWAY_URL}/places/v1/places:autocomplete`, {
+    const res = await fetch(`${PLACES_URL}/places:autocomplete`, {
       method: "POST",
-      headers: gatewayHeaders(),
+      headers: googleJsonHeaders(),
       body: JSON.stringify(body),
     });
     const json: any = await res.json();
-    if (!res.ok) return { ok: false as const, error: json.error?.message ?? `HTTP ${res.status}`, suggestions: [] as any[] };
+    if (!res.ok) {
+      return { ok: false as const, error: json.error?.message ?? `HTTP ${res.status}`, suggestions: [] as any[] };
+    }
     const suggestions = (json.suggestions ?? [])
       .map((s: any) => s.placePrediction)
       .filter(Boolean)
@@ -127,11 +143,8 @@ export const placeDetails = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d) => z.object({ placeId: z.string().min(1).max(200) }).parse(d))
   .handler(async ({ data }) => {
-    const res = await fetch(`${GATEWAY_URL}/places/v1/places/${encodeURIComponent(data.placeId)}`, {
-      headers: {
-        ...gatewayHeaders(),
-        "X-Goog-FieldMask": "id,displayName,formattedAddress,location",
-      },
+    const res = await fetch(`${PLACES_URL}/places/${encodeURIComponent(data.placeId)}`, {
+      headers: googleJsonHeaders("id,displayName,formattedAddress,location"),
     });
     const json: any = await res.json();
     if (!res.ok || !json.location) {

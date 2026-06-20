@@ -10,6 +10,7 @@ import { toast } from "sonner";
 import { Car, Clock, MapPin, Wallet } from "lucide-react";
 import { useServerFn } from "@tanstack/react-start";
 import { getMyWallet } from "@/lib/wallet.functions";
+import { getNotificationPrefs } from "@/lib/tracking.functions";
 
 export const Route = createFileRoute("/_authenticated/app/driver")({
   head: () => ({ meta: [{ title: "Tableau de bord chauffeur — Tibus Ride" }] }),
@@ -19,6 +20,17 @@ export const Route = createFileRoute("/_authenticated/app/driver")({
 function DriverPage() {
   const { user } = useAuth();
   const qc = useQueryClient();
+
+  const profileQ = useQuery({
+    queryKey: ["self-profile", user?.id],
+    enabled: !!user,
+    queryFn: async () => {
+      const { data, error } = await supabase.from("profiles").select("country").eq("id", user!.id).maybeSingle();
+      if (error) throw error;
+      return data as { country: string | null } | null;
+    },
+  });
+  const myCountry = profileQ.data?.country ?? null;
 
   const driverQ = useQuery({
     queryKey: ["driver-profile", user?.id],
@@ -47,17 +59,61 @@ function DriverPage() {
   });
 
   const openRidesQ = useQuery({
-    queryKey: ["open-rides", driverQ.data?.is_online, driverQ.data?.city],
-    enabled: !!driverQ.data?.is_online && driverQ.data?.status === "approved",
+    queryKey: ["open-rides", driverQ.data?.is_online, driverQ.data?.city, myCountry],
+    enabled: !!driverQ.data?.is_online && driverQ.data?.status === "approved" && !!myCountry,
     refetchInterval: 4000,
     queryFn: async () => {
       let q = supabase.from("rides").select("*").eq("status", "requested").order("requested_at", { ascending: true }).limit(20);
+      if (myCountry) q = q.eq("country", myCountry);
       if (driverQ.data?.city) q = q.eq("city", driverQ.data.city);
       const { data, error } = await q;
       if (error) throw error;
       return data ?? [];
     },
   });
+
+  // Notification preferences
+  const getPrefs = useServerFn(getNotificationPrefs);
+  const prefsQ = useQuery({ queryKey: ["notif-prefs", user?.id], enabled: !!user, queryFn: () => getPrefs() });
+  const prefs = prefsQ.data;
+
+  // Ask browser notification permission once if system channel enabled
+  useEffect(() => {
+    if (prefs?.channel_system && prefs?.notify_new_ride
+        && typeof Notification !== "undefined" && Notification.permission === "default") {
+      Notification.requestPermission().catch(() => {});
+    }
+  }, [prefs?.channel_system, prefs?.notify_new_ride]);
+  useEffect(() => {
+    if (!myCountry || !driverQ.data?.is_online) return;
+    if (!prefs?.notify_new_ride) return;
+    const ch = supabase
+      .channel(`new-rides-${myCountry}`)
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "rides", filter: `country=eq.${myCountry}` }, (payload) => {
+        const r: any = payload.new;
+        if (r?.status !== "requested") return;
+        if (driverQ.data?.city && r.city !== driverQ.data.city) return;
+        if (prefs.channel_toast) {
+          toast.success("Nouvelle course disponible !", { description: `${r.pickup_address ?? ""} → ${r.dropoff_address ?? ""}`.slice(0, 120), duration: 9000 });
+        }
+        try {
+          if (prefs.channel_system && typeof Notification !== "undefined" && Notification.permission === "granted") {
+            new Notification("Nouvelle livraison à proximité", { body: `${r.pickup_address ?? "Point de départ"} → ${r.dropoff_address ?? ""}`, tag: `ride-new-${r.id}`, icon: "/favicon.ico" });
+          }
+          if (prefs.sound_enabled) {
+            const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
+            const o = ctx.createOscillator(); const g = ctx.createGain();
+            o.connect(g); g.connect(ctx.destination);
+            o.frequency.value = 1040; g.gain.value = 0.18;
+            o.start(); setTimeout(() => { o.stop(); ctx.close(); }, 380);
+          }
+        } catch {}
+        qc.invalidateQueries({ queryKey: ["open-rides"] });
+      })
+      .subscribe();
+    return () => { supabase.removeChannel(ch); };
+  }, [myCountry, driverQ.data?.is_online, driverQ.data?.city, qc, prefs?.notify_new_ride, prefs?.channel_toast, prefs?.channel_system, prefs?.sound_enabled]);
+
 
   const toggleOnline = useMutation({
     mutationFn: async (online: boolean) => {

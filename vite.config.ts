@@ -7,9 +7,18 @@
 import { defineConfig } from "@lovable.dev/vite-tanstack-config";
 
 export default defineConfig({
+  vite: {
+    server: {
+      // Autorise les tunnels ngrok pour les tests clients à distance
+      allowedHosts: [".ngrok-free.dev", ".ngrok-free.app", ".ngrok.io"],
+    },
+    // Expose les variables serveur (.env) au SSR / routes API
+    envPrefix: ["VITE_", "POSTGRES_", "DATABASE_", "AUTH_", "GOOGLE_", "RESEND_", "EMAIL_", "SUPABASE_"],
+  },
   tanstackStart: {
-    // Redirect TanStack Start's bundled server entry to src/server.ts (our SSR error wrapper).
-    // nitro/vite builds from this
     server: { entry: "server" },
+  },
+  nitro: {
+    preset: "vercel",
   },
 });

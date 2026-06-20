@@ -8,9 +8,11 @@ import { Car, Compass, LayoutDashboard, LifeBuoy, LogOut, ShieldCheck, Sparkles,
 export const Route = createFileRoute("/_authenticated")({
   ssr: false,
   beforeLoad: async () => {
-    const { data, error } = await supabase.auth.getUser();
-    if (error || !data.user) throw redirect({ to: "/auth" });
-    return { user: data.user };
+    // Use getSession() (local storage + auto-refresh) instead of getUser()
+    // to avoid spurious logouts on transient network errors during navigation.
+    const { data } = await supabase.auth.getSession();
+    if (!data.session) throw redirect({ to: "/auth" });
+    return { user: data.session.user };
   },
   component: AppLayout,
 });
@@ -40,12 +42,12 @@ function AppLayout() {
                 <Button variant="ghost" size="sm" className="gap-2"><Car className="h-4 w-4" />Conduire</Button>
               </Link>
             )}
-            {roles.includes("admin") && (
+            {(roles.includes("admin") || roles.includes("superadmin")) && (
               <Link to="/app/admin">
                 <Button variant="ghost" size="sm" className="gap-2"><ShieldCheck className="h-4 w-4" />Admin</Button>
               </Link>
             )}
-            {(roles.includes("support") || roles.includes("admin")) && (
+            {(roles.includes("support") || roles.includes("admin") || roles.includes("superadmin")) && (
               <Link to="/app/support-inbox">
                 <Button variant="ghost" size="sm" className="gap-2"><Inbox className="h-4 w-4" />Support</Button>
               </Link>
@@ -78,10 +80,10 @@ function AppLayout() {
           {roles.includes("driver") && (
             <Link to="/app/driver"><Button variant="ghost" size="sm">Conduire</Button></Link>
           )}
-          {roles.includes("admin") && (
+          {(roles.includes("admin") || roles.includes("superadmin")) && (
             <Link to="/app/admin"><Button variant="ghost" size="sm">Admin</Button></Link>
           )}
-          {(roles.includes("support") || roles.includes("admin")) && (
+          {(roles.includes("support") || roles.includes("admin") || roles.includes("superadmin")) && (
             <Link to="/app/support-inbox"><Button variant="ghost" size="sm">Inbox</Button></Link>
           )}
           <Link to="/app/rides"><Button variant="ghost" size="sm">Courses</Button></Link>

@@ -158,6 +158,10 @@ function PassengerPage() {
   const currentRideQ = useQuery({
     queryKey: ["current-ride", user?.id],
     enabled: !!user,
+    refetchInterval: (query) => {
+      const status = query.state.data?.status as string | undefined;
+      return status && ["requested", "accepted", "arriving", "in_progress"].includes(status) ? 3000 : false;
+    },
     queryFn: async () => {
       const { data, error } = await supabase
         .from("rides")
@@ -445,10 +449,14 @@ function CurrentRideBanner({ ride: initialRide, onCancel }: { ride: any; onCance
   const qc = useQueryClient();
   const [ride, setRide] = useState<any>(initialRide);
   const [pickup, setPickup] = useState<LatLng | null>(
-    initialRide.pickup_lat && initialRide.pickup_lng ? { lat: initialRide.pickup_lat, lng: initialRide.pickup_lng } : null,
+    initialRide.pickup_lat != null && initialRide.pickup_lng != null
+      ? { lat: Number(initialRide.pickup_lat), lng: Number(initialRide.pickup_lng) }
+      : null,
   );
   const [dropoff, setDropoff] = useState<LatLng | null>(
-    initialRide.dropoff_lat && initialRide.dropoff_lng ? { lat: initialRide.dropoff_lat, lng: initialRide.dropoff_lng } : null,
+    initialRide.dropoff_lat != null && initialRide.dropoff_lng != null
+      ? { lat: Number(initialRide.dropoff_lat), lng: Number(initialRide.dropoff_lng) }
+      : null,
   );
   const [polyline, setPolyline] = useState<string | undefined>();
   const [etaSec, setEtaSec] = useState<number | null>(initialRide.eta_seconds ?? null);
@@ -456,6 +464,36 @@ function CurrentRideBanner({ ride: initialRide, onCancel }: { ride: any; onCance
   const alertedNearbyRef = useRef(false);
   const lastRouteCallRef = useRef(0);
   const lastStatusNotifiedRef = useRef<string>(initialRide.status);
+
+  // Polling direct sur la course (indépendant de Realtime / React Query parent)
+  const rideLiveQ = useQuery({
+    queryKey: ["ride-live", initialRide.id],
+    queryFn: async () => {
+      const { data, error } = await supabase.from("rides").select("*").eq("id", initialRide.id).single();
+      if (error) throw error;
+      return data;
+    },
+    refetchInterval: 2000,
+  });
+
+  const activeRide = rideLiveQ.data ?? ride;
+
+  useEffect(() => {
+    setRide(initialRide);
+  }, [initialRide]);
+
+  useEffect(() => {
+    if (activeRide.pickup_lat != null && activeRide.pickup_lng != null) {
+      setPickup({ lat: Number(activeRide.pickup_lat), lng: Number(activeRide.pickup_lng) });
+    }
+    if (activeRide.dropoff_lat != null && activeRide.dropoff_lng != null) {
+      setDropoff({ lat: Number(activeRide.dropoff_lat), lng: Number(activeRide.dropoff_lng) });
+    }
+  }, [activeRide.pickup_lat, activeRide.pickup_lng, activeRide.dropoff_lat, activeRide.dropoff_lng]);
+
+  useEffect(() => {
+    if (rideLiveQ.data) setRide(rideLiveQ.data);
+  }, [rideLiveQ.data]);
 
   const geocodeFn = useServerFn(geocodeAddress);
   const routeFn = useServerFn(computeRoute);
@@ -480,6 +518,13 @@ function CurrentRideBanner({ ride: initialRide, onCancel }: { ride: any; onCance
     if (!pickup) geocodeFn({ data: { address: `${ride.pickup_address}, ${ride.city}` } }).then((r) => r.ok && setPickup({ lat: r.lat, lng: r.lng })).catch(() => {});
     if (!dropoff) geocodeFn({ data: { address: `${ride.dropoff_address}, ${ride.city}` } }).then((r) => r.ok && setDropoff({ lat: r.lat, lng: r.lng })).catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Ask notification permission on mount
+  useEffect(() => {
+    if (typeof Notification !== "undefined" && Notification.permission === "default") {
+      Notification.requestPermission().catch(() => {});
+    }
   }, []);
 
   // Helper: push notification + sound
@@ -531,8 +576,11 @@ function CurrentRideBanner({ ride: initialRide, onCancel }: { ride: any; onCance
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ride.id, qc, prefs?.notify_status_change, prefs?.notify_driver_arriving, prefs?.sound_enabled]);
 
-  // Driver position + proximity push
-  const driverPos: LatLng | null = ride.driver_lat && ride.driver_lng ? { lat: ride.driver_lat, lng: ride.driver_lng } : null;
+  // Driver position — toujours depuis la course live (polling 2s)
+  const driverPos: LatLng | null =
+    activeRide.driver_lat != null && activeRide.driver_lng != null
+      ? { lat: Number(activeRide.driver_lat), lng: Number(activeRide.driver_lng) }
+      : null;
 
   useEffect(() => {
     if (!pickup || !driverPos) return;
@@ -541,17 +589,17 @@ function CurrentRideBanner({ ride: initialRide, onCancel }: { ride: any; onCance
     const dLng = toRad(pickup.lng - driverPos.lng);
     const a = Math.sin(dLat / 2) ** 2 + Math.cos(toRad(pickup.lat)) * Math.cos(toRad(driverPos.lat)) * Math.sin(dLng / 2) ** 2;
     const distM = 2 * R * Math.asin(Math.sqrt(a));
-    if (distM < 300 && !alertedNearbyRef.current && ride.status !== "in_progress") {
+    if (distM < 300 && !alertedNearbyRef.current && activeRide.status !== "in_progress") {
       alertedNearbyRef.current = true;
       notify("Chauffeur à proximité", `À ~${Math.round(distM)} m de votre point de départ.`, "nearby");
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [driverPos?.lat, driverPos?.lng, pickup?.lat, pickup?.lng, ride.status]);
+  }, [driverPos?.lat, driverPos?.lng, pickup?.lat, pickup?.lng, activeRide.status]);
 
   // Throttled ETA / polyline recompute (max once every 10s)
   useEffect(() => {
     if (!pickup || !dropoff) return;
-    const isInProgress = ride.status === "in_progress";
+    const isInProgress = activeRide.status === "in_progress";
     const origin = !isInProgress && driverPos ? driverPos : pickup;
     const destination = isInProgress ? dropoff : pickup;
     if (origin.lat === destination.lat && origin.lng === destination.lng) return;
@@ -567,7 +615,7 @@ function CurrentRideBanner({ ride: initialRide, onCancel }: { ride: any; onCance
       }).catch(() => {});
     }, wait);
     return () => clearTimeout(t);
-  }, [pickup?.lat, pickup?.lng, dropoff?.lat, dropoff?.lng, driverPos?.lat, driverPos?.lng, ride.status, routeFn]);
+  }, [pickup?.lat, pickup?.lng, dropoff?.lat, dropoff?.lng, driverPos?.lat, driverPos?.lng, activeRide.status, routeFn]);
 
   const cancel = useMutation({
     mutationFn: async () => {
@@ -595,12 +643,28 @@ function CurrentRideBanner({ ride: initialRide, onCancel }: { ride: any; onCance
         )}
       </div>
 
-      {pickup && dropoff ? (
-        <RideTrackingMap pickup={pickup} dropoff={dropoff} driver={driverPos} polyline={polyline} height={340} />
+      {pickup ? (
+        <RideTrackingMap
+          pickup={pickup}
+          dropoff={dropoff ?? pickup}
+          driver={driverPos}
+          polyline={polyline}
+          height={340}
+          followDriver
+        />
       ) : (
         <div className="flex h-[340px] items-center justify-center rounded-2xl border border-dashed text-sm text-muted-foreground">
           Chargement de la carte…
         </div>
+      )}
+
+      {driverPos && (
+        <p className="text-center text-xs text-muted-foreground">
+          Position chauffeur : {driverPos.lat.toFixed(5)}, {driverPos.lng.toFixed(5)}
+          {activeRide.driver_location_updated_at
+            ? ` · maj ${new Date(activeRide.driver_location_updated_at).toLocaleTimeString("fr-FR")}`
+            : ""}
+        </p>
       )}
 
       <div className="grid gap-3 text-sm sm:grid-cols-2">

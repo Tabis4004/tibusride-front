@@ -3,9 +3,80 @@ import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { z } from "zod";
 
 async function assertAdmin(supabase: any, userId: string) {
+  const { data: isSuper, error: superErr } = await supabase.rpc("is_superadmin", { _uid: userId });
+  if (superErr) throw new Error(superErr.message);
+  if (isSuper) return;
+
   const { data, error } = await supabase.rpc("has_role", { _user_id: userId, _role: "admin" });
   if (error) throw new Error(error.message);
   if (!data) throw new Error("Forbidden: admin role required");
+}
+
+async function requireAdminScope(
+  supabase: any,
+  userId: string,
+): Promise<{ country: string | null; isSuper: boolean }> {
+  await assertAdmin(supabase, userId);
+  const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+  const [{ data: prof }, { data: superRow }] = await Promise.all([
+    supabaseAdmin.from("profiles").select("country").eq("id", userId).maybeSingle(),
+    supabaseAdmin
+      .from("user_roles")
+      .select("user_id")
+      .eq("user_id", userId)
+      .eq("role", "superadmin")
+      .maybeSingle(),
+  ]);
+  const country = ((prof as any)?.country ?? null) as string | null;
+  const isSuper = !!superRow;
+  if (!isSuper && !country) {
+    throw new Error(
+      "Votre compte admin n'a pas de pays attribué. Demandez à un superadmin de vous assigner un pays.",
+    );
+  }
+  return { country: isSuper ? null : country, isSuper };
+}
+
+async function assertUserInScope(actorCountry: string | null, targetUserId: string) {
+  if (!actorCountry) return;
+  const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+  const { data } = await supabaseAdmin
+    .from("profiles")
+    .select("country")
+    .eq("id", targetUserId)
+    .maybeSingle();
+  const c = ((data as any)?.country ?? null) as string | null;
+  if (c !== actorCountry) {
+    throw new Error(`Action limitée aux utilisateurs du pays « ${actorCountry} ».`);
+  }
+}
+
+async function assertCorporateInScope(actorCountry: string | null, corporateId: string) {
+  if (!actorCountry) return;
+  const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+  const { data } = await supabaseAdmin
+    .from("corporate_accounts")
+    .select("country")
+    .eq("id", corporateId)
+    .maybeSingle();
+  const c = ((data as any)?.country ?? null) as string | null;
+  if (c !== actorCountry) {
+    throw new Error(`Entité hors de votre périmètre pays (« ${actorCountry} »).`);
+  }
+}
+
+async function assertInvoiceInScope(actorCountry: string | null, invoiceId: string) {
+  if (!actorCountry) return;
+  const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+  const { data } = await supabaseAdmin
+    .from("invoices")
+    .select("corporate:corporate_accounts(country)")
+    .eq("id", invoiceId)
+    .maybeSingle();
+  const c = ((data as any)?.corporate?.country ?? null) as string | null;
+  if (c !== actorCountry) {
+    throw new Error(`Facture hors de votre périmètre pays (« ${actorCountry} »).`);
+  }
 }
 
 async function logAudit(
@@ -28,18 +99,19 @@ async function getActor(context: any): Promise<{ id: string; email: string | nul
   return { id: context.userId, email: context.claims?.email ?? null };
 }
 
+
 export const listUsers = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
-    await assertAdmin(context.supabase, context.userId);
+    const scope = await requireAdminScope(context.supabase, context.userId);
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
 
     const { data: authData, error: authErr } = await supabaseAdmin.auth.admin.listUsers({ page: 1, perPage: 200 });
     if (authErr) throw new Error(authErr.message);
 
-    const ids = authData.users.map((u) => u.id);
+    let ids = authData.users.map((u) => u.id);
     const [{ data: profiles }, { data: roles }] = await Promise.all([
-      supabaseAdmin.from("profiles").select("id, full_name, phone, city").in("id", ids),
+      supabaseAdmin.from("profiles").select("id, full_name, phone, city, country").in("id", ids),
       supabaseAdmin.from("user_roles").select("user_id, role").in("user_id", ids),
     ]);
     const profileMap = new Map((profiles ?? []).map((p: any) => [p.id, p]));
@@ -50,7 +122,7 @@ export const listUsers = createServerFn({ method: "GET" })
       roleMap.set(r.user_id, list);
     });
 
-    return authData.users.map((u) => ({
+    let users = authData.users.map((u) => ({
       id: u.id,
       email: u.email ?? null,
       created_at: u.created_at,
@@ -59,7 +131,14 @@ export const listUsers = createServerFn({ method: "GET" })
       profile: profileMap.get(u.id) ?? null,
       roles: roleMap.get(u.id) ?? [],
     }));
+
+    if (!scope.isSuper) {
+      // Country admins only see users tagged with their country
+      users = users.filter((u: any) => (u.profile?.country ?? null) === scope.country);
+    }
+    return users;
   });
+
 
 export const setUserBanned = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
@@ -67,7 +146,8 @@ export const setUserBanned = createServerFn({ method: "POST" })
     z.object({ userId: z.string().uuid(), banned: z.boolean(), reason: z.string().max(500).optional() }).parse(input),
   )
   .handler(async ({ data, context }) => {
-    await assertAdmin(context.supabase, context.userId);
+    const scope = await requireAdminScope(context.supabase, context.userId);
+    await assertUserInScope(scope.country, data.userId);
     if (data.userId === context.userId) throw new Error("Vous ne pouvez pas vous bloquer vous-même.");
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const { data: target } = await supabaseAdmin.auth.admin.getUserById(data.userId);
@@ -86,19 +166,125 @@ export const setUserBanned = createServerFn({ method: "POST" })
     return { ok: true };
   });
 
+export const setUserPassword = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input: unknown) =>
+    z.object({ userId: z.string().uuid(), password: z.string().min(8).max(200) }).parse(input),
+  )
+  .handler(async ({ data, context }) => {
+    const scope = await requireAdminScope(context.supabase, context.userId);
+    await assertUserInScope(scope.country, data.userId);
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { data: target } = await supabaseAdmin.auth.admin.getUserById(data.userId);
+    const { error } = await supabaseAdmin.auth.admin.updateUserById(data.userId, {
+      password: data.password,
+    });
+    if (error) throw new Error(error.message);
+    await logAudit(await getActor(context), {
+      action: "user.password.reset",
+      target_type: "user",
+      target_id: data.userId,
+      target_label: target?.user?.email ?? undefined,
+      details: null,
+    });
+    return { ok: true };
+  });
+
+export const ADMIN_COUNTRIES = [
+  "Sénégal",
+  "Côte d'Ivoire",
+  "Togo",
+  "Bénin",
+  "Niger",
+  "Nigeria",
+  "Mali",
+  "Burkina Faso",
+  "Ghana",
+  "Guinée",
+] as const;
+
+export const setUserCountry = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input: unknown) =>
+    z
+      .object({
+        userId: z.string().uuid(),
+        country: z.string().min(1).max(80).nullable(),
+      })
+      .parse(input),
+  )
+  .handler(async ({ data, context }) => {
+    const scope = await requireAdminScope(context.supabase, context.userId);
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+
+    // 1) Country must be in the allowed list (if not null)
+    if (data.country !== null && !(ADMIN_COUNTRIES as readonly string[]).includes(data.country)) {
+      throw new Error(`Pays « ${data.country} » non autorisé.`);
+    }
+
+    // 2) Country admins can only act inside their own country, and assign that same country
+    if (!scope.isSuper) {
+      await assertUserInScope(scope.country, data.userId);
+      if (data.country !== null && data.country !== scope.country) {
+        throw new Error(`Vous ne pouvez assigner que le pays « ${scope.country} ».`);
+      }
+    }
+
+    // 3) Target account must be admin or support (incompatible role rejected)
+    const { data: rolesRows } = await supabaseAdmin
+      .from("user_roles")
+      .select("role")
+      .eq("user_id", data.userId);
+    const roles = (rolesRows ?? []).map((r: any) => r.role as string);
+    const isAdminOrSupport = roles.includes("admin") || roles.includes("support");
+    const isSuperTarget = roles.includes("superadmin");
+    if (data.country !== null && isSuperTarget) {
+      throw new Error("Un superadmin est global et ne peut pas être rattaché à un pays.");
+    }
+    if (data.country !== null && !isAdminOrSupport) {
+      throw new Error("Pays incompatible : seul un compte admin ou support peut être rattaché à un pays.");
+    }
+
+    const { error } = await supabaseAdmin
+      .from("profiles")
+      .update({ country: data.country })
+      .eq("id", data.userId);
+    if (error) throw new Error(error.message);
+    const { data: target } = await supabaseAdmin.auth.admin.getUserById(data.userId);
+    await logAudit(await getActor(context), {
+      action: "user.country.set",
+      target_type: "user",
+      target_id: data.userId,
+      target_label: target?.user?.email ?? undefined,
+      details: { country: data.country, roles },
+    });
+    return { ok: true };
+  });
+
 export const setUserRole = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((input: unknown) =>
     z
       .object({
         userId: z.string().uuid(),
-        role: z.enum(["admin", "driver", "passenger", "support"]),
+        role: z.enum(["superadmin", "admin", "driver", "passenger", "support"]),
         grant: z.boolean(),
       })
       .parse(input),
   )
   .handler(async ({ data, context }) => {
-    await assertAdmin(context.supabase, context.userId);
+    const scope = await requireAdminScope(context.supabase, context.userId);
+    if (data.role === "superadmin") {
+      if (!scope.isSuper) throw new Error("Seul un superadmin peut gérer le rôle superadmin.");
+      if (!data.grant && data.userId === context.userId) {
+        throw new Error("Vous ne pouvez pas retirer votre propre rôle superadmin.");
+      }
+    } else {
+      await assertUserInScope(scope.country, data.userId);
+      if (!scope.isSuper && data.role === "admin" && data.grant) {
+        throw new Error("Seul un superadmin peut promouvoir un compte au rôle admin.");
+      }
+    }
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     if (data.grant) {
       const { error } = await supabaseAdmin
@@ -138,7 +324,8 @@ export const updateDriverStatus = createServerFn({ method: "POST" })
       .parse(input),
   )
   .handler(async ({ data, context }) => {
-    await assertAdmin(context.supabase, context.userId);
+    const scope = await requireAdminScope(context.supabase, context.userId);
+    await assertUserInScope(scope.country, data.userId);
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const update: any = {
       status: data.status,
@@ -179,7 +366,8 @@ export const uploadDriverDocument = createServerFn({ method: "POST" })
       .parse(input),
   )
   .handler(async ({ data, context }) => {
-    await assertAdmin(context.supabase, context.userId);
+    const scope = await requireAdminScope(context.supabase, context.userId);
+    await assertUserInScope(scope.country, data.userId);
     const allowed = ["image/jpeg", "image/png", "image/webp", "application/pdf"];
     if (!allowed.includes(data.contentType)) {
       throw new Error("Format non supporté (JPG, PNG, WEBP ou PDF).");
@@ -228,7 +416,7 @@ export const getDocumentSignedUrl = createServerFn({ method: "POST" })
 export const listAuditLogs = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
-    await assertAdmin(context.supabase, context.userId);
+    const scope = await requireAdminScope(context.supabase, context.userId);
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const { data, error } = await supabaseAdmin
       .from("audit_logs")
@@ -236,7 +424,36 @@ export const listAuditLogs = createServerFn({ method: "GET" })
       .order("created_at", { ascending: false })
       .limit(500);
     if (error) throw new Error(error.message);
-    return data ?? [];
+    const rows = data ?? [];
+
+    if (scope.isSuper) return rows;
+
+    // Country admin: keep only rows that touch users / actors of the same country.
+    const userIds = new Set<string>();
+    rows.forEach((r: any) => {
+      if (r.actor_id) userIds.add(r.actor_id);
+      if (r.target_type === "user" || r.target_type === "driver") {
+        if (r.target_id) userIds.add(r.target_id);
+      }
+    });
+    let sameCountry = new Set<string>();
+    if (userIds.size > 0) {
+      const { data: profs } = await supabaseAdmin
+        .from("profiles")
+        .select("id, country")
+        .in("id", Array.from(userIds));
+      (profs ?? []).forEach((p: any) => {
+        if (p.country === scope.country) sameCountry.add(p.id);
+      });
+    }
+    return rows.filter((r: any) => {
+      if (r.actor_id && sameCountry.has(r.actor_id)) return true;
+      if ((r.target_type === "user" || r.target_type === "driver") && r.target_id && sameCountry.has(r.target_id)) return true;
+      // Country-tagged events from details
+      const detailsCountry = r.details && typeof r.details === "object" ? (r.details as any).country : null;
+      if (detailsCountry && detailsCountry === scope.country) return true;
+      return false;
+    });
   });
 
 export const listPricingSettings = createServerFn({ method: "GET" })
@@ -631,11 +848,10 @@ export const commissionReport = createServerFn({ method: "POST" })
 export const listCorporates = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
-    await assertAdmin(context.supabase, context.userId);
-    const { data, error } = await context.supabase
-      .from("corporate_accounts")
-      .select("*")
-      .order("name");
+    const scope = await requireAdminScope(context.supabase, context.userId);
+    let query = context.supabase.from("corporate_accounts").select("*").order("name");
+    if (!scope.isSuper && scope.country) query = query.eq("country", scope.country);
+    const { data, error } = await query;
     if (error) throw new Error(error.message);
     return data ?? [];
   });
@@ -651,16 +867,26 @@ export const createCorporate = createServerFn({ method: "POST" })
       address: z.string().trim().max(500).optional().nullable(),
       city: z.string().trim().max(100).optional().nullable(),
       tax_id: z.string().trim().max(100).optional().nullable(),
+      country: z.string().trim().max(80).optional().nullable(),
     }).parse(d),
   )
   .handler(async ({ data, context }) => {
-    await assertAdmin(context.supabase, context.userId);
+    const scope = await requireAdminScope(context.supabase, context.userId);
+    const payload: any = { ...data };
+    if (!scope.isSuper) {
+      // Country admins can only create corporates in their own country
+      if (payload.country && payload.country !== scope.country) {
+        throw new Error(`Vous ne pouvez créer une entité que dans le pays « ${scope.country} ».`);
+      }
+      payload.country = scope.country;
+    }
     const { data: row, error } = await context.supabase
-      .from("corporate_accounts").insert(data).select().single();
+      .from("corporate_accounts").insert(payload).select().single();
     if (error) throw new Error(error.message);
     await logAudit(await getActor(context), {
       action: "corporate.create", target_type: "corporate_accounts",
       target_id: row.id, target_label: row.name,
+      details: { country: payload.country ?? null },
     });
     return row;
   });
@@ -668,14 +894,16 @@ export const createCorporate = createServerFn({ method: "POST" })
 export const listInvoices = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
-    await assertAdmin(context.supabase, context.userId);
+    const scope = await requireAdminScope(context.supabase, context.userId);
     const { data, error } = await context.supabase
       .from("invoices")
-      .select("*, corporate:corporate_accounts(id,name)")
+      .select("*, corporate:corporate_accounts(id,name,country)")
       .order("created_at", { ascending: false })
       .limit(500);
     if (error) throw new Error(error.message);
-    return data ?? [];
+    const rows = data ?? [];
+    if (scope.isSuper) return rows;
+    return rows.filter((r: any) => r.corporate?.country === scope.country);
   });
 
 export const createInvoice = createServerFn({ method: "POST" })
@@ -695,7 +923,8 @@ export const createInvoice = createServerFn({ method: "POST" })
     }).parse(d),
   )
   .handler(async ({ data, context }) => {
-    await assertAdmin(context.supabase, context.userId);
+    const scope = await requireAdminScope(context.supabase, context.userId);
+    await assertCorporateInScope(scope.country, data.corporate_id);
     const subtotal = data.items.reduce(
       (s, it) => s + Math.round(it.quantity * it.unit_price_xof), 0,
     );
@@ -740,7 +969,8 @@ export const updateInvoiceStatus = createServerFn({ method: "POST" })
     }).parse(d),
   )
   .handler(async ({ data, context }) => {
-    await assertAdmin(context.supabase, context.userId);
+    const scope = await requireAdminScope(context.supabase, context.userId);
+    await assertInvoiceInScope(scope.country, data.invoice_id);
     const patch: any = { status: data.status };
     const now = new Date().toISOString();
     if (data.status === "issued") patch.issued_at = now;
@@ -773,7 +1003,8 @@ export const recordInvoicePayment = createServerFn({ method: "POST" })
     }).parse(d),
   )
   .handler(async ({ data, context }) => {
-    await assertAdmin(context.supabase, context.userId);
+    const scope = await requireAdminScope(context.supabase, context.userId);
+    await assertInvoiceInScope(scope.country, data.invoice_id);
 
     const { data: pay, error } = await context.supabase
       .from("invoice_payments").insert({
@@ -814,7 +1045,8 @@ export const listInvoicePayments = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: unknown) => z.object({ invoice_id: z.string().uuid() }).parse(d))
   .handler(async ({ data, context }) => {
-    await assertAdmin(context.supabase, context.userId);
+    const scope = await requireAdminScope(context.supabase, context.userId);
+    await assertInvoiceInScope(scope.country, data.invoice_id);
     const { data: rows, error } = await context.supabase
       .from("invoice_payments").select("*")
       .eq("invoice_id", data.invoice_id)

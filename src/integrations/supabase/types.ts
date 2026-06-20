@@ -104,6 +104,7 @@ export type Database = {
           address: string | null
           city: string | null
           contact_name: string | null
+          country: string | null
           created_at: string
           email: string | null
           id: string
@@ -118,6 +119,7 @@ export type Database = {
           address?: string | null
           city?: string | null
           contact_name?: string | null
+          country?: string | null
           created_at?: string
           email?: string | null
           id?: string
@@ -132,6 +134,7 @@ export type Database = {
           address?: string | null
           city?: string | null
           contact_name?: string | null
+          country?: string | null
           created_at?: string
           email?: string | null
           id?: string
@@ -433,24 +436,33 @@ export type Database = {
       }
       notification_prefs: {
         Row: {
+          channel_system: boolean
+          channel_toast: boolean
           notify_driver_arriving: boolean
           notify_driver_nearby: boolean
+          notify_new_ride: boolean
           notify_status_change: boolean
           sound_enabled: boolean
           updated_at: string
           user_id: string
         }
         Insert: {
+          channel_system?: boolean
+          channel_toast?: boolean
           notify_driver_arriving?: boolean
           notify_driver_nearby?: boolean
+          notify_new_ride?: boolean
           notify_status_change?: boolean
           sound_enabled?: boolean
           updated_at?: string
           user_id: string
         }
         Update: {
+          channel_system?: boolean
+          channel_toast?: boolean
           notify_driver_arriving?: boolean
           notify_driver_nearby?: boolean
+          notify_new_ride?: boolean
           notify_status_change?: boolean
           sound_enabled?: boolean
           updated_at?: string
@@ -613,6 +625,7 @@ export type Database = {
         Row: {
           avatar_url: string | null
           city: string | null
+          country: string | null
           created_at: string
           full_name: string | null
           id: string
@@ -623,6 +636,7 @@ export type Database = {
         Insert: {
           avatar_url?: string | null
           city?: string | null
+          country?: string | null
           created_at?: string
           full_name?: string | null
           id: string
@@ -633,6 +647,7 @@ export type Database = {
         Update: {
           avatar_url?: string | null
           city?: string | null
+          country?: string | null
           created_at?: string
           full_name?: string | null
           id?: string
@@ -870,6 +885,7 @@ export type Database = {
           commission_rate: number | null
           commission_xof: number | null
           completed_at: string | null
+          country: string | null
           created_at: string
           currency: string
           distance_km: number | null
@@ -907,6 +923,7 @@ export type Database = {
           commission_rate?: number | null
           commission_xof?: number | null
           completed_at?: string | null
+          country?: string | null
           created_at?: string
           currency?: string
           distance_km?: number | null
@@ -944,6 +961,7 @@ export type Database = {
           commission_rate?: number | null
           commission_xof?: number | null
           completed_at?: string | null
+          country?: string | null
           created_at?: string
           currency?: string
           distance_km?: number | null
@@ -1235,6 +1253,7 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      admin_country: { Args: { _uid: string }; Returns: string }
       apply_passenger_wallet_tx: {
         Args: {
           _amount_pts: number
@@ -1285,6 +1304,7 @@ export type Database = {
         }
         Returns: boolean
       }
+      is_superadmin: { Args: { _uid: string }; Returns: boolean }
       redeem_points_for_ride: {
         Args: { _pts: number; _ride_id: string }
         Returns: Json
@@ -1303,7 +1323,7 @@ export type Database = {
       }
     }
     Enums: {
-      app_role: "passenger" | "driver" | "admin" | "support"
+      app_role: "passenger" | "driver" | "admin" | "support" | "superadmin"
       commission_kind: "percent" | "flat"
       driver_status:
         | "pending"
@@ -1482,7 +1502,7 @@ export type CompositeTypes<
 export const Constants = {
   public: {
     Enums: {
-      app_role: ["passenger", "driver", "admin", "support"],
+      app_role: ["passenger", "driver", "admin", "support", "superadmin"],
       commission_kind: ["percent", "flat"],
       driver_status: [
         "pending",

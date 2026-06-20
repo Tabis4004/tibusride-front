@@ -101,6 +101,9 @@ export const updateNotificationPrefs = createServerFn({ method: "POST" })
       notify_status_change: z.boolean().optional(),
       notify_driver_arriving: z.boolean().optional(),
       notify_driver_nearby: z.boolean().optional(),
+      notify_new_ride: z.boolean().optional(),
+      channel_toast: z.boolean().optional(),
+      channel_system: z.boolean().optional(),
       sound_enabled: z.boolean().optional(),
     }).parse(d),
   )
@@ -110,4 +113,26 @@ export const updateNotificationPrefs = createServerFn({ method: "POST" })
       .upsert({ user_id: userId, ...data, updated_at: new Date().toISOString() });
     if (error) throw error;
     return { ok: true };
+  });
+
+const COUNTRIES = [
+  "Senegal", "Côte d'Ivoire", "Togo", "Benin", "Niger",
+  "Nigeria", "Mali", "Burkina Faso", "Ghana", "Guinée",
+] as const;
+
+/** Allow a user to change their country after sign-up. Re-scopes which rides they see. */
+export const updateMyCountry = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d) =>
+    z.object({ country: z.enum(COUNTRIES as unknown as [string, ...string[]]) }).parse(d),
+  )
+  .handler(async ({ data, context }) => {
+    const { supabase, userId } = context;
+    const { data: isSuper } = await supabase.rpc("has_role", { _user_id: userId, _role: "superadmin" });
+    if (isSuper) throw new Error("Un superadmin ne peut pas être rattaché à un pays.");
+    const { error } = await supabase.from("profiles")
+      .update({ country: data.country, updated_at: new Date().toISOString() })
+      .eq("id", userId);
+    if (error) throw error;
+    return { ok: true, country: data.country };
   });

@@ -3,6 +3,10 @@ import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { z } from "zod";
 
 async function assertAdmin(supabase: any, userId: string) {
+  const { data: isSuper, error: superErr } = await supabase.rpc("is_superadmin", { _uid: userId });
+  if (superErr) throw new Error(superErr.message);
+  if (isSuper) return;
+
   const { data, error } = await supabase.rpc("has_role", { _user_id: userId, _role: "admin" });
   if (error) throw new Error(error.message);
   if (!data) throw new Error("Forbidden: admin role required");
