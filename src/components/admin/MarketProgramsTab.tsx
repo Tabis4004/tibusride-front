@@ -2,7 +2,8 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { Switch } from "@/components/ui/switch";
 import { toast } from "sonner";
-import { listMarketPrograms, setMarketProgramActive } from "@/lib/admin.functions";
+import { Button } from "@/components/ui/button";
+import { listMarketPrograms, setMarketProgramActive, setDefaultMarketProgram } from "@/lib/admin.functions";
 
 type MarketProgramRow = {
   program_id: string;
@@ -19,6 +20,7 @@ export function MarketProgramsTab() {
   const qc = useQueryClient();
   const list = useServerFn(listMarketPrograms);
   const toggleFn = useServerFn(setMarketProgramActive);
+  const setDefaultFn = useServerFn(setDefaultMarketProgram);
 
   const { data, isLoading, error } = useQuery({
     queryKey: ["admin-market-programs"],
@@ -29,6 +31,15 @@ export function MarketProgramsTab() {
     mutationFn: (v: { programId: string; isActive: boolean }) => toggleFn({ data: v }),
     onSuccess: (_d, v) => {
       toast.success(v.isActive ? "Programme réactivé" : "Programme désactivé — masqué pour passagers et chauffeurs");
+      qc.invalidateQueries({ queryKey: ["admin-market-programs"] });
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  const setDefault = useMutation({
+    mutationFn: (v: { country: string; programId: string }) => setDefaultFn({ data: v }),
+    onSuccess: () => {
+      toast.success("Programme par défaut mis à jour");
       qc.invalidateQueries({ queryKey: ["admin-market-programs"] });
     },
     onError: (e: Error) => toast.error(e.message),
@@ -78,6 +89,17 @@ export function MarketProgramsTab() {
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
+                  {!p.is_default && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-7 text-xs"
+                      disabled={setDefault.isPending || !p.is_active}
+                      onClick={() => setDefault.mutate({ country: p.country, programId: p.program_id })}
+                    >
+                      Définir par défaut
+                    </Button>
+                  )}
                   <span className="text-xs text-muted-foreground">{p.is_active ? "Actif" : "Inactif"}</span>
                   <Switch
                     checked={p.is_active}

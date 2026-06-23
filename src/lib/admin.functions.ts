@@ -688,6 +688,31 @@ export const setMarketProgramActive = createServerFn({ method: "POST" })
     return updated;
   });
 
+export const setDefaultMarketProgram = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: unknown) =>
+    z.object({ country: z.string().min(1), programId: z.string().min(1) }).parse(d),
+  )
+  .handler(async ({ data, context }) => {
+    await assertSuperadmin(context.supabase, context.userId);
+    // TODO: retirer le cast `as any` une fois `npx supabase gen types typescript` relancé
+    // après application de la migration 20260625000000_set_default_market_program.sql
+    // (la RPC n'existe pas encore dans le types.ts généré).
+    const { data: updated, error } = await (context.supabase as any).rpc("set_default_market_program", {
+      _country: data.country,
+      _program_id: data.programId,
+    });
+    if (error) throw new Error(error.message);
+    await logAudit(await getActor(context), {
+      action: "market_program.set_default",
+      target_type: "market_programs",
+      target_id: data.programId,
+      target_label: (updated as any)?.display_name ?? null,
+      details: { country: data.country },
+    });
+    return updated;
+  });
+
 /* ====================== Commission schedules ====================== */
 
 const VEHICLE_CATEGORIES = ["taxi", "eco", "confort", "confort_plus", "vip"] as const;
