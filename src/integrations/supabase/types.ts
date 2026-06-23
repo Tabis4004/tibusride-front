@@ -2199,6 +2199,39 @@ export type Database = {
           isSetofReturn: true
         }
       }
+      set_default_market_program: {
+        Args: { _country: string; _program_id: string }
+        Returns: {
+          auth_email: boolean
+          auth_phone_otp: boolean
+          branding: Json
+          commission_default: number
+          commission_locked: boolean
+          country: string
+          created_at: string
+          currency: string
+          default_language: string
+          dispatch_mode: string
+          display_name: string
+          features: Json
+          governance_min_notice_days: number
+          is_active: boolean
+          is_default: boolean
+          notes: string | null
+          program_code: Database["public"]["Enums"]["market_program"]
+          program_id: string
+          stakeholder_org_id: string | null
+          supported_languages: string[]
+          updated_at: string
+          updated_by: string | null
+        }
+        SetofOptions: {
+          from: "*"
+          to: "market_programs"
+          isOneToOne: true
+          isSetofReturn: false
+        }
+      }
       redeem_points_for_ride: {
         Args: { _pts: number; _ride_id: string }
         Returns: Json

@@ -695,10 +695,7 @@ export const setDefaultMarketProgram = createServerFn({ method: "POST" })
   )
   .handler(async ({ data, context }) => {
     await assertSuperadmin(context.supabase, context.userId);
-    // TODO: retirer le cast `as any` une fois `npx supabase gen types typescript` relancé
-    // après application de la migration 20260625000000_set_default_market_program.sql
-    // (la RPC n'existe pas encore dans le types.ts généré).
-    const { data: updated, error } = await (context.supabase as any).rpc("set_default_market_program", {
+    const { data: updated, error } = await context.supabase.rpc("set_default_market_program", {
       _country: data.country,
       _program_id: data.programId,
     });
