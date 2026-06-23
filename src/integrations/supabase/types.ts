@@ -57,12 +57,14 @@ export type Database = {
           commission_flat_xof: number
           commission_rate: number
           commission_type: Database["public"]["Enums"]["commission_kind"]
+          country: string | null
           created_at: string
           created_by: string | null
           ends_at: string | null
           id: string
           notes: string | null
           priority: number
+          program_id: string | null
           starts_at: string
           updated_at: string
         }
@@ -72,12 +74,14 @@ export type Database = {
           commission_flat_xof?: number
           commission_rate?: number
           commission_type?: Database["public"]["Enums"]["commission_kind"]
+          country?: string | null
           created_at?: string
           created_by?: string | null
           ends_at?: string | null
           id?: string
           notes?: string | null
           priority?: number
+          program_id?: string | null
           starts_at: string
           updated_at?: string
         }
@@ -87,16 +91,33 @@ export type Database = {
           commission_flat_xof?: number
           commission_rate?: number
           commission_type?: Database["public"]["Enums"]["commission_kind"]
+          country?: string | null
           created_at?: string
           created_by?: string | null
           ends_at?: string | null
           id?: string
           notes?: string | null
           priority?: number
+          program_id?: string | null
           starts_at?: string
           updated_at?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "commission_schedules_program_fkey"
+            columns: ["program_id"]
+            isOneToOne: false
+            referencedRelation: "country_market_config"
+            referencedColumns: ["program_id"]
+          },
+          {
+            foreignKeyName: "commission_schedules_program_fkey"
+            columns: ["program_id"]
+            isOneToOne: false
+            referencedRelation: "market_programs"
+            referencedColumns: ["program_id"]
+          },
+        ]
       }
       corporate_accounts: {
         Row: {
@@ -146,22 +167,206 @@ export type Database = {
         }
         Relationships: []
       }
+      country_bonus_rules: {
+        Row: {
+          active: boolean
+          bonus_percent: number | null
+          bonus_xof: number
+          config: Json
+          country: string
+          created_at: string
+          description: string | null
+          id: string
+          label: string
+          program_id: string
+          rule_code: string
+          threshold: number | null
+          updated_at: string
+        }
+        Insert: {
+          active?: boolean
+          bonus_percent?: number | null
+          bonus_xof?: number
+          config?: Json
+          country: string
+          created_at?: string
+          description?: string | null
+          id?: string
+          label: string
+          program_id: string
+          rule_code: string
+          threshold?: number | null
+          updated_at?: string
+        }
+        Update: {
+          active?: boolean
+          bonus_percent?: number | null
+          bonus_xof?: number
+          config?: Json
+          country?: string
+          created_at?: string
+          description?: string | null
+          id?: string
+          label?: string
+          program_id?: string
+          rule_code?: string
+          threshold?: number | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "country_bonus_rules_program_fkey"
+            columns: ["program_id"]
+            isOneToOne: false
+            referencedRelation: "country_market_config"
+            referencedColumns: ["program_id"]
+          },
+          {
+            foreignKeyName: "country_bonus_rules_program_fkey"
+            columns: ["program_id"]
+            isOneToOne: false
+            referencedRelation: "market_programs"
+            referencedColumns: ["program_id"]
+          },
+        ]
+      }
+      country_payment_providers: {
+        Row: {
+          config: Json
+          country: string
+          created_at: string
+          id: string
+          is_active: boolean
+          label: string
+          program_id: string
+          provider_code: string
+          sort_order: number
+          updated_at: string
+        }
+        Insert: {
+          config?: Json
+          country: string
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          label: string
+          program_id: string
+          provider_code: string
+          sort_order?: number
+          updated_at?: string
+        }
+        Update: {
+          config?: Json
+          country?: string
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          label?: string
+          program_id?: string
+          provider_code?: string
+          sort_order?: number
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "country_payment_providers_program_fkey"
+            columns: ["program_id"]
+            isOneToOne: false
+            referencedRelation: "country_market_config"
+            referencedColumns: ["program_id"]
+          },
+          {
+            foreignKeyName: "country_payment_providers_program_fkey"
+            columns: ["program_id"]
+            isOneToOne: false
+            referencedRelation: "market_programs"
+            referencedColumns: ["program_id"]
+          },
+        ]
+      }
+      country_pricing_overrides: {
+        Row: {
+          active: boolean
+          base_fare_xof: number
+          category: Database["public"]["Enums"]["vehicle_category"]
+          commission_rate: number | null
+          country: string
+          created_at: string
+          id: string
+          min_fare_xof: number
+          per_km_xof: number
+          per_min_xof: number
+          program_id: string
+          updated_at: string
+        }
+        Insert: {
+          active?: boolean
+          base_fare_xof: number
+          category: Database["public"]["Enums"]["vehicle_category"]
+          commission_rate?: number | null
+          country: string
+          created_at?: string
+          id?: string
+          min_fare_xof: number
+          per_km_xof: number
+          per_min_xof: number
+          program_id: string
+          updated_at?: string
+        }
+        Update: {
+          active?: boolean
+          base_fare_xof?: number
+          category?: Database["public"]["Enums"]["vehicle_category"]
+          commission_rate?: number | null
+          country?: string
+          created_at?: string
+          id?: string
+          min_fare_xof?: number
+          per_km_xof?: number
+          per_min_xof?: number
+          program_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "country_pricing_overrides_program_fkey"
+            columns: ["program_id"]
+            isOneToOne: false
+            referencedRelation: "country_market_config"
+            referencedColumns: ["program_id"]
+          },
+          {
+            foreignKeyName: "country_pricing_overrides_program_fkey"
+            columns: ["program_id"]
+            isOneToOne: false
+            referencedRelation: "market_programs"
+            referencedColumns: ["program_id"]
+          },
+        ]
+      }
       driver_profiles: {
         Row: {
           assigned_category: string | null
+          availability_notes: string | null
           city: string | null
           created_at: string
           current_lat: number | null
           current_lng: number | null
           enrollment_notes: string | null
           enrollment_submitted_at: string | null
+          fuel_type: Database["public"]["Enums"]["fuel_type"] | null
           id_document_url: string | null
+          insurance_document_url: string | null
+          insurance_expires_at: string | null
           is_online: boolean
           license_document_url: string | null
+          license_expires_at: string | null
           license_number: string | null
           partner_type: string
           physical_verified_at: string | null
           physical_verified_by: string | null
+          preferred_zones: string[] | null
+          program_id: string | null
           rating_avg: number | null
           rejection_reason: string | null
           rides_count: number
@@ -171,22 +376,36 @@ export type Database = {
           total_earnings: number
           updated_at: string
           user_id: string
-          vehicle_condition_url: string | null
-          vehicle_document_url: string | null
           vehicle_color: string | null
+          vehicle_condition_url: string | null
+          vehicle_doc_expires_at: string | null
+          vehicle_document_url: string | null
           vehicle_model: string | null
           vehicle_plate: string | null
           vehicle_type: string | null
         }
         Insert: {
+          assigned_category?: string | null
+          availability_notes?: string | null
           city?: string | null
           created_at?: string
           current_lat?: number | null
           current_lng?: number | null
+          enrollment_notes?: string | null
+          enrollment_submitted_at?: string | null
+          fuel_type?: Database["public"]["Enums"]["fuel_type"] | null
           id_document_url?: string | null
+          insurance_document_url?: string | null
+          insurance_expires_at?: string | null
           is_online?: boolean
           license_document_url?: string | null
+          license_expires_at?: string | null
           license_number?: string | null
+          partner_type?: string
+          physical_verified_at?: string | null
+          physical_verified_by?: string | null
+          preferred_zones?: string[] | null
+          program_id?: string | null
           rating_avg?: number | null
           rejection_reason?: string | null
           rides_count?: number
@@ -196,17 +415,36 @@ export type Database = {
           total_earnings?: number
           updated_at?: string
           user_id: string
+          vehicle_color?: string | null
+          vehicle_condition_url?: string | null
+          vehicle_doc_expires_at?: string | null
           vehicle_document_url?: string | null
+          vehicle_model?: string | null
+          vehicle_plate?: string | null
+          vehicle_type?: string | null
         }
         Update: {
+          assigned_category?: string | null
+          availability_notes?: string | null
           city?: string | null
           created_at?: string
           current_lat?: number | null
           current_lng?: number | null
+          enrollment_notes?: string | null
+          enrollment_submitted_at?: string | null
+          fuel_type?: Database["public"]["Enums"]["fuel_type"] | null
           id_document_url?: string | null
+          insurance_document_url?: string | null
+          insurance_expires_at?: string | null
           is_online?: boolean
           license_document_url?: string | null
+          license_expires_at?: string | null
           license_number?: string | null
+          partner_type?: string
+          physical_verified_at?: string | null
+          physical_verified_by?: string | null
+          preferred_zones?: string[] | null
+          program_id?: string | null
           rating_avg?: number | null
           rejection_reason?: string | null
           rides_count?: number
@@ -216,9 +454,30 @@ export type Database = {
           total_earnings?: number
           updated_at?: string
           user_id?: string
+          vehicle_color?: string | null
+          vehicle_condition_url?: string | null
+          vehicle_doc_expires_at?: string | null
           vehicle_document_url?: string | null
+          vehicle_model?: string | null
+          vehicle_plate?: string | null
+          vehicle_type?: string | null
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "driver_profiles_program_id_fkey"
+            columns: ["program_id"]
+            isOneToOne: false
+            referencedRelation: "country_market_config"
+            referencedColumns: ["program_id"]
+          },
+          {
+            foreignKeyName: "driver_profiles_program_id_fkey"
+            columns: ["program_id"]
+            isOneToOne: false
+            referencedRelation: "market_programs"
+            referencedColumns: ["program_id"]
+          },
+        ]
       }
       driver_wallets: {
         Row: {
@@ -275,6 +534,123 @@ export type Database = {
             columns: ["ride_id"]
             isOneToOne: false
             referencedRelation: "rides"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      governance_proposals: {
+        Row: {
+          applied_at: string | null
+          country: string
+          created_at: string
+          description: string | null
+          effective_at: string | null
+          id: string
+          notice_starts_at: string | null
+          org_id: string | null
+          payload: Json
+          program_id: string | null
+          proposal_type: Database["public"]["Enums"]["governance_proposal_type"]
+          reviewed_at: string | null
+          reviewed_by: string | null
+          status: Database["public"]["Enums"]["governance_proposal_status"]
+          submitted_by: string | null
+          title: string
+          updated_at: string
+        }
+        Insert: {
+          applied_at?: string | null
+          country: string
+          created_at?: string
+          description?: string | null
+          effective_at?: string | null
+          id?: string
+          notice_starts_at?: string | null
+          org_id?: string | null
+          payload?: Json
+          program_id?: string | null
+          proposal_type: Database["public"]["Enums"]["governance_proposal_type"]
+          reviewed_at?: string | null
+          reviewed_by?: string | null
+          status?: Database["public"]["Enums"]["governance_proposal_status"]
+          submitted_by?: string | null
+          title: string
+          updated_at?: string
+        }
+        Update: {
+          applied_at?: string | null
+          country?: string
+          created_at?: string
+          description?: string | null
+          effective_at?: string | null
+          id?: string
+          notice_starts_at?: string | null
+          org_id?: string | null
+          payload?: Json
+          program_id?: string | null
+          proposal_type?: Database["public"]["Enums"]["governance_proposal_type"]
+          reviewed_at?: string | null
+          reviewed_by?: string | null
+          status?: Database["public"]["Enums"]["governance_proposal_status"]
+          submitted_by?: string | null
+          title?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "governance_proposals_org_id_fkey"
+            columns: ["org_id"]
+            isOneToOne: false
+            referencedRelation: "stakeholder_organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "governance_proposals_program_fkey"
+            columns: ["program_id"]
+            isOneToOne: false
+            referencedRelation: "country_market_config"
+            referencedColumns: ["program_id"]
+          },
+          {
+            foreignKeyName: "governance_proposals_program_fkey"
+            columns: ["program_id"]
+            isOneToOne: false
+            referencedRelation: "market_programs"
+            referencedColumns: ["program_id"]
+          },
+        ]
+      }
+      governance_votes: {
+        Row: {
+          comment: string | null
+          created_at: string
+          id: string
+          proposal_id: string
+          vote: boolean
+          voter_id: string
+        }
+        Insert: {
+          comment?: string | null
+          created_at?: string
+          id?: string
+          proposal_id: string
+          vote: boolean
+          voter_id: string
+        }
+        Update: {
+          comment?: string | null
+          created_at?: string
+          id?: string
+          proposal_id?: string
+          vote?: boolean
+          voter_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "governance_votes_proposal_id_fkey"
+            columns: ["proposal_id"]
+            isOneToOne: false
+            referencedRelation: "governance_proposals"
             referencedColumns: ["id"]
           },
         ]
@@ -441,6 +817,89 @@ export type Database = {
             columns: ["corporate_id"]
             isOneToOne: false
             referencedRelation: "corporate_accounts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      market_programs: {
+        Row: {
+          auth_email: boolean
+          auth_phone_otp: boolean
+          branding: Json
+          commission_default: number
+          commission_locked: boolean
+          country: string
+          created_at: string
+          currency: string
+          default_language: string
+          dispatch_mode: string
+          display_name: string
+          features: Json
+          governance_min_notice_days: number
+          is_active: boolean
+          is_default: boolean
+          notes: string | null
+          program_code: Database["public"]["Enums"]["market_program"]
+          program_id: string
+          stakeholder_org_id: string | null
+          supported_languages: string[]
+          updated_at: string
+          updated_by: string | null
+        }
+        Insert: {
+          auth_email?: boolean
+          auth_phone_otp?: boolean
+          branding?: Json
+          commission_default?: number
+          commission_locked?: boolean
+          country: string
+          created_at?: string
+          currency?: string
+          default_language?: string
+          dispatch_mode?: string
+          display_name: string
+          features?: Json
+          governance_min_notice_days?: number
+          is_active?: boolean
+          is_default?: boolean
+          notes?: string | null
+          program_code?: Database["public"]["Enums"]["market_program"]
+          program_id: string
+          stakeholder_org_id?: string | null
+          supported_languages?: string[]
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Update: {
+          auth_email?: boolean
+          auth_phone_otp?: boolean
+          branding?: Json
+          commission_default?: number
+          commission_locked?: boolean
+          country?: string
+          created_at?: string
+          currency?: string
+          default_language?: string
+          dispatch_mode?: string
+          display_name?: string
+          features?: Json
+          governance_min_notice_days?: number
+          is_active?: boolean
+          is_default?: boolean
+          notes?: string | null
+          program_code?: Database["public"]["Enums"]["market_program"]
+          program_id?: string
+          stakeholder_org_id?: string | null
+          supported_languages?: string[]
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "country_market_config_stakeholder_fk"
+            columns: ["stakeholder_org_id"]
+            isOneToOne: false
+            referencedRelation: "stakeholder_organizations"
             referencedColumns: ["id"]
           },
         ]
@@ -667,6 +1126,66 @@ export type Database = {
           updated_at?: string
         }
         Relationships: []
+      }
+      published_kpi_reports: {
+        Row: {
+          country: string
+          created_at: string
+          document_url: string | null
+          id: string
+          is_public: boolean
+          metrics: Json
+          period_end: string
+          period_label: string
+          period_start: string
+          program_id: string | null
+          published_at: string
+          published_by: string | null
+        }
+        Insert: {
+          country: string
+          created_at?: string
+          document_url?: string | null
+          id?: string
+          is_public?: boolean
+          metrics?: Json
+          period_end: string
+          period_label: string
+          period_start: string
+          program_id?: string | null
+          published_at?: string
+          published_by?: string | null
+        }
+        Update: {
+          country?: string
+          created_at?: string
+          document_url?: string | null
+          id?: string
+          is_public?: boolean
+          metrics?: Json
+          period_end?: string
+          period_label?: string
+          period_start?: string
+          program_id?: string | null
+          published_at?: string
+          published_by?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "published_kpi_reports_program_fkey"
+            columns: ["program_id"]
+            isOneToOne: false
+            referencedRelation: "country_market_config"
+            referencedColumns: ["program_id"]
+          },
+          {
+            foreignKeyName: "published_kpi_reports_program_fkey"
+            columns: ["program_id"]
+            isOneToOne: false
+            referencedRelation: "market_programs"
+            referencedColumns: ["program_id"]
+          },
+        ]
       }
       ratings: {
         Row: {
@@ -899,7 +1418,10 @@ export type Database = {
           country: string | null
           created_at: string
           currency: string
+          delivery_confirmation_code: string | null
+          delivery_confirmed_at: string | null
           delivery_insulated_bag: boolean
+          delivery_photo_url: string | null
           delivery_urgent: boolean
           delivery_vehicle: string | null
           distance_km: number | null
@@ -915,6 +1437,7 @@ export type Database = {
           duration_min: number | null
           eta_seconds: number | null
           id: string
+          market_program: Database["public"]["Enums"]["market_program"] | null
           notes: string | null
           package_type: string | null
           passenger_id: string
@@ -925,6 +1448,7 @@ export type Database = {
           pickup_lat: number | null
           pickup_lng: number | null
           price_xof: number
+          program_id: string | null
           requested_at: string
           service_type: string
           started_at: string | null
@@ -942,7 +1466,10 @@ export type Database = {
           country?: string | null
           created_at?: string
           currency?: string
+          delivery_confirmation_code?: string | null
+          delivery_confirmed_at?: string | null
           delivery_insulated_bag?: boolean
+          delivery_photo_url?: string | null
           delivery_urgent?: boolean
           delivery_vehicle?: string | null
           distance_km?: number | null
@@ -958,6 +1485,7 @@ export type Database = {
           duration_min?: number | null
           eta_seconds?: number | null
           id?: string
+          market_program?: Database["public"]["Enums"]["market_program"] | null
           notes?: string | null
           package_type?: string | null
           passenger_id: string
@@ -968,6 +1496,7 @@ export type Database = {
           pickup_lat?: number | null
           pickup_lng?: number | null
           price_xof: number
+          program_id?: string | null
           requested_at?: string
           service_type?: string
           started_at?: string | null
@@ -985,7 +1514,10 @@ export type Database = {
           country?: string | null
           created_at?: string
           currency?: string
+          delivery_confirmation_code?: string | null
+          delivery_confirmed_at?: string | null
           delivery_insulated_bag?: boolean
+          delivery_photo_url?: string | null
           delivery_urgent?: boolean
           delivery_vehicle?: string | null
           distance_km?: number | null
@@ -1001,6 +1533,7 @@ export type Database = {
           duration_min?: number | null
           eta_seconds?: number | null
           id?: string
+          market_program?: Database["public"]["Enums"]["market_program"] | null
           notes?: string | null
           package_type?: string | null
           passenger_id?: string
@@ -1011,13 +1544,29 @@ export type Database = {
           pickup_lat?: number | null
           pickup_lng?: number | null
           price_xof?: number
+          program_id?: string | null
           requested_at?: string
           service_type?: string
           started_at?: string | null
           status?: Database["public"]["Enums"]["ride_status"]
           updated_at?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "rides_program_id_fkey"
+            columns: ["program_id"]
+            isOneToOne: false
+            referencedRelation: "country_market_config"
+            referencedColumns: ["program_id"]
+          },
+          {
+            foreignKeyName: "rides_program_id_fkey"
+            columns: ["program_id"]
+            isOneToOne: false
+            referencedRelation: "market_programs"
+            referencedColumns: ["program_id"]
+          },
+        ]
       }
       share_events: {
         Row: {
@@ -1045,6 +1594,113 @@ export type Database = {
           user_id?: string
         }
         Relationships: []
+      }
+      stakeholder_members: {
+        Row: {
+          can_approve_drivers: boolean
+          can_approve_governance: boolean
+          can_view_financials: boolean
+          created_at: string
+          id: string
+          is_active: boolean
+          org_id: string
+          title: string | null
+          user_id: string
+        }
+        Insert: {
+          can_approve_drivers?: boolean
+          can_approve_governance?: boolean
+          can_view_financials?: boolean
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          org_id: string
+          title?: string | null
+          user_id: string
+        }
+        Update: {
+          can_approve_drivers?: boolean
+          can_approve_governance?: boolean
+          can_view_financials?: boolean
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          org_id?: string
+          title?: string | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "stakeholder_members_org_id_fkey"
+            columns: ["org_id"]
+            isOneToOne: false
+            referencedRelation: "stakeholder_organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      stakeholder_organizations: {
+        Row: {
+          contact_email: string | null
+          contact_phone: string | null
+          country: string
+          created_at: string
+          id: string
+          is_active: boolean
+          legal_name: string | null
+          logo_url: string | null
+          metadata: Json
+          name: string
+          program_id: string | null
+          role: Database["public"]["Enums"]["stakeholder_role"]
+          updated_at: string
+        }
+        Insert: {
+          contact_email?: string | null
+          contact_phone?: string | null
+          country: string
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          legal_name?: string | null
+          logo_url?: string | null
+          metadata?: Json
+          name: string
+          program_id?: string | null
+          role: Database["public"]["Enums"]["stakeholder_role"]
+          updated_at?: string
+        }
+        Update: {
+          contact_email?: string | null
+          contact_phone?: string | null
+          country?: string
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          legal_name?: string | null
+          logo_url?: string | null
+          metadata?: Json
+          name?: string
+          program_id?: string | null
+          role?: Database["public"]["Enums"]["stakeholder_role"]
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "stakeholder_organizations_program_fkey"
+            columns: ["program_id"]
+            isOneToOne: false
+            referencedRelation: "country_market_config"
+            referencedColumns: ["program_id"]
+          },
+          {
+            foreignKeyName: "stakeholder_organizations_program_fkey"
+            columns: ["program_id"]
+            isOneToOne: false
+            referencedRelation: "market_programs"
+            referencedColumns: ["program_id"]
+          },
+        ]
       }
       support_tickets: {
         Row: {
@@ -1276,7 +1932,86 @@ export type Database = {
       }
     }
     Views: {
-      [_ in never]: never
+      country_market_config: {
+        Row: {
+          auth_email: boolean | null
+          auth_phone_otp: boolean | null
+          branding: Json | null
+          commission_default: number | null
+          commission_locked: boolean | null
+          country: string | null
+          created_at: string | null
+          currency: string | null
+          default_language: string | null
+          dispatch_mode: string | null
+          display_name: string | null
+          features: Json | null
+          governance_min_notice_days: number | null
+          is_active: boolean | null
+          notes: string | null
+          program_code: Database["public"]["Enums"]["market_program"] | null
+          program_id: string | null
+          stakeholder_org_id: string | null
+          supported_languages: string[] | null
+          updated_at: string | null
+          updated_by: string | null
+        }
+        Insert: {
+          auth_email?: boolean | null
+          auth_phone_otp?: boolean | null
+          branding?: Json | null
+          commission_default?: number | null
+          commission_locked?: boolean | null
+          country?: string | null
+          created_at?: string | null
+          currency?: string | null
+          default_language?: string | null
+          dispatch_mode?: string | null
+          display_name?: string | null
+          features?: Json | null
+          governance_min_notice_days?: number | null
+          is_active?: boolean | null
+          notes?: string | null
+          program_code?: Database["public"]["Enums"]["market_program"] | null
+          program_id?: string | null
+          stakeholder_org_id?: string | null
+          supported_languages?: string[] | null
+          updated_at?: string | null
+          updated_by?: string | null
+        }
+        Update: {
+          auth_email?: boolean | null
+          auth_phone_otp?: boolean | null
+          branding?: Json | null
+          commission_default?: number | null
+          commission_locked?: boolean | null
+          country?: string | null
+          created_at?: string | null
+          currency?: string | null
+          default_language?: string | null
+          dispatch_mode?: string | null
+          display_name?: string | null
+          features?: Json | null
+          governance_min_notice_days?: number | null
+          is_active?: boolean | null
+          notes?: string | null
+          program_code?: Database["public"]["Enums"]["market_program"] | null
+          program_id?: string | null
+          stakeholder_org_id?: string | null
+          supported_languages?: string[] | null
+          updated_at?: string | null
+          updated_by?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "country_market_config_stakeholder_fk"
+            columns: ["stakeholder_org_id"]
+            isOneToOne: false
+            referencedRelation: "stakeholder_organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Functions: {
       admin_country: { Args: { _uid: string }; Returns: string }
@@ -1308,6 +2043,105 @@ export type Database = {
         Args: { _provider_ref?: string; _topup_id: string }
         Returns: Json
       }
+      country_slug: { Args: { _country: string }; Returns: string }
+      get_country_market_config: {
+        Args: { _country: string }
+        Returns: {
+          auth_email: boolean | null
+          auth_phone_otp: boolean | null
+          branding: Json | null
+          commission_default: number | null
+          commission_locked: boolean | null
+          country: string | null
+          created_at: string | null
+          currency: string | null
+          default_language: string | null
+          dispatch_mode: string | null
+          display_name: string | null
+          features: Json | null
+          governance_min_notice_days: number | null
+          is_active: boolean | null
+          notes: string | null
+          program_code: Database["public"]["Enums"]["market_program"] | null
+          program_id: string | null
+          stakeholder_org_id: string | null
+          supported_languages: string[] | null
+          updated_at: string | null
+          updated_by: string | null
+        }
+        SetofOptions: {
+          from: "*"
+          to: "country_market_config"
+          isOneToOne: true
+          isSetofReturn: false
+        }
+      }
+      get_default_market_program: {
+        Args: { _country: string }
+        Returns: {
+          auth_email: boolean
+          auth_phone_otp: boolean
+          branding: Json
+          commission_default: number
+          commission_locked: boolean
+          country: string
+          created_at: string
+          currency: string
+          default_language: string
+          dispatch_mode: string
+          display_name: string
+          features: Json
+          governance_min_notice_days: number
+          is_active: boolean
+          is_default: boolean
+          notes: string | null
+          program_code: Database["public"]["Enums"]["market_program"]
+          program_id: string
+          stakeholder_org_id: string | null
+          supported_languages: string[]
+          updated_at: string
+          updated_by: string | null
+        }
+        SetofOptions: {
+          from: "*"
+          to: "market_programs"
+          isOneToOne: true
+          isSetofReturn: false
+        }
+      }
+      get_market_program: {
+        Args: { _program_id: string }
+        Returns: {
+          auth_email: boolean
+          auth_phone_otp: boolean
+          branding: Json
+          commission_default: number
+          commission_locked: boolean
+          country: string
+          created_at: string
+          currency: string
+          default_language: string
+          dispatch_mode: string
+          display_name: string
+          features: Json
+          governance_min_notice_days: number
+          is_active: boolean
+          is_default: boolean
+          notes: string | null
+          program_code: Database["public"]["Enums"]["market_program"]
+          program_id: string
+          stakeholder_org_id: string | null
+          supported_languages: string[]
+          updated_at: string
+          updated_by: string | null
+        }
+        SetofOptions: {
+          from: "*"
+          to: "market_programs"
+          isOneToOne: true
+          isSetofReturn: false
+        }
+      }
       get_or_create_referral_code: {
         Args: { _user_id: string }
         Returns: string
@@ -1319,9 +2153,9 @@ export type Database = {
           full_name: string
           phone: string
           rating_avg: number
+          vehicle_color: string
           vehicle_model: string
           vehicle_plate: string
-          vehicle_color: string
         }[]
       }
       has_role: {
@@ -1332,6 +2166,39 @@ export type Database = {
         Returns: boolean
       }
       is_superadmin: { Args: { _uid: string }; Returns: boolean }
+      list_market_programs: {
+        Args: { _country: string }
+        Returns: {
+          auth_email: boolean
+          auth_phone_otp: boolean
+          branding: Json
+          commission_default: number
+          commission_locked: boolean
+          country: string
+          created_at: string
+          currency: string
+          default_language: string
+          dispatch_mode: string
+          display_name: string
+          features: Json
+          governance_min_notice_days: number
+          is_active: boolean
+          is_default: boolean
+          notes: string | null
+          program_code: Database["public"]["Enums"]["market_program"]
+          program_id: string
+          stakeholder_org_id: string | null
+          supported_languages: string[]
+          updated_at: string
+          updated_by: string | null
+        }[]
+        SetofOptions: {
+          from: "*"
+          to: "market_programs"
+          isOneToOne: false
+          isSetofReturn: true
+        }
+      }
       redeem_points_for_ride: {
         Args: { _pts: number; _ride_id: string }
         Returns: Json
@@ -1348,9 +2215,39 @@ export type Database = {
           commission_type: Database["public"]["Enums"]["commission_kind"]
         }[]
       }
+      resolve_country_commission: {
+        Args: {
+          _at?: string
+          _category: Database["public"]["Enums"]["vehicle_category"]
+          _country: string
+        }
+        Returns: {
+          commission_flat_xof: number
+          commission_rate: number
+          commission_type: Database["public"]["Enums"]["commission_kind"]
+        }[]
+      }
+      resolve_program_commission: {
+        Args: {
+          _at?: string
+          _category: Database["public"]["Enums"]["vehicle_category"]
+          _program_id: string
+        }
+        Returns: {
+          commission_flat_xof: number
+          commission_rate: number
+          commission_type: Database["public"]["Enums"]["commission_kind"]
+        }[]
+      }
     }
     Enums: {
-      app_role: "passenger" | "driver" | "admin" | "support" | "superadmin"
+      app_role:
+        | "passenger"
+        | "driver"
+        | "admin"
+        | "support"
+        | "superadmin"
+        | "stakeholder"
       commission_kind: "percent" | "flat"
       driver_status:
         | "pending"
@@ -1358,7 +2255,22 @@ export type Database = {
         | "approved"
         | "rejected"
         | "suspended"
+      fuel_type: "thermal" | "electric" | "hybrid"
+      governance_proposal_status:
+        | "draft"
+        | "pending_review"
+        | "approved"
+        | "rejected"
+        | "applied"
+        | "cancelled"
+      governance_proposal_type:
+        | "commission_change"
+        | "zone_pricing"
+        | "bonus_rule"
+        | "feature_toggle"
+        | "other"
       invoice_status: "draft" | "issued" | "paid" | "cancelled"
+      market_program: "tibus_standard" | "eco_tibus"
       passenger_wallet_tx_type:
         | "topup"
         | "ride_earn"
@@ -1383,6 +2295,12 @@ export type Database = {
         | "in_progress"
         | "completed"
         | "cancelled"
+      stakeholder_role:
+        | "platform"
+        | "association"
+        | "payment_partner"
+        | "insurer"
+        | "operator"
       ticket_category:
         | "account"
         | "payment"
@@ -1529,7 +2447,14 @@ export type CompositeTypes<
 export const Constants = {
   public: {
     Enums: {
-      app_role: ["passenger", "driver", "admin", "support", "superadmin"],
+      app_role: [
+        "passenger",
+        "driver",
+        "admin",
+        "support",
+        "superadmin",
+        "stakeholder",
+      ],
       commission_kind: ["percent", "flat"],
       driver_status: [
         "pending",
@@ -1538,7 +2463,24 @@ export const Constants = {
         "rejected",
         "suspended",
       ],
+      fuel_type: ["thermal", "electric", "hybrid"],
+      governance_proposal_status: [
+        "draft",
+        "pending_review",
+        "approved",
+        "rejected",
+        "applied",
+        "cancelled",
+      ],
+      governance_proposal_type: [
+        "commission_change",
+        "zone_pricing",
+        "bonus_rule",
+        "feature_toggle",
+        "other",
+      ],
       invoice_status: ["draft", "issued", "paid", "cancelled"],
+      market_program: ["tibus_standard", "eco_tibus"],
       passenger_wallet_tx_type: [
         "topup",
         "ride_earn",
@@ -1565,6 +2507,13 @@ export const Constants = {
         "in_progress",
         "completed",
         "cancelled",
+      ],
+      stakeholder_role: [
+        "platform",
+        "association",
+        "payment_partner",
+        "insurer",
+        "operator",
       ],
       ticket_category: [
         "account",

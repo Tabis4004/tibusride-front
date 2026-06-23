@@ -614,6 +614,80 @@ export const updatePricingSetting = createServerFn({ method: "POST" })
     return updated;
   });
 
+/* ====================== Programmes de marché ====================== */
+
+/**
+ * La gestion des programmes (activation/désactivation par pays) reste réservée
+ * au superadmin : un admin pays doit passer par lui plutôt que de pouvoir
+ * désactiver lui-même un programme de son périmètre.
+ */
+async function assertSuperadmin(supabase: any, userId: string) {
+  const { data: isSuper, error } = await supabase.rpc("is_superadmin", { _uid: userId });
+  if (error) throw new Error(error.message);
+  if (!isSuper) throw new Error("Forbidden: superadmin role required");
+}
+
+export const listMarketPrograms = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    await assertSuperadmin(context.supabase, context.userId);
+    const { data, error } = await context.supabase
+      .from("market_programs")
+      .select("*")
+      .order("country")
+      .order("display_name");
+    if (error) throw new Error(error.message);
+    return data ?? [];
+  });
+
+export const setMarketProgramActive = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: unknown) =>
+    z.object({ programId: z.string().min(1), isActive: z.boolean() }).parse(d),
+  )
+  .handler(async ({ data, context }) => {
+    await assertSuperadmin(context.supabase, context.userId);
+
+    if (!data.isActive) {
+      const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+      const { data: target } = await supabaseAdmin
+        .from("market_programs")
+        .select("country, is_default")
+        .eq("program_id", data.programId)
+        .maybeSingle();
+      if (target?.is_default) {
+        throw new Error(
+          "Ce programme est le programme par défaut de son pays — désignez un autre programme par défaut avant de le désactiver.",
+        );
+      }
+      const { count } = await supabaseAdmin
+        .from("market_programs")
+        .select("program_id", { count: "exact", head: true })
+        .eq("country", target?.country ?? "")
+        .eq("is_active", true)
+        .neq("program_id", data.programId);
+      if (!count) {
+        throw new Error("Impossible de désactiver le dernier programme actif de ce pays.");
+      }
+    }
+
+    const { data: updated, error } = await context.supabase
+      .from("market_programs")
+      .update({ is_active: data.isActive, updated_by: context.userId })
+      .eq("program_id", data.programId)
+      .select()
+      .single();
+    if (error) throw new Error(error.message);
+    await logAudit(await getActor(context), {
+      action: data.isActive ? "market_program.activate" : "market_program.deactivate",
+      target_type: "market_programs",
+      target_id: data.programId,
+      target_label: updated?.display_name ?? null,
+      details: { country: updated?.country, program_code: updated?.program_code },
+    });
+    return updated;
+  });
+
 /* ====================== Commission schedules ====================== */
 
 const VEHICLE_CATEGORIES = ["taxi", "eco", "confort", "confort_plus", "vip"] as const;

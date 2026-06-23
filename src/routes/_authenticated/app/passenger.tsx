@@ -35,20 +35,18 @@ import { useNativeApp } from "@/hooks/use-native-app";
 import { Link } from "@tanstack/react-router";
 import { cn } from "@/lib/utils";
 import { formatDriverArrivalMessage, formatDriverVehicleDescription, type DriverVehiclePublic } from "@/lib/driver-vehicle";
+import { useCountryMarket } from "@/hooks/use-country-market";
+import { isEcoTibus, marketAppName, type PaymentMethodValue } from "@/lib/country-market";
+import { MarketProgramSwitcher } from "@/components/MarketProgramSwitcher";
 
 export const Route = createFileRoute("/_authenticated/app/passenger")({
   head: () => ({ meta: [{ title: "Commander une course — Tibus Ride" }] }),
   component: PassengerPage,
 });
 
-const PAYMENTS = [
-  { value: "mobile_money", label: "Mobile Money", icon: Smartphone, hint: "Orange Money, Wave, MTN, Moov" },
-  { value: "cash", label: "Cash", icon: Banknote, hint: "À régler au chauffeur" },
-  { value: "card", label: "Carte", icon: CreditCard, hint: "Visa / Mastercard" },
-] as const;
-
 function PassengerPage() {
   const { user } = useAuth();
+  const { payments: countryPayments, config: marketConfig } = useCountryMarket();
   const qc = useQueryClient();
   const isNative = useNativeApp();
   const [city, setCity] = useState("");
@@ -62,7 +60,15 @@ function PassengerPage() {
   const [packageType, setPackageType] = useState<PackageType>("small");
   const [deliveryUrgent, setDeliveryUrgent] = useState(false);
   const [deliveryInsulatedBag, setDeliveryInsulatedBag] = useState(false);
-  const [payment, setPayment] = useState<"mobile_money" | "cash" | "card">("mobile_money");
+  const [payment, setPayment] = useState<PaymentMethodValue>("mobile_money");
+  const paymentOptions = useMemo(() => {
+    if (countryPayments.length > 0) return countryPayments;
+    return [
+      { value: "mobile_money" as const, label: "Mobile Money", providerCode: "mobile_money", icon: Smartphone, hint: "Orange Money, Wave, MTN, Moov" },
+      { value: "cash" as const, label: "Espèces", providerCode: "cash", icon: Banknote },
+      { value: "card" as const, label: "Carte", providerCode: "card", icon: CreditCard },
+    ];
+  }, [countryPayments]);
   const [phone, setPhone] = useState("");
 
   // Map state — geocoded points + computed route
@@ -357,9 +363,12 @@ function PassengerPage() {
       <div className="space-y-4">
         {/* En-tête type Yango */}
         <section className="rounded-3xl border border-border bg-card p-4 sm:p-5">
-          <div>
-            <p className="text-xs text-muted-foreground">{zone ? `${zone.value} — ${zone.country}` : "Détection de votre zone…"}</p>
-            <h1 className="font-display text-xl font-bold">Tibus Ride</h1>
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <p className="text-xs text-muted-foreground">{zone ? `${zone.value} — ${zone.country}` : "Détection de votre zone…"}</p>
+              <h1 className="font-display text-xl font-bold">{marketAppName(marketConfig)}</h1>
+            </div>
+            <MarketProgramSwitcher className="shrink-0" />
           </div>
 
           {/* Services rapides */}
@@ -632,12 +641,12 @@ function PassengerPage() {
               <div>
                 <Label className="text-xs">Paiement</Label>
                 <div className="mt-2 grid gap-2 sm:grid-cols-3">
-                  {PAYMENTS.map((p) => {
+                  {paymentOptions.map((p) => {
                     const Icon = p.icon;
                     const selected = payment === p.value;
                     return (
                       <button
-                        key={p.value}
+                        key={p.providerCode}
                         type="button"
                         onClick={() => setPayment(p.value)}
                         className={[
@@ -651,6 +660,9 @@ function PassengerPage() {
                     );
                   })}
                 </div>
+                {isEcoTibus(marketConfig) && marketConfig?.branding?.tagline && (
+                  <p className="mt-1.5 text-[11px] text-muted-foreground">{marketConfig.branding.tagline}</p>
+                )}
               </div>
 
               <div>

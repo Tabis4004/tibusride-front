@@ -61,6 +61,7 @@ import {
   Eye,
   FileText,
   Gift,
+  Globe,
   KeyRound,
   Lock,
   Receipt,
@@ -77,6 +78,7 @@ import {
   Wallet,
 } from "lucide-react";
 import { RolesPermissionsTab } from "@/components/admin/RolesPermissionsTab";
+import { MarketProgramsTab } from "@/components/admin/MarketProgramsTab";
 import { DELIVERY_CATEGORIES, PARTNER_TYPES, RIDE_CATEGORIES, VEHICLE_TYPES } from "@/lib/driver-enrollment";
 
 export const Route = createFileRoute("/_authenticated/app/admin")({
@@ -174,6 +176,7 @@ function AdminPage() {
     { key: "roles", title: "Rôles & permissions", description: "Rôles, mots de passe et admins pays", keywords: ["role","permission","mot de passe","password","admin pays","superadmin"], icon: KeyRound, defaultPalette: 11, group: "Sécurité", roles: ["superadmin"] },
     { key: "rides", title: "Courses", description: "Historique et détails par course", keywords: ["course","ride","trajet","historique"], icon: ScrollText, defaultPalette: 2, group: "Opérations", roles: ["superadmin","admin","support"] },
     { key: "pricing", title: "Tarifs & commissions", description: "Paliers, catégories et règles", keywords: ["tarif","prix","pricing","commission","paiement"], icon: Tag, defaultPalette: 3, group: "Finance", roles: ["superadmin","admin"] },
+    { key: "market-programs", title: "Programmes de marché", description: "Activer/désactiver un programme par pays", keywords: ["programme","market","pays","eco tibus","désactiver","activer"], icon: Globe, defaultPalette: 12, group: "Finance", roles: ["superadmin"] },
     { key: "commissions-report", title: "Rapport commissions", description: "Synthèse et exports", keywords: ["rapport","report","commission","export","paiement"], icon: BarChart3, defaultPalette: 4, group: "Finance", roles: ["superadmin","admin"] },
     { key: "billing", title: "Facturation", description: "Comptes corporates et factures", keywords: ["facture","invoice","facturation","paiement","corporate"], icon: Receipt, defaultPalette: 5, group: "Finance", roles: ["superadmin","admin"], countKey: "unpaidInvoices", countLabel: "factures impayées" },
     { key: "wallets", title: "Wallets", description: "Soldes et ajustements chauffeurs", keywords: ["wallet","solde","paiement","chauffeur"], icon: Wallet, defaultPalette: 6, group: "Finance", roles: ["superadmin","admin"] },
@@ -226,6 +229,7 @@ function AdminPage() {
         {section === "roles" && <RolesPermissionsTab />}
         {section === "rides" && <RidesTab />}
         {section === "pricing" && <PricingTab />}
+        {section === "market-programs" && <MarketProgramsTab />}
         {section === "commissions-report" && <CommissionReportTab />}
         {section === "billing" && <BillingTab />}
         {section === "wallets" && <WalletsTab />}

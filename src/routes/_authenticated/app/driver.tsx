@@ -14,6 +14,9 @@ import { getNotificationPrefs } from "@/lib/tracking.functions";
 import { EnrollmentWizard } from "@/components/driver/EnrollmentWizard";
 import { PARTNER_TYPES, VEHICLE_TYPES, RIDE_CATEGORIES, DELIVERY_CATEGORIES } from "@/lib/driver-enrollment";
 import { DELIVERY_VEHICLES, PACKAGE_TYPES, vehicleFromAssignedCategory } from "@/lib/delivery-pricing";
+import { useCountryMarket } from "@/hooks/use-country-market";
+import { isEcoTibus, marketAppName } from "@/lib/country-market";
+import { MarketProgramSwitcher } from "@/components/MarketProgramSwitcher";
 
 export const Route = createFileRoute("/_authenticated/app/driver")({
   head: () => ({ meta: [{ title: "Espace chauffeur & livreur — Tibus Ride" }] }),
@@ -203,6 +206,7 @@ function DriverPage() {
           </p>
         </div>
         <div className="flex items-center gap-3">
+          <MarketProgramSwitcher />
           <span className="text-sm font-medium">{driverQ.data.is_online ? "En ligne" : "Hors ligne"}</span>
           <Switch
             checked={driverQ.data.is_online}
@@ -372,6 +376,8 @@ const TX_LABEL: Record<string, string> = {
 
 function WalletSection() {
   const getWalletFn = useServerFn(getMyWallet);
+  const { config: marketConfig } = useCountryMarket();
+  const commissionPct = marketConfig?.commissionDefault ?? 20;
   const { data, isLoading } = useQuery({
     queryKey: ["my-wallet"],
     queryFn: () => getWalletFn(),
@@ -387,7 +393,9 @@ function WalletSection() {
             {isLoading ? "…" : formatXof(data?.balance_xof ?? 0)}
           </p>
           <p className="mt-1 text-xs text-muted-foreground">
-            Les commissions plateforme sont automatiquement débitées à chaque course terminée.
+            Commission plateforme : <strong>{commissionPct} %</strong>
+            {isEcoTibus(marketConfig) ? ` (${marketAppName(marketConfig)} — modèle éthique)` : ""}.
+            Débitée automatiquement à chaque course terminée.
             Contactez l'administration pour recharger votre wallet.
           </p>
         </div>

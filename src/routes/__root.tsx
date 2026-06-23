@@ -18,6 +18,7 @@ import "@fontsource/plus-jakarta-sans/500.css";
 import "@fontsource/plus-jakarta-sans/600.css";
 import { Toaster } from "@/components/ui/sonner";
 import { AuthProvider } from "@/hooks/use-auth";
+import { CountryMarketProvider } from "@/hooks/use-country-market";
 import { reportLovableError } from "../lib/lovable-error-reporting";
 
 function NotFoundComponent() {
@@ -119,8 +120,10 @@ function RootComponent() {
   return (
     <QueryClientProvider client={queryClient}>
       <AuthProvider>
-        <Outlet />
-        <Toaster richColors position="top-center" />
+        <CountryMarketProvider>
+          <Outlet />
+          <Toaster richColors position="top-center" />
+        </CountryMarketProvider>
       </AuthProvider>
     </QueryClientProvider>
   );
