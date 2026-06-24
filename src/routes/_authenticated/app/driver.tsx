@@ -8,6 +8,8 @@ import { Switch } from "@/components/ui/switch";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { CATEGORIES, formatXof, type Category } from "@/lib/pricing";
 import { toast } from "sonner";
+import { Bar, BarChart, CartesianGrid, Legend, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import { type ReportGranularity, buildPeriodSeries, downloadCsv } from "@/lib/reporting";
 import { Car, Clock, MapPin, Wallet } from "lucide-react";
 import { CarIcon } from "@/components/CarIcon";
 import { useServerFn } from "@tanstack/react-start";
@@ -30,6 +32,7 @@ import {
   acceptRideOffer,
   declineRideOffer,
   penalizeSelfIgnoredRide,
+  myEarningsReport,
 } from "@/lib/dispatch.functions";
 import { EnrollmentWizard } from "@/components/driver/EnrollmentWizard";
 import { PARTNER_TYPES, VEHICLE_TYPES, RIDE_CATEGORIES, DELIVERY_CATEGORIES, INSURANCE_STATUS_LABEL, type InsuranceStatus } from "@/lib/driver-enrollment";
@@ -406,6 +409,7 @@ function DriverPage() {
 
       <WalletSection />
 
+      <MyEarningsReportSection />
 
       {myRidesQ.data && myRidesQ.data.length > 0 && (
         <section>
@@ -633,6 +637,202 @@ function WalletSection() {
         )}
       </div>
     </section>
+  );
+}
+
+const DRIVER_CATEGORY_LABEL: Record<string, string> = {
+  taxi: "Taxi", eco: "Éco", confort: "Confort", confort_plus: "Confort +", vip: "VIP",
+  moto: "Moto", car: "Voiture", van: "Van", truck: "Camion",
+};
+
+function isoMonthStart(d = new Date()) {
+  return new Date(d.getFullYear(), d.getMonth(), 1).toISOString();
+}
+function isoNow() {
+  return new Date().toISOString();
+}
+
+/**
+ * Rapport personnel de gains du chauffeur/livreur — équivalent du "Suivi
+ * financier KPI" admin mais scoped à ses propres courses (via
+ * `myEarningsReport`, filtré côté serveur sur l'utilisateur authentifié).
+ * Permet au chauffeur de suivre l'évolution de son CA, sa commission
+ * plateforme, ses bonus et sa part nette, par jour/semaine/mois.
+ */
+function MyEarningsReportSection() {
+  const reportFn = useServerFn(myEarningsReport);
+  const [from, setFrom] = useState(() => isoMonthStart().slice(0, 10));
+  const [to, setTo] = useState(() => isoNow().slice(0, 10));
+  const [granularity, setGranularity] = useState<ReportGranularity>("day");
+  const [open, setOpen] = useState(true);
+
+  const reportQ = useQuery({
+    queryKey: ["my-earnings-report", from, to],
+    queryFn: () => reportFn({ data: { from: new Date(from).toISOString(), to: new Date(`${to}T23:59:59`).toISOString() } }),
+  });
+
+  const result = reportQ.data;
+  const series = result ? buildPeriodSeries(result.rows, granularity) : [];
+
+  return (
+    <section className="rounded-3xl border border-border bg-card p-5">
+      <button className="flex w-full items-center justify-between text-left" onClick={() => setOpen((o) => !o)}>
+        <div>
+          <h2 className="font-display text-lg font-semibold">Mes statistiques financières</h2>
+          <p className="text-xs text-muted-foreground">Évolution de votre chiffre d'affaires, commission, bonus et part nette.</p>
+        </div>
+        <span className="text-xs text-primary">{open ? "Fermer" : "Afficher"}</span>
+      </button>
+
+      {open && (
+        <div className="mt-4 space-y-4 border-t border-border pt-4">
+          <div className="flex flex-wrap items-end gap-2">
+            <div>
+              <label className="text-xs font-medium text-muted-foreground">Du</label>
+              <Input type="date" className="mt-1" value={from} onChange={(e) => setFrom(e.target.value)} />
+            </div>
+            <div>
+              <label className="text-xs font-medium text-muted-foreground">Au</label>
+              <Input type="date" className="mt-1" value={to} onChange={(e) => setTo(e.target.value)} />
+            </div>
+            <div className="flex gap-1 rounded-lg border border-border p-1">
+              {(["day", "week", "month"] as ReportGranularity[]).map((g) => (
+                <button
+                  key={g}
+                  onClick={() => setGranularity(g)}
+                  className={cn(
+                    "rounded-md px-2.5 py-1 text-xs font-medium",
+                    granularity === g ? "bg-primary text-primary-foreground" : "text-muted-foreground",
+                  )}
+                >
+                  {g === "day" ? "Jour" : g === "week" ? "Semaine" : "Mois"}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {reportQ.isLoading && !result && (
+            <p className="text-sm text-muted-foreground">Chargement…</p>
+          )}
+
+          {result && result.rows.length === 0 && (
+            <div className="rounded-2xl border border-border bg-secondary/30 p-4 text-sm text-muted-foreground">
+              Aucune course payée sur cette période.
+            </div>
+          )}
+
+          {result && result.rows.length > 0 && (
+            <>
+              <div className="grid gap-3 sm:grid-cols-4">
+                <MiniStat label="Courses" value={String(result.totals.rides)} />
+                <MiniStat label="Chiffre d'affaires" value={formatXof(result.totals.revenue_xof)} />
+                <MiniStat label="Commission plateforme" value={formatXof(result.totals.commission_xof)} />
+                <MiniStat label="Part nette + bonus" value={formatXof(result.totals.driver_earnings_xof + result.totals.bonus_xof)} />
+              </div>
+
+              <div className="rounded-2xl border border-border bg-card p-4">
+                <div className="mb-3 text-xs font-medium uppercase text-muted-foreground">Revenus par période</div>
+                <div className="h-64 w-full">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={series}>
+                      <CartesianGrid strokeDasharray="3 3" className="opacity-20" />
+                      <XAxis dataKey="period" tick={{ fontSize: 11 }} />
+                      <YAxis tick={{ fontSize: 11 }} />
+                      <Tooltip formatter={(v: number) => formatXof(v)} />
+                      <Legend />
+                      <Bar dataKey="ca_xof" name="Chiffre d'affaires" fill="var(--chart-1, var(--primary))" />
+                      <Bar dataKey="commission_xof" name="Commission" fill="var(--chart-2, var(--accent))" />
+                      <Bar dataKey="bonus_xof" name="Bonus" fill="var(--chart-3, var(--warning))" />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
+
+              <div className="rounded-2xl border border-border bg-card p-4">
+                <div className="mb-3 text-xs font-medium uppercase text-muted-foreground">Évolution des montants (courbe)</div>
+                <div className="h-64 w-full">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <LineChart data={series}>
+                      <CartesianGrid strokeDasharray="3 3" className="opacity-20" />
+                      <XAxis dataKey="period" tick={{ fontSize: 11 }} />
+                      <YAxis tick={{ fontSize: 11 }} />
+                      <Tooltip formatter={(v: number) => formatXof(v)} />
+                      <Legend />
+                      <Line type="monotone" dataKey="ca_xof" name="Chiffre d'affaires" stroke="var(--chart-1, var(--primary))" strokeWidth={2} dot={false} />
+                      <Line type="monotone" dataKey="commission_xof" name="Commission" stroke="var(--chart-2, var(--accent))" strokeWidth={2} dot={false} />
+                      <Line type="monotone" dataKey="bonus_xof" name="Bonus" stroke="var(--chart-3, var(--warning))" strokeWidth={2} dot={false} />
+                    </LineChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
+
+              <div>
+                <div className="mb-2 flex items-center justify-between">
+                  <h3 className="text-sm font-semibold">Détail par course</h3>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() =>
+                      downloadCsv(
+                        `mes-gains-${from}_${to}.csv`,
+                        result.rows.map((r: any) => ({
+                          date: r.completed_at,
+                          categorie: DRIVER_CATEGORY_LABEL[r.category] ?? r.category ?? "",
+                          ville: r.city ?? "",
+                          montant_xof: r.price_xof,
+                          commission_xof: r.commission_xof,
+                          bonus_xof: r.bonus_xof,
+                          part_nette_xof: r.driver_earnings_xof,
+                        })),
+                      )
+                    }
+                  >
+                    Détail (CSV)
+                  </Button>
+                </div>
+                <div className="overflow-x-auto rounded-xl border border-border">
+                  <table className="w-full text-xs">
+                    <thead className="bg-secondary/40 text-left text-muted-foreground">
+                      <tr>
+                        <th className="px-3 py-2">Date</th>
+                        <th className="px-3 py-2">Catégorie</th>
+                        <th className="px-3 py-2">Ville</th>
+                        <th className="px-3 py-2 text-right">Montant</th>
+                        <th className="px-3 py-2 text-right">Commission</th>
+                        <th className="px-3 py-2 text-right">Bonus</th>
+                        <th className="px-3 py-2 text-right">Part nette</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {result.rows.slice(0, 200).map((r: any) => (
+                        <tr key={r.ride_id} className="border-t border-border">
+                          <td className="px-3 py-1.5">{r.completed_at ? new Date(r.completed_at).toLocaleDateString("fr-FR") : "—"}</td>
+                          <td className="px-3 py-1.5">{DRIVER_CATEGORY_LABEL[r.category] ?? r.category ?? "—"}</td>
+                          <td className="px-3 py-1.5">{r.city ?? "—"}</td>
+                          <td className="px-3 py-1.5 text-right">{formatXof(r.price_xof)}</td>
+                          <td className="px-3 py-1.5 text-right">{formatXof(r.commission_xof)}</td>
+                          <td className="px-3 py-1.5 text-right">{formatXof(r.bonus_xof)}</td>
+                          <td className="px-3 py-1.5 text-right font-medium">{formatXof(r.driver_earnings_xof)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </>
+          )}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function MiniStat({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-xl border border-border bg-secondary/20 p-3">
+      <div className="text-[11px] text-muted-foreground">{label}</div>
+      <div className="font-display text-base font-bold">{value}</div>
+    </div>
   );
 }
 

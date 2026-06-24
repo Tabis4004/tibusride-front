@@ -201,3 +201,96 @@ export const penalizeSelfIgnoredRide = createServerFn({ method: "POST" })
     if (error) throw new Error(error.message);
     return { points_balance: balance as number };
   });
+
+/**
+ * Conducteur/livreur : son propre rapport de gains (équivalent personnel du
+ * "Suivi financier KPI" admin) — CA, commission plateforme, bonus et part
+ * chauffeur, par course, sur une période. Toujours filtré sur `userId` issu
+ * du contexte d'auth (jamais d'un paramètre client) : aucun autre chauffeur
+ * ne peut être consulté via cette fonction. Utilise `supabaseAdmin` pour lire
+ * `ride_payouts`/`reward_settings`/`driver_reward_transactions` sans dépendre
+ * des policies RLS (qui ne sont pas garanties d'autoriser ces lectures pour
+ * un chauffeur simple), exactement comme `getMyWallet`.
+ */
+export const myEarningsReport = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: unknown) =>
+    z.object({
+      from: z.string(),
+      to: z.string(),
+    }).parse(d),
+  )
+  .handler(async ({ data, context }) => {
+    const { userId } = context;
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+
+    const { data: payouts, error } = await supabaseAdmin
+      .from("ride_payouts")
+      .select("ride_id, gross_xof, commission_xof, net_xof, processed_at, status")
+      .eq("driver_id", userId)
+      .eq("status", "paid")
+      .gte("processed_at", data.from)
+      .lte("processed_at", data.to)
+      .order("processed_at", { ascending: false })
+      .limit(5000);
+    if (error) throw new Error(error.message);
+
+    const rideIds = (payouts ?? []).map((p) => p.ride_id);
+    const rideMap = new Map<string, any>();
+    if (rideIds.length) {
+      const { data: rides } = await supabaseAdmin
+        .from("rides")
+        .select("id, category, city, pickup_address, dropoff_address, completed_at")
+        .in("id", rideIds);
+      for (const r of rides ?? []) rideMap.set(r.id, r);
+    }
+
+    const bonusByRide = new Map<string, number>();
+    if (rideIds.length) {
+      const { data: settings } = await supabaseAdmin
+        .from("reward_settings")
+        .select("driver_point_value_xof")
+        .eq("id", true)
+        .maybeSingle();
+      const pointValueXof = Number(settings?.driver_point_value_xof ?? 1);
+
+      const { data: rewardTx } = await supabaseAdmin
+        .from("driver_reward_transactions")
+        .select("ride_id, points, type")
+        .eq("driver_id", userId)
+        .in("ride_id", rideIds)
+        .in("type", ["ride_accepted", "ride_completed", "referral_bonus"]);
+
+      for (const tx of rewardTx ?? []) {
+        if (!tx.ride_id) continue;
+        const prev = bonusByRide.get(tx.ride_id) ?? 0;
+        bonusByRide.set(tx.ride_id, prev + Math.round((tx.points ?? 0) * pointValueXof));
+      }
+    }
+
+    const rows = (payouts ?? []).map((p) => {
+      const ride = rideMap.get(p.ride_id);
+      return {
+        ride_id: p.ride_id,
+        completed_at: ride?.completed_at ?? p.processed_at,
+        category: ride?.category ?? null,
+        city: ride?.city ?? null,
+        pickup_address: ride?.pickup_address ?? null,
+        dropoff_address: ride?.dropoff_address ?? null,
+        price_xof: p.gross_xof ?? 0,
+        commission_xof: p.commission_xof ?? 0,
+        driver_earnings_xof: p.net_xof ?? 0,
+        bonus_xof: bonusByRide.get(p.ride_id) ?? 0,
+      };
+    });
+
+    const totals = {
+      rides: rows.length,
+      revenue_xof: rows.reduce((s, r) => s + r.price_xof, 0),
+      commission_xof: rows.reduce((s, r) => s + r.commission_xof, 0),
+      driver_earnings_xof: rows.reduce((s, r) => s + r.driver_earnings_xof, 0),
+      bonus_xof: rows.reduce((s, r) => s + r.bonus_xof, 0),
+    };
+
+    return { rows, totals };
+  });

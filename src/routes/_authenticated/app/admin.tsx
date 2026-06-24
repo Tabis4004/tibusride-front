@@ -16,9 +16,10 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Bar, BarChart, CartesianGrid, Legend, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import { Bar, BarChart, CartesianGrid, Legend, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { formatXof } from "@/lib/pricing";
 import { DELIVERY_VEHICLES, PACKAGE_TYPES, DELIVERY_EXTRAS, type DeliveryVehicle, type PackageType } from "@/lib/delivery-pricing";
+import { type ReportGranularity, buildPeriodSeries } from "@/lib/reporting";
 import { countriesMatch } from "@/lib/countries";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Switch } from "@/components/ui/switch";
@@ -3038,37 +3039,8 @@ function WalletsTab() {
 
 /* ----------------------- Commission report tab ----------------------- */
 
-type ReportGranularity = "day" | "week" | "month";
-
-function periodBucketKey(iso: string, granularity: ReportGranularity) {
-  const d = new Date(iso);
-  if (granularity === "month") {
-    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
-  }
-  if (granularity === "week") {
-    // Lundi de la semaine ISO
-    const day = new Date(d);
-    const dow = (day.getDay() + 6) % 7; // 0 = lundi
-    day.setDate(day.getDate() - dow);
-    return day.toISOString().slice(0, 10);
-  }
-  return d.toISOString().slice(0, 10);
-}
-
-function buildPeriodSeries(rows: any[], granularity: ReportGranularity) {
-  const buckets = new Map<string, { period: string; ca_xof: number; commission_xof: number; bonus_xof: number; courses: number }>();
-  for (const r of rows) {
-    if (!r.completed_at) continue;
-    const key = periodBucketKey(r.completed_at, granularity);
-    const b = buckets.get(key) ?? { period: key, ca_xof: 0, commission_xof: 0, bonus_xof: 0, courses: 0 };
-    b.ca_xof += r.price_xof ?? 0;
-    b.commission_xof += r.commission_xof ?? 0;
-    b.bonus_xof += r.bonus_xof ?? 0;
-    b.courses += 1;
-    buckets.set(key, b);
-  }
-  return Array.from(buckets.values()).sort((a, b) => (a.period < b.period ? -1 : 1));
-}
+// Helpers de bucketing par période partagés avec le rapport personnel
+// chauffeur (driver.tsx) — voir src/lib/reporting.ts.
 
 function CommissionReportTab() {
   const reportFn = useServerFn(commissionReport);
@@ -3260,6 +3232,24 @@ function CommissionReportTab() {
                   <Bar dataKey="commission_xof" name="Commission" fill="var(--chart-2, var(--accent))" radius={[4, 4, 0, 0]} />
                   <Bar dataKey="bonus_xof" name="Bonus" fill="var(--chart-3, var(--warning))" radius={[4, 4, 0, 0]} />
                 </BarChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+
+          <div className="rounded-2xl border border-border bg-card p-4">
+            <div className="mb-3 text-xs font-medium uppercase text-muted-foreground">Évolution des montants (courbe)</div>
+            <div className="h-72 w-full">
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart data={series}>
+                  <CartesianGrid strokeDasharray="3 3" className="opacity-20" />
+                  <XAxis dataKey="period" tick={{ fontSize: 11 }} />
+                  <YAxis tick={{ fontSize: 11 }} />
+                  <Tooltip formatter={(v: number) => formatXof(v)} />
+                  <Legend />
+                  <Line type="monotone" dataKey="ca_xof" name="Chiffre d'affaires" stroke="var(--chart-1, var(--primary))" strokeWidth={2} dot={false} />
+                  <Line type="monotone" dataKey="commission_xof" name="Commission" stroke="var(--chart-2, var(--accent))" strokeWidth={2} dot={false} />
+                  <Line type="monotone" dataKey="bonus_xof" name="Bonus" stroke="var(--chart-3, var(--warning))" strokeWidth={2} dot={false} />
+                </LineChart>
               </ResponsiveContainer>
             </div>
           </div>
