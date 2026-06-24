@@ -1,17 +1,25 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/use-auth";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { CATEGORIES, formatXof } from "@/lib/pricing";
 import { toast } from "sonner";
 import { Car, Clock, MapPin, Wallet } from "lucide-react";
 import { useServerFn } from "@tanstack/react-start";
 import { getMyWallet } from "@/lib/wallet.functions";
 import { getNotificationPrefs } from "@/lib/tracking.functions";
-import { getNotifyPermission, requestNotifyPermission, showLocalNotification } from "@/lib/notify";
+import { getNotifyPermission, requestNotifyPermission, showLocalNotification, speakAnnouncement } from "@/lib/notify";
+
+/** Durée (s) d'affichage du popup d'alerte "nouvelle course" en mode liste
+ * ouverte (self_assign) — en mode 'proximity', c'est `ride_offers.expires_at`
+ * (configuré par programme, `market_programs.dispatch_offer_seconds`) qui
+ * fait foi ; ici, aucune réservation exclusive n'existe, le popup n'est
+ * qu'une alerte temporisée pour inciter à réagir vite. */
+const SELF_ASSIGN_POPUP_SECONDS = 20;
 import {
   reportMyLocation,
   getMyZone,
@@ -76,9 +84,22 @@ function DriverPage() {
     },
   });
 
+  // Solde wallet : un chauffeur dont le solde est épuisé (<= 0) ne doit plus
+  // recevoir d'offres/notifications de nouvelles courses, ni pouvoir en
+  // accepter (la base l'impose aussi via un trigger — voir migration
+  // 20260630000000_wallet_balance_gating.sql — ceci n'est qu'un confort UX
+  // pour éviter de lui présenter des courses qu'il ne pourrait pas accepter).
+  const getWalletFn = useServerFn(getMyWallet);
+  const walletQ = useQuery({
+    queryKey: ["my-wallet"],
+    queryFn: () => getWalletFn(),
+    refetchInterval: 15000,
+  });
+  const walletEmpty = walletQ.data !== undefined && Number(walletQ.data.balance_xof ?? 0) <= 0;
+
   const openRidesQ = useQuery({
     queryKey: ["open-rides", driverQ.data?.is_online, driverQ.data?.city, myCountry, driverQ.data?.partner_type, driverQ.data?.assigned_category],
-    enabled: !!driverQ.data?.is_online && driverQ.data?.status === "approved" && !!myCountry,
+    enabled: !!driverQ.data?.is_online && driverQ.data?.status === "approved" && !!myCountry && !walletEmpty,
     refetchInterval: 4000,
     queryFn: async () => {
       const dp = driverQ.data!;
@@ -104,6 +125,23 @@ function DriverPage() {
   const prefsQ = useQuery({ queryKey: ["notif-prefs", user?.id], enabled: !!user, queryFn: () => getPrefs() });
   const prefs = prefsQ.data;
 
+  // Popup minuté "nouvelle course" (mode self_assign) : affiché le temps de
+  // SELF_ASSIGN_POPUP_SECONDS, accompagné de la notification système ET d'un
+  // message vocal "Vous avez une commande" — en plus du toast/bip existants.
+  const [newRidePopup, setNewRidePopup] = useState<{ id: string; title: string; description: string } | null>(null);
+  const [newRidePopupSeconds, setNewRidePopupSeconds] = useState(SELF_ASSIGN_POPUP_SECONDS);
+  useEffect(() => {
+    if (!newRidePopup) return;
+    setNewRidePopupSeconds(SELF_ASSIGN_POPUP_SECONDS);
+    const timer = setInterval(() => {
+      setNewRidePopupSeconds((s) => {
+        if (s <= 1) { clearInterval(timer); setNewRidePopup(null); return 0; }
+        return s - 1;
+      });
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [newRidePopup?.id]);
+
   // Demande la permission de notification une seule fois si le canal système est activé.
   useEffect(() => {
     if (!prefs?.channel_system || !prefs?.notify_new_ride) return;
@@ -114,6 +152,9 @@ function DriverPage() {
   useEffect(() => {
     if (!myCountry || !driverQ.data?.is_online) return;
     if (!prefs?.notify_new_ride) return;
+    // Wallet épuisé : ni notification, ni popup, ni offre — voir migration
+    // 20260630000000_wallet_balance_gating.sql pour le mode 'proximity'.
+    if (walletEmpty) return;
     const ch = supabase
       .channel(`new-rides-${myCountry}`)
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "rides", filter: `country=eq.${myCountry}` }, (payload) => {
@@ -127,15 +168,13 @@ function DriverPage() {
           if (vehicle && r.delivery_vehicle !== vehicle) return;
         } else if (isDelivery) return;
         const title = isDelivery ? "Nouvelle livraison disponible !" : "Nouvelle course disponible !";
+        const description = `${r.pickup_address ?? "Point de départ"} → ${r.dropoff_address ?? ""}`;
         if (prefs.channel_toast) {
-          toast.success(title, { description: `${r.pickup_address ?? ""} → ${r.dropoff_address ?? ""}`.slice(0, 120), duration: 9000 });
+          toast.success(title, { description: description.slice(0, 120), duration: 9000 });
         }
         try {
           if (prefs.channel_system) {
-            showLocalNotification(
-              isDelivery ? "Nouvelle livraison à proximité" : "Nouvelle course à proximité",
-              `${r.pickup_address ?? "Point de départ"} → ${r.dropoff_address ?? ""}`,
-            );
+            showLocalNotification(isDelivery ? "Nouvelle livraison à proximité" : "Nouvelle course à proximité", description);
           }
           if (prefs.sound_enabled) {
             const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
@@ -144,12 +183,14 @@ function DriverPage() {
             o.frequency.value = 1040; g.gain.value = 0.18;
             o.start(); setTimeout(() => { o.stop(); ctx.close(); }, 380);
           }
+          speakAnnouncement("Vous avez une commande");
         } catch {}
+        setNewRidePopup({ id: r.id, title, description });
         qc.invalidateQueries({ queryKey: ["open-rides"] });
       })
       .subscribe();
     return () => { supabase.removeChannel(ch); };
-  }, [myCountry, driverQ.data?.is_online, driverQ.data?.city, qc, prefs?.notify_new_ride, prefs?.channel_toast, prefs?.channel_system, prefs?.sound_enabled]);
+  }, [myCountry, driverQ.data?.is_online, driverQ.data?.city, qc, prefs?.notify_new_ride, prefs?.channel_toast, prefs?.channel_system, prefs?.sound_enabled, walletEmpty]);
 
 
   const toggleOnline = useMutation({
@@ -163,12 +204,16 @@ function DriverPage() {
 
   const accept = useMutation({
     mutationFn: async (rideId: string) => {
+      // Garde-fou UX : le trigger SQL bloque de toute façon l'acceptation si le
+      // wallet est épuisé (voir 20260630000000_wallet_balance_gating.sql), mais
+      // on évite ici l'appel réseau + le message d'erreur Postgres brut.
+      if (walletEmpty) throw new Error("Solde wallet insuffisant. Contactez l'administration pour recharger votre wallet.");
       const { error } = await supabase.from("rides").update({
         driver_id: user!.id, status: "accepted", accepted_at: new Date().toISOString(),
       }).eq("id", rideId).eq("status", "requested");
       if (error) throw error;
     },
-    onSuccess: () => { toast.success("Course acceptée !"); qc.invalidateQueries(); },
+    onSuccess: () => { toast.success("Course acceptée !"); qc.invalidateQueries(); setNewRidePopup(null); },
     onError: (e: Error) => toast.error(e.message),
   });
 
@@ -212,6 +257,22 @@ function DriverPage() {
     <div className="space-y-6">
       {driverQ.data.is_online && <IdleLocationReporter />}
       <PendingOfferBanner />
+
+      {/* Popup minuté "nouvelle course" — mode self_assign, voir SELF_ASSIGN_POPUP_SECONDS. */}
+      <Dialog open={!!newRidePopup} onOpenChange={(open) => { if (!open) setNewRidePopup(null); }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{newRidePopup?.title ?? "Nouvelle course disponible !"}</DialogTitle>
+            <DialogDescription>{newRidePopup?.description}</DialogDescription>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">
+            Disponible encore {newRidePopupSeconds}s — rendez-vous dans la liste des courses disponibles pour l'accepter.
+          </p>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setNewRidePopup(null)}>Ignorer</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {driverQ.data.is_online && (!myRidesQ.data || myRidesQ.data.length === 0) && (
         <DriverIdleMap />
@@ -301,6 +362,10 @@ function DriverPage() {
         {!driverQ.data.is_online ? (
           <div className="rounded-2xl border border-dashed border-border p-8 text-center text-sm text-muted-foreground">
             Passez en ligne pour recevoir des demandes.
+          </div>
+        ) : walletEmpty ? (
+          <div className="rounded-2xl border border-dashed border-destructive/50 bg-destructive/5 p-8 text-center text-sm text-destructive">
+            Solde wallet insuffisant. Contactez l'administration pour recharger votre wallet afin de recevoir et d'accepter des courses.
           </div>
         ) : openRidesQ.data && openRidesQ.data.length > 0 ? (
           <div className="space-y-3">
@@ -502,6 +567,24 @@ function PendingOfferBanner() {
     refetchInterval: 3000,
   });
 
+  // Détecte l'arrivée d'une *nouvelle* offre (id différent de la dernière vue)
+  // pour ne déclencher la notification système + le message vocal qu'une seule
+  // fois par offre, pas à chaque refetch toutes les 3s.
+  const lastOfferIdRef = useRef<string | null>(null);
+  useEffect(() => {
+    const offer = offerQ.data as any;
+    if (!offer || offer.id === lastOfferIdRef.current) return;
+    lastOfferIdRef.current = offer.id;
+    const isDelivery = offer.rides?.service_type === "delivery";
+    try {
+      showLocalNotification(
+        isDelivery ? "Nouvelle livraison à proximité" : "Nouvelle course à proximité",
+        "Vous avez une nouvelle offre — répondez avant expiration.",
+      );
+      speakAnnouncement("Vous avez une commande");
+    } catch {}
+  }, [offerQ.data]);
+
   const accept = useMutation({
     mutationFn: (rideId: string) => acceptFn({ data: { rideId } }),
     onSuccess: () => { toast.success("Course acceptée !"); qc.invalidateQueries(); },
@@ -530,7 +613,7 @@ function PendingOfferBanner() {
   // passager — uniquement distance / type de véhicule / ville. Les détails
   // complets n'arrivent qu'après l'acceptation (cf. myRidesQ qui fait alors
   // un select("*") légitime sur la course acceptée).
-  return (
+  const banner = (
     <div className="rounded-3xl border-2 border-primary bg-primary/5 p-5">
       <div className="flex items-center justify-between gap-2">
         <span className="rounded-full bg-primary px-3 py-1 text-xs font-semibold text-primary-foreground">
@@ -558,6 +641,30 @@ function PendingOfferBanner() {
         <Button variant="outline" onClick={() => decline.mutate(offer.ride_id)} disabled={decline.isPending}>Refuser</Button>
       </div>
     </div>
+  );
+
+  // Le bandeau reste affiché dans le tableau de bord (countdown en direct), et
+  // un vrai popup modal reprend la même alerte tant que l'offre est nouvelle —
+  // il se ferme dès qu'on accepte/refuse ou qu'il expire (countdown commun).
+  return (
+    <>
+      {banner}
+      <Dialog open={secondsLeft > 0} onOpenChange={() => {}}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Nouvelle {isDelivery ? "livraison" : "course"} proposée !</DialogTitle>
+            <DialogDescription>
+              {secondsLeft}s pour répondre
+              {typeof offer.distance_km === "number" ? ` — ≈ ${offer.distance_km.toFixed(1)} km de vous` : ""}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex gap-2">
+            <Button onClick={() => accept.mutate(offer.ride_id)} disabled={accept.isPending}>Accepter</Button>
+            <Button variant="outline" onClick={() => decline.mutate(offer.ride_id)} disabled={decline.isPending}>Refuser</Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }
 

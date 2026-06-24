@@ -94,3 +94,24 @@ export async function showLocalNotification(title: string, body: string): Promis
     // idem
   }
 }
+
+/**
+ * Message vocal court (ex. "Vous avez une commande") via l'API Web Speech
+ * Synthesis — contrairement à l'API Notification, c'est une API JS standard
+ * disponible aussi bien sur le WebView Android (Chromium) que sur le
+ * navigateur desktop, donc aucun plugin natif supplémentaire n'est requis.
+ * Silencieux si indisponible.
+ */
+export function speakAnnouncement(text: string): void {
+  try {
+    if (typeof window === "undefined" || !("speechSynthesis" in window)) return;
+    const utter = new SpeechSynthesisUtterance(text);
+    utter.lang = "fr-FR";
+    utter.rate = 1;
+    utter.volume = 1;
+    window.speechSynthesis.cancel();
+    window.speechSynthesis.speak(utter);
+  } catch {
+    // Non bloquant : une voix manquée ne doit jamais casser le reste de l'UI.
+  }
+}
