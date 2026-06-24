@@ -48,6 +48,7 @@ export function enrollmentProgress(profile: {
   vehicle_document_url?: string | null;
   vehicle_condition_url?: string | null;
   insurance_document_url?: string | null;
+  insurance_expires_at?: string | null;
   city?: string | null;
   license_number?: string | null;
   vehicle_type?: string | null;
@@ -62,7 +63,17 @@ export function enrollmentProgress(profile: {
     !!profile.vehicle_document_url,
     !!profile.vehicle_condition_url,
     !!profile.insurance_document_url,
+    !!profile.insurance_expires_at,
   ];
   const done = checks.filter(Boolean).length;
   return { done, total: checks.length, complete: done === checks.length };
 }
+
+/** Statut de validation de l'assurance par l'assureur. */
+export type InsuranceStatus = "pending" | "verified" | "expired";
+
+export const INSURANCE_STATUS_LABEL: Record<InsuranceStatus, string> = {
+  pending: "En attente de validation",
+  verified: "Validée par l'assureur",
+  expired: "Expirée",
+};

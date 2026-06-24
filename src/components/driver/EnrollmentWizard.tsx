@@ -37,6 +37,7 @@ type Profile = {
   vehicle_document_url?: string | null;
   vehicle_condition_url?: string | null;
   insurance_document_url?: string | null;
+  insurance_expires_at?: string | null;
   status?: string;
   rejection_reason?: string | null;
   enrollment_submitted_at?: string | null;
@@ -67,6 +68,7 @@ export function EnrollmentWizard({
   const [plate, setPlate] = useState(profile.vehicle_plate ?? "");
   const [model, setVehicleModel] = useState(profile.vehicle_model ?? "");
   const [color, setVehicleColor] = useState(profile.vehicle_color ?? "");
+  const [insuranceExpiresAt, setInsuranceExpiresAt] = useState(profile.insurance_expires_at ?? "");
 
   const progress = enrollmentProgress({
     ...profile,
@@ -74,6 +76,7 @@ export function EnrollmentWizard({
     vehicle_type: vehicleType,
     city,
     license_number: license,
+    insurance_expires_at: insuranceExpiresAt,
   });
   const isUnderReview = profile.status === "under_review";
   const isRejected = profile.status === "rejected";
@@ -91,6 +94,7 @@ export function EnrollmentWizard({
         vehicle_plate: plate || undefined,
         vehicle_model: model || undefined,
         vehicle_color: color || undefined,
+        insurance_expires_at: insuranceExpiresAt || undefined,
       },
     }),
     onSuccess: () => { toast.success("Informations enregistrées"); onRefresh(); setStep(1); },
@@ -233,11 +237,23 @@ export function EnrollmentWizard({
               <Label>Couleur</Label>
               <Input className="mt-1" value={color} onChange={(e) => setVehicleColor(e.target.value)} placeholder="ex. blanche, grise, rouge…" maxLength={40} />
             </div>
+            <div className="sm:col-span-2">
+              <Label>Date d'expiration de l'assurance</Label>
+              <Input
+                className="mt-1"
+                type="date"
+                value={insuranceExpiresAt}
+                onChange={(e) => setInsuranceExpiresAt(e.target.value)}
+              />
+              <p className="mt-1 text-[11px] text-muted-foreground">
+                Vous recevrez des notifications à l'approche de cette date. L'assureur devra valider votre dossier.
+              </p>
+            </div>
           </div>
 
           <Button
             className="w-full"
-            disabled={!city || !license.trim() || saveStep1.isPending}
+            disabled={!city || !license.trim() || !insuranceExpiresAt || saveStep1.isPending}
             onClick={() => saveStep1.mutate()}
           >
             {saveStep1.isPending ? "Enregistrement…" : "Continuer vers les documents"}
@@ -313,6 +329,12 @@ function DocChecklist({ profile }: { profile: Profile }) {
         Véhicule : {VEHICLE_TYPES.find((v) => v.value === profile.vehicle_type)?.label ?? "—"}
         {" · "}
         {profile.city ?? "Ville non définie"}
+      </li>
+      <li className="text-xs text-muted-foreground">
+        Assurance expire le :{" "}
+        {profile.insurance_expires_at
+          ? new Date(profile.insurance_expires_at).toLocaleDateString("fr-FR")
+          : "non renseignée"}
       </li>
     </ul>
   );

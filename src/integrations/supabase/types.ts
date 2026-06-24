@@ -344,6 +344,39 @@ export type Database = {
           },
         ]
       }
+      driver_alerts: {
+        Row: {
+          body: string
+          created_at: string
+          driver_id: string
+          id: string
+          read_at: string | null
+          threshold_days: number | null
+          title: string
+          type: string
+        }
+        Insert: {
+          body: string
+          created_at?: string
+          driver_id: string
+          id?: string
+          read_at?: string | null
+          threshold_days?: number | null
+          title: string
+          type: string
+        }
+        Update: {
+          body?: string
+          created_at?: string
+          driver_id?: string
+          id?: string
+          read_at?: string | null
+          threshold_days?: number | null
+          title?: string
+          type?: string
+        }
+        Relationships: []
+      }
       driver_profiles: {
         Row: {
           assigned_category: string | null
@@ -358,6 +391,9 @@ export type Database = {
           id_document_url: string | null
           insurance_document_url: string | null
           insurance_expires_at: string | null
+          insurance_status: string
+          insurance_verified_at: string | null
+          insurance_verified_by: string | null
           is_online: boolean
           license_document_url: string | null
           license_expires_at: string | null
@@ -397,6 +433,9 @@ export type Database = {
           id_document_url?: string | null
           insurance_document_url?: string | null
           insurance_expires_at?: string | null
+          insurance_status?: string
+          insurance_verified_at?: string | null
+          insurance_verified_by?: string | null
           is_online?: boolean
           license_document_url?: string | null
           license_expires_at?: string | null
@@ -436,6 +475,9 @@ export type Database = {
           id_document_url?: string | null
           insurance_document_url?: string | null
           insurance_expires_at?: string | null
+          insurance_status?: string
+          insurance_verified_at?: string | null
+          insurance_verified_by?: string | null
           is_online?: boolean
           license_document_url?: string | null
           license_expires_at?: string | null
@@ -2505,6 +2547,34 @@ export type Database = {
           commission_type: Database["public"]["Enums"]["commission_kind"]
         }[]
       }
+      list_insured_drivers: {
+        Args: Record<PropertyKey, never>
+        Returns: {
+          user_id: string
+          full_name: string | null
+          phone: string | null
+          country: string | null
+          city: string | null
+          vehicle_type: string | null
+          partner_type: string | null
+          insurance_status: string
+          insurance_expires_at: string | null
+          insurance_document_url: string | null
+          days_remaining: number | null
+        }[]
+      }
+      verify_driver_insurance: {
+        Args: { _driver_id: string }
+        Returns: undefined
+      }
+      renew_my_insurance: {
+        Args: { _expires_at: string }
+        Returns: undefined
+      }
+      generate_insurance_alerts: {
+        Args: Record<PropertyKey, never>
+        Returns: undefined
+      }
     }
     Enums: {
       app_role:
@@ -2514,6 +2584,7 @@ export type Database = {
         | "support"
         | "superadmin"
         | "stakeholder"
+        | "insurer"
       commission_kind: "percent" | "flat"
       driver_status:
         | "pending"
@@ -2720,6 +2791,7 @@ export const Constants = {
         "support",
         "superadmin",
         "stakeholder",
+        "insurer",
       ],
       commission_kind: ["percent", "flat"],
       driver_status: [

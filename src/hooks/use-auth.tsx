@@ -2,7 +2,7 @@ import { createContext, useContext, useEffect, useState, type ReactNode } from "
 import type { Session, User } from "@supabase/supabase-js";
 import { supabase } from "@/integrations/supabase/client";
 
-type Role = "passenger" | "driver" | "admin" | "support" | "superadmin";
+type Role = "passenger" | "driver" | "admin" | "support" | "superadmin" | "insurer";
 
 type AuthCtx = {
   user: User | null;
@@ -49,7 +49,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (r === "admin") return roles.includes("admin") || roles.includes("superadmin");
       return roles.includes(r);
     },
-    primaryRole: roles.includes("superadmin") ? "superadmin" : roles.includes("admin") ? "admin" : roles.includes("support") ? "support" : roles.includes("driver") ? "driver" : roles.includes("passenger") ? "passenger" : null,
+    primaryRole: roles.includes("superadmin") ? "superadmin" : roles.includes("admin") ? "admin" : roles.includes("support") ? "support" : roles.includes("insurer") ? "insurer" : roles.includes("driver") ? "driver" : roles.includes("passenger") ? "passenger" : null,
     refreshRoles: () => loadRoles(user?.id),
   };
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;

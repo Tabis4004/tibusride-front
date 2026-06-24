@@ -15,6 +15,7 @@ function AppHome() {
     if (primaryRole === "superadmin") navigate({ to: "/app/admin", replace: true });
     else if (primaryRole === "admin") navigate({ to: "/app/admin", replace: true });
     else if (primaryRole === "support") navigate({ to: "/app/support-inbox", replace: true });
+    else if (primaryRole === "insurer") navigate({ to: "/app/insurer", replace: true });
     else if (primaryRole === "driver") navigate({ to: "/app/driver", replace: true });
     else navigate({ to: "/app/passenger", replace: true });
   }, [primaryRole, loading, navigate]);

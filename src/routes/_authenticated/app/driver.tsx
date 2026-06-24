@@ -30,7 +30,11 @@ import {
   declineRideOffer,
 } from "@/lib/dispatch.functions";
 import { EnrollmentWizard } from "@/components/driver/EnrollmentWizard";
-import { PARTNER_TYPES, VEHICLE_TYPES, RIDE_CATEGORIES, DELIVERY_CATEGORIES } from "@/lib/driver-enrollment";
+import { PARTNER_TYPES, VEHICLE_TYPES, RIDE_CATEGORIES, DELIVERY_CATEGORIES, INSURANCE_STATUS_LABEL, type InsuranceStatus } from "@/lib/driver-enrollment";
+import { renewMyInsurance } from "@/lib/driver-enrollment.functions";
+import { Input } from "@/components/ui/input";
+import { ShieldAlert } from "lucide-react";
+import { cn } from "@/lib/utils";
 import { DELIVERY_VEHICLES, PACKAGE_TYPES, vehicleFromAssignedCategory } from "@/lib/delivery-pricing";
 import { useCountryMarket } from "@/hooks/use-country-market";
 import { isEcoTibus, marketAppName } from "@/lib/country-market";
@@ -256,6 +260,7 @@ function DriverPage() {
   return (
     <div className="space-y-6">
       {driverQ.data.is_online && <IdleLocationReporter />}
+      <InsuranceAlertsBanner />
       <PendingOfferBanner />
 
       {/* Popup minuté "nouvelle course" — mode self_assign, voir SELF_ASSIGN_POPUP_SECONDS. */}
@@ -306,6 +311,8 @@ function DriverPage() {
       </div>
 
       <DriverZoneSettings />
+
+      <InsuranceStatusCard profile={driverQ.data} />
 
       <WalletSection />
 
@@ -665,6 +672,144 @@ function PendingOfferBanner() {
         </DialogContent>
       </Dialog>
     </>
+  );
+}
+
+/**
+ * Alertes d'expiration d'assurance (générées quotidiennement côté serveur,
+ * voir public.generate_insurance_alerts) : affiche les alertes non lues du
+ * chauffeur (toast + notification système, une seule fois chacune), puis les
+ * marque comme lues.
+ */
+function InsuranceAlertsBanner() {
+  const { user } = useAuth();
+  const qc = useQueryClient();
+  const shownRef = useRef<Set<string>>(new Set());
+
+  const alertsQ = useQuery({
+    queryKey: ["driver-alerts", user?.id],
+    enabled: !!user,
+    refetchInterval: 60000,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("driver_alerts")
+        .select("*")
+        .eq("driver_id", user!.id)
+        .is("read_at", null)
+        .order("created_at", { ascending: false });
+      if (error) throw error;
+      return data ?? [];
+    },
+  });
+
+  useEffect(() => {
+    for (const a of alertsQ.data ?? []) {
+      if (shownRef.current.has(a.id)) continue;
+      shownRef.current.add(a.id);
+      const isExpired = a.type === "insurance_expired";
+      if (isExpired) toast.error(a.title, { description: a.body, duration: 12000 });
+      else toast.warning(a.title, { description: a.body, duration: 10000 });
+      try {
+        showLocalNotification(a.title, a.body);
+      } catch {}
+    }
+  }, [alertsQ.data]);
+
+  const markAllRead = useMutation({
+    mutationFn: async () => {
+      const ids = (alertsQ.data ?? []).map((a) => a.id);
+      if (ids.length === 0) return;
+      const { error } = await supabase.from("driver_alerts").update({ read_at: new Date().toISOString() }).in("id", ids);
+      if (error) throw error;
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["driver-alerts"] }),
+  });
+
+  const alerts = alertsQ.data ?? [];
+  if (alerts.length === 0) return null;
+
+  return (
+    <div className="rounded-3xl border border-warning/40 bg-warning/10 p-4">
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex items-start gap-2">
+          <ShieldAlert className="mt-0.5 h-5 w-5 shrink-0 text-warning" />
+          <div className="space-y-1">
+            {alerts.map((a) => (
+              <p key={a.id} className="text-sm">
+                <span className="font-semibold">{a.title}</span> — {a.body}
+              </p>
+            ))}
+          </div>
+        </div>
+        <Button size="sm" variant="outline" onClick={() => markAllRead.mutate()} disabled={markAllRead.isPending}>
+          OK, compris
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+/** Statut d'assurance + renouvellement (remet le dossier en attente de
+ *  validation par l'assureur). */
+function InsuranceStatusCard({ profile }: { profile: any }) {
+  const qc = useQueryClient();
+  const renewFn = useServerFn(renewMyInsurance);
+  const [expiresAt, setExpiresAt] = useState(profile.insurance_expires_at ?? "");
+
+  const renew = useMutation({
+    mutationFn: () => renewFn({ data: { expires_at: expiresAt } }),
+    onSuccess: () => {
+      toast.success("Renouvellement envoyé — en attente de validation par l'assureur");
+      qc.invalidateQueries({ queryKey: ["driver-profile"] });
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  const status = (profile.insurance_status ?? "pending") as InsuranceStatus;
+  const daysLeft = profile.insurance_expires_at
+    ? Math.round((new Date(profile.insurance_expires_at).getTime() - Date.now()) / 86_400_000)
+    : null;
+
+  return (
+    <div className="rounded-3xl border border-border bg-card p-5">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h3 className="font-display text-base font-semibold">Assurance</h3>
+          <p className="text-xs text-muted-foreground">
+            {profile.insurance_expires_at
+              ? `Expire le ${new Date(profile.insurance_expires_at).toLocaleDateString("fr-FR")}`
+              : "Date d'expiration non renseignée"}
+            {typeof daysLeft === "number" && (
+              <span className={daysLeft < 0 ? "text-destructive" : daysLeft <= 7 ? "text-warning" : ""}>
+                {" "}({daysLeft < 0 ? "expirée" : `${daysLeft} j restants`})
+              </span>
+            )}
+          </p>
+        </div>
+        <span
+          className={cn(
+            "rounded-full border px-3 py-1 text-xs font-medium",
+            status === "verified" ? "border-success/40 bg-success/10 text-success"
+              : status === "expired" ? "border-destructive/40 bg-destructive/10 text-destructive"
+                : "border-warning/40 bg-warning/10 text-warning",
+          )}
+        >
+          {INSURANCE_STATUS_LABEL[status]}
+        </span>
+      </div>
+      <div className="mt-4 flex flex-wrap items-end gap-2">
+        <div>
+          <label className="text-xs font-medium text-muted-foreground">Nouvelle date d'expiration</label>
+          <Input type="date" className="mt-1" value={expiresAt} onChange={(e) => setExpiresAt(e.target.value)} />
+        </div>
+        <Button size="sm" disabled={!expiresAt || renew.isPending} onClick={() => renew.mutate()}>
+          {renew.isPending ? "Envoi…" : "Renouveler"}
+        </Button>
+      </div>
+      <p className="mt-2 text-[11px] text-muted-foreground">
+        Le renouvellement remet votre dossier en attente de validation par l'assureur.
+      </p>
+    </div>
   );
 }
 

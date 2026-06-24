@@ -18,12 +18,13 @@ import {
 } from "@/lib/admin.functions";
 import { KeyRound, ShieldCheck, ShieldOff, UserCog } from "lucide-react";
 
-type AppRole = "superadmin" | "admin" | "support" | "driver" | "passenger";
+type AppRole = "superadmin" | "admin" | "support" | "insurer" | "driver" | "passenger";
 
 const ROLE_META: { key: AppRole; label: string; desc: string; superOnly?: boolean }[] = [
   { key: "passenger", label: "Passager", desc: "Commander des courses" },
   { key: "driver", label: "Chauffeur", desc: "Accepter et conduire" },
   { key: "support", label: "Support", desc: "Inbox et assistance" },
+  { key: "insurer", label: "Assureur", desc: "Dashboard assurance — liste des chauffeurs assurés, validation" },
   { key: "admin", label: "Admin", desc: "Panneau admin (périmètre pays si assigné)" },
   { key: "superadmin", label: "Superadmin", desc: "Accès global à la plateforme", superOnly: true },
 ];

@@ -82,6 +82,7 @@ export const updateMyEnrollment = createServerFn({ method: "POST" })
       vehicle_plate: z.string().trim().max(30).optional(),
       vehicle_model: z.string().trim().max(80).optional(),
       vehicle_color: z.string().trim().max(40).optional(),
+      insurance_expires_at: z.string().trim().min(1).max(10).optional(),
     }).parse(d),
   )
   .handler(async ({ data, context }) => {
@@ -97,9 +98,22 @@ export const updateMyEnrollment = createServerFn({ method: "POST" })
       vehicle_plate: data.vehicle_plate ?? null,
       vehicle_model: data.vehicle_model ?? null,
       vehicle_color: data.vehicle_color ?? null,
+      insurance_expires_at: data.insurance_expires_at ?? null,
       updated_at: new Date().toISOString(),
     }).eq("user_id", userId);
     if (error) throw error;
+    return { ok: true };
+  });
+
+/** Renouvellement de l'assurance par le chauffeur : remet le dossier en
+ *  attente de validation par l'assureur (insurance_status -> 'pending'). */
+export const renewMyInsurance = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d) => z.object({ expires_at: z.string().trim().min(1).max(10) }).parse(d))
+  .handler(async ({ data, context }) => {
+    const { supabase } = context;
+    const { error } = await supabase.rpc("renew_my_insurance", { _expires_at: data.expires_at });
+    if (error) throw new Error(error.message);
     return { ok: true };
   });
 
@@ -124,6 +138,7 @@ export const submitEnrollmentForReview = createServerFn({ method: "POST" })
     if (!prof.license_document_url) missing.push("permis de conduire");
     if (!prof.vehicle_document_url) missing.push("carte grise");
     if (!prof.insurance_document_url) missing.push("assurance");
+    if (!prof.insurance_expires_at) missing.push("date d'expiration assurance");
     if (!prof.vehicle_condition_url) missing.push("photos état véhicule/moto");
     if (missing.length) {
       throw new Error(`Dossier incomplet : ${missing.join(", ")}.`);

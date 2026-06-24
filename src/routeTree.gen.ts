@@ -17,6 +17,7 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as AuthenticatedAppRouteRouteImport } from './routes/_authenticated/app/route'
 import { Route as AuthenticatedAppIndexRouteImport } from './routes/_authenticated/app/index'
 import { Route as AuthenticatedAppSupportInboxRouteImport } from './routes/_authenticated/app/support-inbox'
+import { Route as AuthenticatedAppInsurerRouteImport } from './routes/_authenticated/app/insurer'
 import { Route as AuthenticatedAppSupportRouteImport } from './routes/_authenticated/app/support'
 import { Route as AuthenticatedAppSettingsRouteImport } from './routes/_authenticated/app/settings'
 import { Route as AuthenticatedAppRidesRouteImport } from './routes/_authenticated/app/rides'
@@ -69,6 +70,11 @@ const AuthenticatedAppSupportInboxRoute =
     path: '/support-inbox',
     getParentRoute: () => AuthenticatedAppRouteRoute,
   } as any)
+const AuthenticatedAppInsurerRoute = AuthenticatedAppInsurerRouteImport.update({
+  id: '/insurer',
+  path: '/insurer',
+  getParentRoute: () => AuthenticatedAppRouteRoute,
+} as any)
 const AuthenticatedAppSupportRoute = AuthenticatedAppSupportRouteImport.update({
   id: '/support',
   path: '/support',
@@ -139,6 +145,7 @@ export interface FileRoutesByFullPath {
   '/app/admin': typeof AuthenticatedAppAdminRoute
   '/app/complete-profile': typeof AuthenticatedAppCompleteProfileRoute
   '/app/driver': typeof AuthenticatedAppDriverRoute
+  '/app/insurer': typeof AuthenticatedAppInsurerRoute
   '/app/passenger': typeof AuthenticatedAppPassengerRoute
   '/app/rewards': typeof AuthenticatedAppRewardsRoute
   '/app/rides': typeof AuthenticatedAppRidesRoute
@@ -158,6 +165,7 @@ export interface FileRoutesByTo {
   '/app/admin': typeof AuthenticatedAppAdminRoute
   '/app/complete-profile': typeof AuthenticatedAppCompleteProfileRoute
   '/app/driver': typeof AuthenticatedAppDriverRoute
+  '/app/insurer': typeof AuthenticatedAppInsurerRoute
   '/app/passenger': typeof AuthenticatedAppPassengerRoute
   '/app/rewards': typeof AuthenticatedAppRewardsRoute
   '/app/rides': typeof AuthenticatedAppRidesRoute
@@ -180,6 +188,7 @@ export interface FileRoutesById {
   '/_authenticated/app/admin': typeof AuthenticatedAppAdminRoute
   '/_authenticated/app/complete-profile': typeof AuthenticatedAppCompleteProfileRoute
   '/_authenticated/app/driver': typeof AuthenticatedAppDriverRoute
+  '/_authenticated/app/insurer': typeof AuthenticatedAppInsurerRoute
   '/_authenticated/app/passenger': typeof AuthenticatedAppPassengerRoute
   '/_authenticated/app/rewards': typeof AuthenticatedAppRewardsRoute
   '/_authenticated/app/rides': typeof AuthenticatedAppRidesRoute
@@ -202,6 +211,7 @@ export interface FileRouteTypes {
     | '/app/admin'
     | '/app/complete-profile'
     | '/app/driver'
+    | '/app/insurer'
     | '/app/passenger'
     | '/app/rewards'
     | '/app/rides'
@@ -221,6 +231,7 @@ export interface FileRouteTypes {
     | '/app/admin'
     | '/app/complete-profile'
     | '/app/driver'
+    | '/app/insurer'
     | '/app/passenger'
     | '/app/rewards'
     | '/app/rides'
@@ -242,6 +253,7 @@ export interface FileRouteTypes {
     | '/_authenticated/app/admin'
     | '/_authenticated/app/complete-profile'
     | '/_authenticated/app/driver'
+    | '/_authenticated/app/insurer'
     | '/_authenticated/app/passenger'
     | '/_authenticated/app/rewards'
     | '/_authenticated/app/rides'
@@ -363,6 +375,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAppDriverRouteImport
       parentRoute: typeof AuthenticatedAppRouteRoute
     }
+    '/_authenticated/app/insurer': {
+      id: '/_authenticated/app/insurer'
+      path: '/insurer'
+      fullPath: '/app/insurer'
+      preLoaderRoute: typeof AuthenticatedAppInsurerRouteImport
+      parentRoute: typeof AuthenticatedAppRouteRoute
+    }
     '/_authenticated/app/complete-profile': {
       id: '/_authenticated/app/complete-profile'
       path: '/complete-profile'
@@ -419,6 +438,7 @@ interface AuthenticatedAppRouteRouteChildren {
   AuthenticatedAppAdminRoute: typeof AuthenticatedAppAdminRoute
   AuthenticatedAppCompleteProfileRoute: typeof AuthenticatedAppCompleteProfileRoute
   AuthenticatedAppDriverRoute: typeof AuthenticatedAppDriverRoute
+  AuthenticatedAppInsurerRoute: typeof AuthenticatedAppInsurerRoute
   AuthenticatedAppPassengerRoute: typeof AuthenticatedAppPassengerRoute
   AuthenticatedAppRewardsRoute: typeof AuthenticatedAppRewardsRoute
   AuthenticatedAppRidesRoute: typeof AuthenticatedAppRidesRoute
@@ -433,6 +453,7 @@ const AuthenticatedAppRouteRouteChildren: AuthenticatedAppRouteRouteChildren = {
   AuthenticatedAppAdminRoute: AuthenticatedAppAdminRoute,
   AuthenticatedAppCompleteProfileRoute: AuthenticatedAppCompleteProfileRoute,
   AuthenticatedAppDriverRoute: AuthenticatedAppDriverRoute,
+  AuthenticatedAppInsurerRoute: AuthenticatedAppInsurerRoute,
   AuthenticatedAppPassengerRoute: AuthenticatedAppPassengerRoute,
   AuthenticatedAppRewardsRoute: AuthenticatedAppRewardsRoute,
   AuthenticatedAppRidesRoute: AuthenticatedAppRidesRoute,
