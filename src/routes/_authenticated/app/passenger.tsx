@@ -1058,6 +1058,62 @@ function CurrentRideBanner({ ride: initialRide, onCancel }: { ride: any; onCance
     onError: (e: Error) => toast.error(e.message),
   });
 
+  // Arrêt intermédiaire : le passager ajoute une adresse sur le trajet ; le
+  // prix est recalculé sur la distance/durée du nouvel itinéraire complet
+  // (départ → arrêts → arrivée), selon les mêmes règles tarifaires (tarifs
+  // DB de la catégorie + coefficients trafic/météo) que le reste de la course.
+  const [stopOpen, setStopOpen] = useState(false);
+  const [stopAddr, setStopAddr] = useState("");
+  const stopPricingConfigFn = useServerFn(getEffectivePricingConfig);
+  const stopPricingConfigQ = useQuery({
+    queryKey: ["pricing-config-stop", activeRide.program_id],
+    queryFn: () => stopPricingConfigFn({ data: { programId: activeRide.program_id ?? undefined } }),
+  });
+  const addStop = useMutation({
+    mutationFn: async (point: { lat: number; lng: number; formatted: string }) => {
+      if (!pickup || !dropoff) throw new Error("Itinéraire incomplet.");
+      const waypoints: Array<{ address: string; lat: number; lng: number; added_at: string }> =
+        Array.isArray(activeRide.waypoints) ? activeRide.waypoints : [];
+      const chain: LatLng[] = [pickup, ...waypoints.map((w) => ({ lat: w.lat, lng: w.lng })), { lat: point.lat, lng: point.lng }, dropoff];
+      let totalMeters = 0;
+      let totalSeconds = 0;
+      for (let i = 0; i < chain.length - 1; i++) {
+        const r = await routeFn({ data: { origin: chain[i], destination: chain[i + 1] } });
+        if (!r.ok) throw new Error("Impossible de calculer le nouvel itinéraire.");
+        totalMeters += r.distanceMeters;
+        totalSeconds += r.seconds;
+      }
+      const km = Math.max(1, totalMeters / 1000);
+      const min = Math.max(1, totalSeconds / 60);
+      const pricingConfig = stopPricingConfigQ.data;
+      const cat = (activeRide.category ?? "eco") as Category;
+      const breakdown = computeDynamicPrice({
+        category: cat,
+        km,
+        durationMin: min,
+        staticDurationMin: min,
+        rates: pricingConfig?.categories?.[cat],
+        coefficients: pricingConfig?.dynamic,
+      });
+      const newPrice = Math.max(activeRide.price_xof, breakdown.total + Number(activeRide.waiting_fee_xof ?? 0));
+      const { error } = await supabase.from("rides").update({
+        waypoints: [...waypoints, { address: point.formatted, lat: point.lat, lng: point.lng, added_at: new Date().toISOString() }],
+        distance_km: km,
+        duration_min: min,
+        price_xof: newPrice,
+      }).eq("id", activeRide.id);
+      if (error) throw error;
+      return newPrice - activeRide.price_xof;
+    },
+    onSuccess: (delta) => {
+      qc.invalidateQueries();
+      setStopOpen(false);
+      setStopAddr("");
+      toast.success(delta > 0 ? `Arrêt ajouté — +${formatXof(delta)} sur le prix` : "Arrêt ajouté");
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
   const etaText = etaSec != null ? (etaSec < 60 ? `${etaSec}s` : `${Math.round(etaSec / 60)} min`) : "—";
   const driverInfo = driverQ.data as (DriverVehiclePublic & { full_name?: string; phone?: string; rating_avg?: number }) | null | undefined;
   const driverPhone = driverInfo?.phone;
@@ -1173,6 +1229,38 @@ function CurrentRideBanner({ ride: initialRide, onCancel }: { ride: any; onCance
         <div className="flex items-start gap-2"><MapPin className="h-4 w-4 text-success mt-0.5" /><div><div className="text-xs text-muted-foreground">Départ</div>{ride.pickup_address}</div></div>
         <div className="flex items-start gap-2"><MapPin className="h-4 w-4 text-primary mt-0.5" /><div><div className="text-xs text-muted-foreground">Arrivée</div>{ride.dropoff_address}</div></div>
       </div>
+
+      {(activeRide.status === "accepted" || activeRide.status === "arriving" || activeRide.status === "in_progress") && (
+        <div className="rounded-xl border border-border bg-card p-3">
+          {Array.isArray(activeRide.waypoints) && activeRide.waypoints.length > 0 && (
+            <ul className="mb-2 space-y-1 text-xs text-muted-foreground">
+              {activeRide.waypoints.map((w: any, i: number) => (
+                <li key={i} className="flex items-center gap-2"><MapPin className="h-3 w-3 shrink-0" />{w.address}</li>
+              ))}
+            </ul>
+          )}
+          {stopOpen ? (
+            <div className="flex items-start gap-2">
+              <AddressAutocomplete
+                value={stopAddr}
+                onChange={setStopAddr}
+                placeholder="Adresse de l'arrêt"
+                resolved={false}
+                onSelect={({ lat, lng, formatted }) => {
+                  setStopAddr(formatted);
+                  addStop.mutate({ lat, lng, formatted });
+                }}
+              />
+              <Button type="button" size="sm" variant="ghost" onClick={() => { setStopOpen(false); setStopAddr(""); }}>Annuler</Button>
+            </div>
+          ) : (
+            <Button type="button" size="sm" variant="outline" disabled={addStop.isPending} onClick={() => setStopOpen(true)}>
+              {addStop.isPending ? "Calcul en cours…" : "+ Ajouter un arrêt"}
+            </Button>
+          )}
+          <p className="mt-1.5 text-[11px] text-muted-foreground">Un arrêt modifie le prix selon la distance et la durée ajoutées.</p>
+        </div>
+      )}
 
       {activeRide.driver_id && driverQ.data && (
         <div className="rounded-2xl border border-border bg-card p-4">

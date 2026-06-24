@@ -277,6 +277,40 @@ function DriverPage() {
     onSuccess: () => qc.invalidateQueries(),
   });
 
+  // Frais d'attente/retard : le chauffeur signale le début et la fin d'une
+  // attente (passager en retard ou arrêt demandé) ; à la fin, le temps écoulé
+  // est facturé au tarif minute de la catégorie de la course et ajouté au
+  // prix de la course — mêmes règles tarifaires que le reste du trajet.
+  const toggleWaiting = useMutation({
+    mutationFn: async (ride: any) => {
+      if (!ride.waiting_started_at) {
+        const { error } = await supabase.from("rides")
+          .update({ waiting_started_at: new Date().toISOString() })
+          .eq("id", ride.id);
+        if (error) throw error;
+        return { started: true, fee: 0 };
+      }
+      const minutes = Math.max(1, Math.ceil((Date.now() - new Date(ride.waiting_started_at).getTime()) / 60000));
+      const perMin = CATEGORIES[ride.category as Category]?.perMin ?? 35;
+      const fee = Math.round(minutes * perMin);
+      const { error } = await supabase.from("rides")
+        .update({
+          waiting_started_at: null,
+          waiting_minutes: (ride.waiting_minutes ?? 0) + minutes,
+          waiting_fee_xof: (ride.waiting_fee_xof ?? 0) + fee,
+          price_xof: (ride.price_xof ?? 0) + fee,
+        })
+        .eq("id", ride.id);
+      if (error) throw error;
+      return { started: false, fee };
+    },
+    onSuccess: (res) => {
+      qc.invalidateQueries();
+      toast.success(res.started ? "Attente démarrée" : `Attente terminée — +${formatXof(res.fee)} ajoutés à la course`);
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
   if (driverQ.isLoading) return <div className="py-12 text-center text-muted-foreground">Chargement…</div>;
 
   if (!driverQ.data) {
@@ -400,6 +434,25 @@ function DriverPage() {
                 ) : (
                   <div className="rounded-xl border border-border bg-card px-4 py-2 text-xs text-muted-foreground">
                     Numéro passager non renseigné.
+                  </div>
+                )}
+                {(r.status === "arriving" || r.status === "in_progress") && (
+                  <div className="flex items-center justify-between gap-2 rounded-xl border border-border bg-card px-4 py-2 text-xs">
+                    <span className="text-muted-foreground">
+                      {r.waiting_started_at
+                        ? "Attente en cours…"
+                        : Number(r.waiting_fee_xof ?? 0) > 0
+                          ? `Frais d'attente déjà ajoutés : ${formatXof(r.waiting_fee_xof)}`
+                          : "Passager en retard ou arrêt demandé ?"}
+                    </span>
+                    <Button
+                      size="sm"
+                      variant={r.waiting_started_at ? "default" : "outline"}
+                      disabled={toggleWaiting.isPending}
+                      onClick={() => toggleWaiting.mutate(r)}
+                    >
+                      {r.waiting_started_at ? "Terminer l'attente" : "Signaler une attente"}
+                    </Button>
                   </div>
                 )}
                 <a href={`/app/ride/${r.id}`} className="ml-1 text-xs font-medium text-primary hover:underline">

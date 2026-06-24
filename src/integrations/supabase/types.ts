@@ -1713,6 +1713,7 @@ export type Database = {
       rides: {
         Row: {
           accepted_at: string | null
+          base_price_xof: number | null
           cancelled_at: string | null
           category: Database["public"]["Enums"]["vehicle_category"]
           city: string
@@ -1758,9 +1759,14 @@ export type Database = {
           started_at: string | null
           status: Database["public"]["Enums"]["ride_status"]
           updated_at: string
+          waiting_fee_xof: number
+          waiting_minutes: number
+          waiting_started_at: string | null
+          waypoints: Json
         }
         Insert: {
           accepted_at?: string | null
+          base_price_xof?: number | null
           cancelled_at?: string | null
           category?: Database["public"]["Enums"]["vehicle_category"]
           city?: string
@@ -1806,9 +1812,14 @@ export type Database = {
           started_at?: string | null
           status?: Database["public"]["Enums"]["ride_status"]
           updated_at?: string
+          waiting_fee_xof?: number
+          waiting_minutes?: number
+          waiting_started_at?: string | null
+          waypoints?: Json
         }
         Update: {
           accepted_at?: string | null
+          base_price_xof?: number | null
           cancelled_at?: string | null
           category?: Database["public"]["Enums"]["vehicle_category"]
           city?: string
@@ -1854,6 +1865,10 @@ export type Database = {
           started_at?: string | null
           status?: Database["public"]["Enums"]["ride_status"]
           updated_at?: string
+          waiting_fee_xof?: number
+          waiting_minutes?: number
+          waiting_started_at?: string | null
+          waypoints?: Json
         }
         Relationships: [
           {
