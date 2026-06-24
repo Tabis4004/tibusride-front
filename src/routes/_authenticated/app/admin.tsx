@@ -17,6 +17,7 @@ import {
 } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { formatXof } from "@/lib/pricing";
+import { DELIVERY_VEHICLES, type DeliveryVehicle } from "@/lib/delivery-pricing";
 import { countriesMatch } from "@/lib/countries";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Switch } from "@/components/ui/switch";
@@ -35,6 +36,8 @@ import {
   listAuditLogs,
   listPricingSettings,
   updatePricingSetting,
+  listDeliveryPricingSettings,
+  updateDeliveryPricingSetting,
   listDynamicPricingSettings,
   updateDynamicPricingSetting,
   createDynamicPricingSetting,
@@ -1685,8 +1688,162 @@ function PricingTab() {
         </table>
       </div>
 
+      <DeliveryPricingSection />
       <DynamicPricingSection />
       <CommissionSchedulesSection />
+    </div>
+  );
+}
+
+/* -------------------- Tarifs livraison (moto, tricycle, cargo…) -------------------- */
+
+function DeliveryPricingSection() {
+  const qc = useQueryClient();
+  const listFn = useServerFn(listDeliveryPricingSettings);
+  const updateFn = useServerFn(updateDeliveryPricingSetting);
+  const { data, isLoading } = useQuery({
+    queryKey: ["admin", "delivery-pricing"],
+    queryFn: () => listFn({}),
+  });
+  const [drafts, setDrafts] = useState<Record<string, any>>({});
+
+  const mutation = useMutation({
+    mutationFn: (payload: any) => updateFn({ data: payload }),
+    onSuccess: (_d, vars: any) => {
+      toast.success(`Tarifs ${DELIVERY_VEHICLES[vars._vehicle as DeliveryVehicle]?.label ?? ""} mis à jour`);
+      setDrafts((d) => {
+        const { [vars.id]: _, ...rest } = d;
+        return rest;
+      });
+      qc.invalidateQueries({ queryKey: ["admin", "delivery-pricing"] });
+    },
+    onError: (e: any) => toast.error(e?.message ?? "Erreur de mise à jour"),
+  });
+
+  if (isLoading) return <p className="text-sm text-muted-foreground">Chargement…</p>;
+
+  const rows = (data ?? []) as any[];
+
+  return (
+    <div className="space-y-3">
+      <div className="rounded-2xl border border-border bg-card p-4 text-sm text-muted-foreground">
+        Tarifs des <strong>livraisons</strong> (deux-roues, moto, tricycle, voiture, fourgon). Même logique que les
+        courses : prise en charge + /km + /min + tarif minimum, et commission par défaut.
+      </div>
+
+      <div className="overflow-x-auto rounded-2xl border border-border bg-card">
+        <table className="w-full text-sm">
+          <thead className="bg-muted/40 text-xs uppercase text-muted-foreground">
+            <tr>
+              <th className="px-3 py-2 text-left">Véhicule</th>
+              <th className="px-3 py-2 text-right">Prise en charge</th>
+              <th className="px-3 py-2 text-right">Prix / km</th>
+              <th className="px-3 py-2 text-right">Prix / min</th>
+              <th className="px-3 py-2 text-right">Tarif min</th>
+              <th className="px-3 py-2 text-left">Type</th>
+              <th className="px-3 py-2 text-right">%</th>
+              <th className="px-3 py-2 text-right">Forfait (XOF)</th>
+              <th className="px-3 py-2 text-center">Actif</th>
+              <th className="px-3 py-2 text-right">Action</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row) => {
+              const draft = drafts[row.id] ?? {};
+              const current = { ...row, ...draft };
+              const dirty = Object.keys(draft).length > 0;
+              const setField = (k: string, v: any) =>
+                setDrafts((d) => ({ ...d, [row.id]: { ...d[row.id], [k]: v } }));
+              const numInput = (k: string, step = 50) => (
+                <Input
+                  type="number"
+                  step={step}
+                  className="h-8 w-24 text-right"
+                  value={current[k] ?? 0}
+                  onChange={(e) => setField(k, Number(e.target.value))}
+                />
+              );
+              const label = DELIVERY_VEHICLES[row.vehicle as DeliveryVehicle]?.label ?? row.vehicle;
+              const emoji = DELIVERY_VEHICLES[row.vehicle as DeliveryVehicle]?.emoji ?? "";
+              return (
+                <tr key={row.id} className="border-t border-border">
+                  <td className="px-3 py-2 font-medium">{emoji} {label}</td>
+                  <td className="px-3 py-2 text-right">{numInput("base_fare_xof")}</td>
+                  <td className="px-3 py-2 text-right">{numInput("per_km_xof", 10)}</td>
+                  <td className="px-3 py-2 text-right">{numInput("per_min_xof", 5)}</td>
+                  <td className="px-3 py-2 text-right">{numInput("min_fare_xof")}</td>
+                  <td className="px-3 py-2">
+                    <Select
+                      value={current.commission_type ?? "percent"}
+                      onValueChange={(v) => setField("commission_type", v)}
+                    >
+                      <SelectTrigger className="h-8 w-28"><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="percent">Pourcentage</SelectItem>
+                        <SelectItem value="flat">Forfait</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </td>
+                  <td className="px-3 py-2 text-right">
+                    <Input
+                      type="number" step={0.5} min={0} max={100}
+                      className="h-8 w-20 text-right"
+                      disabled={current.commission_type === "flat"}
+                      value={current.commission_rate ?? 0}
+                      onChange={(e) => setField("commission_rate", Number(e.target.value))}
+                    />
+                  </td>
+                  <td className="px-3 py-2 text-right">
+                    <Input
+                      type="number" step={50} min={0}
+                      className="h-8 w-24 text-right"
+                      disabled={current.commission_type === "percent"}
+                      value={current.commission_flat_xof ?? 0}
+                      onChange={(e) => setField("commission_flat_xof", Number(e.target.value))}
+                    />
+                  </td>
+                  <td className="px-3 py-2 text-center">
+                    <input
+                      type="checkbox"
+                      checked={!!current.active}
+                      onChange={(e) => setField("active", e.target.checked)}
+                    />
+                  </td>
+                  <td className="px-3 py-2 text-right">
+                    <Button
+                      size="sm"
+                      disabled={!dirty || mutation.isPending}
+                      onClick={() =>
+                        mutation.mutate({
+                          _vehicle: row.vehicle,
+                          id: row.id,
+                          base_fare_xof: Number(current.base_fare_xof),
+                          per_km_xof: Number(current.per_km_xof),
+                          per_min_xof: Number(current.per_min_xof),
+                          min_fare_xof: Number(current.min_fare_xof),
+                          commission_type: current.commission_type ?? "percent",
+                          commission_rate: Number(current.commission_rate ?? 0),
+                          commission_flat_xof: Number(current.commission_flat_xof ?? 0),
+                          active: !!current.active,
+                        } as any)
+                      }
+                    >
+                      Enregistrer
+                    </Button>
+                  </td>
+                </tr>
+              );
+            })}
+            {rows.length === 0 && (
+              <tr>
+                <td colSpan={10} className="px-3 py-6 text-center text-muted-foreground">
+                  Aucun véhicule de livraison configuré.
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }

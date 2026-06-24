@@ -2,6 +2,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { CATEGORIES, type Category } from "@/lib/pricing";
+import { DELIVERY_VEHICLES, type DeliveryVehicle } from "@/lib/delivery-pricing";
 
 /**
  * Configuration de tarification effective, lue en base — remplace les
@@ -35,6 +36,7 @@ export type EffectiveDynamicCoefficients = {
 
 export type EffectivePricingConfig = {
   categories: Record<Category, EffectiveCategoryRates>;
+  deliveryVehicles: Record<DeliveryVehicle, EffectiveCategoryRates>;
   dynamic: EffectiveDynamicCoefficients;
 };
 
@@ -74,6 +76,25 @@ export const getEffectivePricingConfig = createServerFn({ method: "GET" })
       }
     }
 
+    // Tarifs livraison — delivery_pricing_settings, fallback DELIVERY_VEHICLES si absent.
+    const { data: deliveryRows } = await supabase
+      .from("delivery_pricing_settings")
+      .select("vehicle, base_fare_xof, per_km_xof, per_min_xof, min_fare_xof, active")
+      .eq("active", true);
+
+    const deliveryVehicles = { ...defaultDeliveryRates() };
+    for (const row of deliveryRows ?? []) {
+      const v = row.vehicle as DeliveryVehicle;
+      if (v in deliveryVehicles) {
+        deliveryVehicles[v] = {
+          base: row.base_fare_xof,
+          perKm: row.per_km_xof,
+          perMin: row.per_min_xof,
+          minFare: row.min_fare_xof,
+        };
+      }
+    }
+
     // Coefficients trafic/météo — résolus par programme, sinon défaut global.
     const { data: dyn, error: dynError } = await supabase.rpc(
       "resolve_dynamic_pricing_settings",
@@ -93,7 +114,7 @@ export const getEffectivePricingConfig = createServerFn({ method: "GET" })
           roundingIncrementXof: Number(dyn.rounding_increment_xof ?? FALLBACK_DYNAMIC.roundingIncrementXof),
         };
 
-    return { categories, dynamic };
+    return { categories, deliveryVehicles, dynamic };
   });
 
 function defaultCategoryRates(): Record<Category, EffectiveCategoryRates> {
@@ -101,6 +122,15 @@ function defaultCategoryRates(): Record<Category, EffectiveCategoryRates> {
   for (const key of Object.keys(CATEGORIES) as Category[]) {
     const c = CATEGORIES[key];
     out[key] = { base: c.base, perKm: c.perKm, perMin: c.perMin, minFare: 0 };
+  }
+  return out;
+}
+
+function defaultDeliveryRates(): Record<DeliveryVehicle, EffectiveCategoryRates> {
+  const out = {} as Record<DeliveryVehicle, EffectiveCategoryRates>;
+  for (const key of Object.keys(DELIVERY_VEHICLES) as DeliveryVehicle[]) {
+    const v = DELIVERY_VEHICLES[key];
+    out[key] = { base: v.base, perKm: v.perKm, perMin: v.perMin, minFare: 0 };
   }
   return out;
 }

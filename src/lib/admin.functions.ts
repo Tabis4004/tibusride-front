@@ -615,6 +615,61 @@ export const updatePricingSetting = createServerFn({ method: "POST" })
     return updated;
   });
 
+/**
+ * Tarifs livraison (deux-roues, moto, tricycle, voiture, fourgon) — table
+ * séparée de pricing_settings car les véhicules de livraison ne font pas
+ * partie de l'enum vehicle_category. Voir
+ * supabase/migrations/20260624170000_delivery_pricing_settings.sql.
+ */
+export const listDeliveryPricingSettings = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    await assertAdmin(context.supabase, context.userId);
+    const { data, error } = await context.supabase
+      .from("delivery_pricing_settings")
+      .select("*")
+      .order("vehicle");
+    if (error) throw new Error(error.message);
+    return data ?? [];
+  });
+
+export const updateDeliveryPricingSetting = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: unknown) =>
+    z
+      .object({
+        id: z.string().uuid(),
+        base_fare_xof: z.number().int().min(0),
+        per_km_xof: z.number().int().min(0),
+        per_min_xof: z.number().int().min(0),
+        min_fare_xof: z.number().int().min(0),
+        commission_type: z.enum(["percent", "flat"]),
+        commission_rate: z.number().min(0).max(100),
+        commission_flat_xof: z.number().int().min(0),
+        active: z.boolean(),
+      })
+      .parse(d),
+  )
+  .handler(async ({ data, context }) => {
+    await assertAdmin(context.supabase, context.userId);
+    const { id, ...patch } = data;
+    const { data: updated, error } = await context.supabase
+      .from("delivery_pricing_settings")
+      .update({ ...patch, updated_by: context.userId })
+      .eq("id", id)
+      .select()
+      .single();
+    if (error) throw new Error(error.message);
+    await logAudit(await getActor(context), {
+      action: "delivery_pricing.update",
+      target_type: "delivery_pricing_settings",
+      target_id: id,
+      target_label: updated?.vehicle ?? null,
+      details: patch,
+    });
+    return updated;
+  });
+
 /* ====================== Tarif dynamique (trafic + météo) ====================== */
 
 /**

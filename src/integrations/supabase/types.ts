@@ -1285,6 +1285,54 @@ export type Database = {
           },
         ]
       }
+      delivery_pricing_settings: {
+        Row: {
+          active: boolean
+          base_fare_xof: number
+          commission_flat_xof: number
+          commission_rate: number
+          commission_type: Database["public"]["Enums"]["commission_kind"]
+          created_at: string
+          id: string
+          min_fare_xof: number
+          per_km_xof: number
+          per_min_xof: number
+          updated_at: string
+          updated_by: string | null
+          vehicle: string
+        }
+        Insert: {
+          active?: boolean
+          base_fare_xof?: number
+          commission_flat_xof?: number
+          commission_rate?: number
+          commission_type?: Database["public"]["Enums"]["commission_kind"]
+          created_at?: string
+          id?: string
+          min_fare_xof?: number
+          per_km_xof?: number
+          per_min_xof?: number
+          updated_at?: string
+          updated_by?: string | null
+          vehicle: string
+        }
+        Update: {
+          active?: boolean
+          base_fare_xof?: number
+          commission_flat_xof?: number
+          commission_rate?: number
+          commission_type?: Database["public"]["Enums"]["commission_kind"]
+          created_at?: string
+          id?: string
+          min_fare_xof?: number
+          per_km_xof?: number
+          per_min_xof?: number
+          updated_at?: string
+          updated_by?: string | null
+          vehicle?: string
+        }
+        Relationships: []
+      }
       pricing_settings: {
         Row: {
           active: boolean

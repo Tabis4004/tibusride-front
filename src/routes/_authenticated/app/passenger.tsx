@@ -257,6 +257,7 @@ function PassengerPage() {
           weather,
           urgent: deliveryUrgent,
           insulatedBag: deliveryInsulatedBag,
+          rates: pricingConfig?.deliveryVehicles?.[deliveryVehicle],
           coefficients: pricingConfig?.dynamic,
         })
       : null;
