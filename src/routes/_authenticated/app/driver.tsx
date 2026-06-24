@@ -103,6 +103,29 @@ function DriverPage() {
   });
   const walletEmpty = walletQ.data !== undefined && Number(walletQ.data.balance_xof ?? 0) <= 0;
 
+  // `driver_profiles.total_earnings`/`rides_count` ne sont mis à jour par
+  // aucun trigger — toujours à 0. Les vrais gains nets sont déjà journalisés
+  // par course dans `ride_payouts` (déclenché à la complétion), donc on les
+  // agrège directement depuis cette table plutôt que de se fier aux colonnes
+  // dénormalisées jamais alimentées.
+  const driverStatsQ = useQuery({
+    queryKey: ["driver-stats", user?.id],
+    enabled: !!user,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("ride_payouts")
+        .select("net_xof")
+        .eq("driver_id", user!.id)
+        .eq("status", "paid");
+      if (error) throw error;
+      const rows = data ?? [];
+      return {
+        totalEarnings: rows.reduce((sum, r) => sum + (r.net_xof ?? 0), 0),
+        ridesCount: rows.length,
+      };
+    },
+  });
+
   const openRidesQ = useQuery({
     queryKey: ["open-rides", driverQ.data?.is_online, driverQ.data?.city, myCountry, driverQ.data?.partner_type, driverQ.data?.assigned_category],
     enabled: !!driverQ.data?.is_online && driverQ.data?.status === "approved" && !!myCountry && !walletEmpty,
@@ -338,8 +361,8 @@ function DriverPage() {
       </div>
 
       <div className="grid gap-4 sm:grid-cols-3">
-        <Stat icon={Wallet} label="Gains totaux" value={formatXof(Number(driverQ.data.total_earnings ?? 0))} />
-        <Stat icon={Car} label="Courses effectuées" value={String(driverQ.data.rides_count)} />
+        <Stat icon={Wallet} label="Gains totaux" value={formatXof(driverStatsQ.data?.totalEarnings ?? 0)} />
+        <Stat icon={Car} label="Courses effectuées" value={String(driverStatsQ.data?.ridesCount ?? 0)} />
         <Stat icon={Clock} label="Note moyenne" value={`${Number(driverQ.data.rating_avg ?? 5).toFixed(1)} / 5`} />
       </div>
 
@@ -368,20 +391,19 @@ function DriverPage() {
                   pickup={r.pickup_lat && r.pickup_lng ? { lat: r.pickup_lat, lng: r.pickup_lng } : null}
                   dropoff={r.dropoff_lat && r.dropoff_lng ? { lat: r.dropoff_lat, lng: r.dropoff_lng } : null}
                 />
-                {r.passenger_phone && r.passenger_shares_phone && (
+                {r.passenger_phone ? (
                   <div className="rounded-xl border border-border bg-card px-4 py-2 text-xs">
                     Passager : <a className="font-semibold text-primary" href={`tel:${r.passenger_phone}`}>{r.passenger_phone}</a>
                     {" · "}
                     <a className="text-primary hover:underline" href={`https://wa.me/${r.passenger_phone.replace(/[^0-9]/g, "")}`} target="_blank" rel="noreferrer">WhatsApp</a>
                   </div>
-                )}
-                {r.passenger_phone && !r.passenger_shares_phone && (
+                ) : (
                   <div className="rounded-xl border border-border bg-card px-4 py-2 text-xs text-muted-foreground">
-                    Numéro passager masqué par le passager.
+                    Numéro passager non renseigné.
                   </div>
                 )}
                 <a href={`/app/ride/${r.id}`} className="ml-1 text-xs font-medium text-primary hover:underline">
-                  Voir détails &amp; gérer le partage du contact →
+                  Voir détails →
                 </a>
               </div>
             ))}

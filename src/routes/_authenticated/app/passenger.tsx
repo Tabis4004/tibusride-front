@@ -170,7 +170,7 @@ function PassengerPage() {
 
   useEffect(() => {
     if (!user) return;
-    supabase.from("profiles").select("city, country").eq("id", user.id).maybeSingle()
+    supabase.from("profiles").select("city, country, phone").eq("id", user.id).maybeSingle()
       .then(({ data }) => {
         profileRef.current = { city: data?.city, country: data?.country };
         const resolved = resolveServiceCity({
@@ -179,6 +179,10 @@ function PassengerPage() {
         });
         setCity(resolved);
         setCityReady(true);
+        // Le téléphone est obligatoire pour la course (le chauffeur doit
+        // pouvoir appeler à l'arrivée) — on le préremplit depuis le profil,
+        // déjà collecté et validé à l'inscription.
+        if (data?.phone) setPhone((p) => p || data.phone!);
       });
   }, [user?.id]);
 
@@ -721,17 +725,18 @@ function PassengerPage() {
               </div>
 
               <div>
-                <Label htmlFor="phone" className="text-xs">Téléphone (optionnel)</Label>
-                <Input id="phone" type="tel" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="+225 …" maxLength={20} className="mt-1.5 h-9" />
+                <Label htmlFor="phone" className="text-xs">Téléphone (obligatoire)</Label>
+                <Input id="phone" type="tel" required value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="+225 …" maxLength={20} className="mt-1.5 h-9" />
+                <p className="mt-1 text-[11px] text-muted-foreground">Le chauffeur pourra vous appeler à l'arrivée si besoin.</p>
               </div>
 
               <Button
                 className="w-full"
                 size="lg"
-                disabled={!pickupLL || !dropoffLL || !!outOfZone || create.isPending}
+                disabled={!pickupLL || !dropoffLL || !!outOfZone || !phone.trim() || create.isPending}
                 onClick={() => create.mutate()}
               >
-                {create.isPending ? "Envoi…" : outOfZone ? "Hors zone" : !pickupLL || !dropoffLL ? "Choisissez les adresses" : `${serviceMode === "delivery" ? "Commander livraison" : "Commander"} · ${price > 0 ? formatXof(price) : ""}`}
+                {create.isPending ? "Envoi…" : outOfZone ? "Hors zone" : !pickupLL || !dropoffLL ? "Choisissez les adresses" : !phone.trim() ? "Téléphone requis" : `${serviceMode === "delivery" ? "Commander livraison" : "Commander"} · ${price > 0 ? formatXof(price) : ""}`}
               </Button>
             </CollapsibleContent>
           </Collapsible>
@@ -1184,7 +1189,7 @@ function CurrentRideBanner({ ride: initialRide, onCancel }: { ride: any; onCance
                 <div className="text-xs text-muted-foreground">★ {Number(driverInfo.rating_avg).toFixed(1)}</div>
               ) : null}
             </div>
-            {driverPhone && activeRide.driver_shares_phone ? (
+            {driverPhone ? (
               <div className="flex gap-2">
                 <Button asChild size="sm" variant="outline"><a href={`tel:${driverPhone}`}><Phone className="mr-1 h-4 w-4" />Appeler</a></Button>
                 <Button asChild size="sm" variant="outline">
@@ -1194,7 +1199,7 @@ function CurrentRideBanner({ ride: initialRide, onCancel }: { ride: any; onCance
                 </Button>
               </div>
             ) : (
-              <div className="text-xs text-muted-foreground">{activeRide.driver_shares_phone === false ? "Numéro masqué par le chauffeur" : "Téléphone non renseigné"}</div>
+              <div className="text-xs text-muted-foreground">Téléphone non renseigné</div>
             )}
           </div>
           <div className="mt-3 border-t border-border pt-3">

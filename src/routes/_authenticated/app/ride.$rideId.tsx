@@ -1,14 +1,12 @@
 import { createFileRoute, useNavigate, Link } from "@tanstack/react-router";
-import { useEffect, useMemo, useRef, useState } from "react";
-import { useQuery, useMutation } from "@tanstack/react-query";
+import { useMemo } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
-import { Switch } from "@/components/ui/switch";
-import { toast } from "sonner";
 import { ArrowLeft, Download, FileText, MapPin, Phone, MessageCircle, Sparkles, Wallet } from "lucide-react";
 import { RideTrackingMap, type LatLng } from "@/components/RideTrackingMap";
-import { exportRideHistoryCsv, getRideHistory, logContactView, toggleContactShare } from "@/lib/tracking.functions";
+import { exportRideHistoryCsv, getRideHistory, logContactView } from "@/lib/tracking.functions";
 import { formatXof, CATEGORIES, type Category } from "@/lib/pricing";
 import { useAuth } from "@/hooks/use-auth";
 import { CarIcon } from "@/components/CarIcon";
@@ -25,10 +23,9 @@ function RideDetailPage() {
   const { user } = useAuth();
   const getHistory = useServerFn(getRideHistory);
   const exportCsv = useServerFn(exportRideHistoryCsv);
-  const toggleShare = useServerFn(toggleContactShare);
   const logView = useServerFn(logContactView);
 
-  const { data, isLoading, refetch } = useQuery({
+  const { data, isLoading } = useQuery({
     queryKey: ["ride-history", rideId],
     queryFn: () => getHistory({ data: { rideId } }),
     refetchInterval: 8000,
@@ -39,10 +36,9 @@ function RideDetailPage() {
   const isPassenger = user?.id === ride?.passenger_id;
   const isDriver = user?.id === ride?.driver_id;
 
-  // Counterpart contact
+  // Contact de la contrepartie — toujours visible (numéro obligatoire des
+  // deux côtés), plus de partage optionnel.
   const counterpartId = isPassenger ? ride?.driver_id : ride?.passenger_id;
-  const counterpartSharesPhone = isPassenger ? ride?.driver_shares_phone : ride?.passenger_shares_phone;
-  const ownShare = isPassenger ? ride?.passenger_shares_phone : ride?.driver_shares_phone;
 
   const counterpartQ = useQuery({
     queryKey: ["ride-counterpart", counterpartId],
@@ -56,13 +52,6 @@ function RideDetailPage() {
     ? counterpartQ.data?.phone
     : ride?.passenger_phone ?? counterpartQ.data?.phone;
 
-  const [revealed, setRevealed] = useState(false);
-
-  const toggleMut = useMutation({
-    mutationFn: (share: boolean) => toggleShare({ data: { rideId, share } }),
-    onSuccess: () => { refetch(); toast.success("Préférence enregistrée"); },
-  });
-
   const positions = useMemo(
     () => events.filter((e: any) => e.event_type === "location" && e.lat && e.lng).map((e: any) => ({ lat: e.lat, lng: e.lng })),
     [events],
@@ -74,10 +63,7 @@ function RideDetailPage() {
   const dropoff: LatLng | null = ride?.dropoff_lat && ride?.dropoff_lng ? { lat: ride.dropoff_lat, lng: ride.dropoff_lng } : positions[positions.length - 1] ?? null;
 
   const handleReveal = async () => {
-    setRevealed((s) => !s);
-    if (!revealed) {
-      try { await logView({ data: { rideId, target: isPassenger ? "driver" : "passenger" } }); } catch {}
-    }
+    try { await logView({ data: { rideId, target: isPassenger ? "driver" : "passenger" } }); } catch {}
   };
 
   // Wallet widget data
@@ -241,35 +227,23 @@ function RideDetailPage() {
       {(isPassenger || isDriver) && counterpartId && (
         <section className="rounded-3xl border border-border bg-card p-5">
           <h2 className="font-display text-lg font-semibold">Contact {isPassenger ? "chauffeur" : "passager"}</h2>
+          {/* Le numéro est toujours visible une fois la course attribuée — appel
+              possible à tout moment, notamment à l'arrivée. */}
           <div className="mt-3 flex items-center justify-between rounded-xl border border-border p-3">
             <div className="text-sm">
               <div className="font-medium">{counterpartQ.data?.full_name ?? "—"}</div>
               <div className="text-xs text-muted-foreground">
-                {counterpartPhone && counterpartSharesPhone
-                  ? (revealed ? counterpartPhone : "•••• " + counterpartPhone.slice(-3))
-                  : counterpartSharesPhone === false ? "Numéro masqué par la contrepartie" : "Pas de numéro renseigné"}
+                {counterpartPhone ?? "Pas de numéro renseigné"}
               </div>
             </div>
-            {counterpartPhone && counterpartSharesPhone && (
+            {counterpartPhone && (
               <div className="flex gap-2">
-                <Button size="sm" variant="outline" onClick={handleReveal}>{revealed ? "Masquer" : "Afficher"}</Button>
-                {revealed && (
-                  <>
-                    <Button asChild size="sm" variant="outline"><a href={`tel:${counterpartPhone}`}><Phone className="h-4 w-4" /></a></Button>
-                    <Button asChild size="sm" variant="outline">
-                      <a href={`https://wa.me/${counterpartPhone.replace(/[^0-9]/g, "")}`} target="_blank" rel="noreferrer"><MessageCircle className="h-4 w-4" /></a>
-                    </Button>
-                  </>
-                )}
+                <Button asChild size="sm" variant="outline" onClick={handleReveal}><a href={`tel:${counterpartPhone}`}><Phone className="h-4 w-4" /></a></Button>
+                <Button asChild size="sm" variant="outline">
+                  <a href={`https://wa.me/${counterpartPhone.replace(/[^0-9]/g, "")}`} target="_blank" rel="noreferrer"><MessageCircle className="h-4 w-4" /></a>
+                </Button>
               </div>
             )}
-          </div>
-          <div className="mt-3 flex items-center justify-between rounded-xl border border-border p-3">
-            <div className="text-sm">
-              <div className="font-medium">Partager mon numéro</div>
-              <div className="text-xs text-muted-foreground">La contrepartie pourra voir votre téléphone.</div>
-            </div>
-            <Switch checked={!!ownShare} onCheckedChange={(v) => toggleMut.mutate(v)} />
           </div>
         </section>
       )}
