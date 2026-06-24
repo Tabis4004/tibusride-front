@@ -83,6 +83,7 @@ export const updateMyEnrollment = createServerFn({ method: "POST" })
       vehicle_model: z.string().trim().max(80).optional(),
       vehicle_color: z.string().trim().max(40).optional(),
       insurance_expires_at: z.string().trim().min(1).max(10).optional(),
+      has_insulated_bag: z.boolean().optional(),
     }).parse(d),
   )
   .handler(async ({ data, context }) => {
@@ -99,6 +100,7 @@ export const updateMyEnrollment = createServerFn({ method: "POST" })
       vehicle_model: data.vehicle_model ?? null,
       vehicle_color: data.vehicle_color ?? null,
       insurance_expires_at: data.insurance_expires_at ?? null,
+      ...(data.has_insulated_bag !== undefined ? { has_insulated_bag: data.has_insulated_bag } : {}),
       updated_at: new Date().toISOString(),
     }).eq("user_id", userId);
     if (error) throw error;

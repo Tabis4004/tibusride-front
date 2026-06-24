@@ -422,6 +422,7 @@ export type Database = {
           enrollment_notes: string | null
           enrollment_submitted_at: string | null
           fuel_type: Database["public"]["Enums"]["fuel_type"] | null
+          has_insulated_bag: boolean
           id_document_url: string | null
           insurance_document_url: string | null
           insurance_expires_at: string | null
@@ -465,6 +466,7 @@ export type Database = {
           enrollment_notes?: string | null
           enrollment_submitted_at?: string | null
           fuel_type?: Database["public"]["Enums"]["fuel_type"] | null
+          has_insulated_bag?: boolean
           id_document_url?: string | null
           insurance_document_url?: string | null
           insurance_expires_at?: string | null
@@ -508,6 +510,7 @@ export type Database = {
           enrollment_notes?: string | null
           enrollment_submitted_at?: string | null
           fuel_type?: Database["public"]["Enums"]["fuel_type"] | null
+          has_insulated_bag?: boolean
           id_document_url?: string | null
           insurance_document_url?: string | null
           insurance_expires_at?: string | null
@@ -1284,6 +1287,69 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      delivery_package_pricing: {
+        Row: {
+          active: boolean
+          created_at: string
+          id: string
+          multiplier: number
+          package_type: string
+          updated_at: string
+          updated_by: string | null
+        }
+        Insert: {
+          active?: boolean
+          created_at?: string
+          id?: string
+          multiplier?: number
+          package_type: string
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Update: {
+          active?: boolean
+          created_at?: string
+          id?: string
+          multiplier?: number
+          package_type?: string
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Relationships: []
+      }
+      delivery_extras_pricing: {
+        Row: {
+          active: boolean
+          created_at: string
+          extra_key: string
+          fee_xof: number
+          id: string
+          percent_extra: number
+          updated_at: string
+          updated_by: string | null
+        }
+        Insert: {
+          active?: boolean
+          created_at?: string
+          extra_key: string
+          fee_xof?: number
+          id?: string
+          percent_extra?: number
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Update: {
+          active?: boolean
+          created_at?: string
+          extra_key?: string
+          fee_xof?: number
+          id?: string
+          percent_extra?: number
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Relationships: []
       }
       delivery_pricing_settings: {
         Row: {

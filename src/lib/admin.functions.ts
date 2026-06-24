@@ -670,6 +670,103 @@ export const updateDeliveryPricingSetting = createServerFn({ method: "POST" })
     return updated;
   });
 
+/**
+ * Multiplicateurs par type de colis (documents, petit/moyen/grand colis,
+ * repas, fragile) — voir supabase/migrations/20260624190000_delivery_package_extras_pricing.sql.
+ * Remplace les constantes PACKAGE_TYPES.multiplier codées en dur.
+ */
+export const listDeliveryPackagePricing = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    await assertAdmin(context.supabase, context.userId);
+    const { data, error } = await context.supabase
+      .from("delivery_package_pricing")
+      .select("*")
+      .order("package_type");
+    if (error) throw new Error(error.message);
+    return data ?? [];
+  });
+
+export const updateDeliveryPackagePricing = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: unknown) =>
+    z
+      .object({
+        id: z.string().uuid(),
+        multiplier: z.number().min(1).max(5),
+        active: z.boolean(),
+      })
+      .parse(d),
+  )
+  .handler(async ({ data, context }) => {
+    await assertAdmin(context.supabase, context.userId);
+    const { id, ...patch } = data;
+    const { data: updated, error } = await context.supabase
+      .from("delivery_package_pricing")
+      .update({ ...patch, updated_by: context.userId })
+      .eq("id", id)
+      .select()
+      .single();
+    if (error) throw new Error(error.message);
+    await logAudit(await getActor(context), {
+      action: "delivery_package_pricing.update",
+      target_type: "delivery_package_pricing",
+      target_id: id,
+      target_label: updated?.package_type ?? null,
+      details: patch,
+    });
+    return updated;
+  });
+
+/**
+ * Frais supplémentaires livraison (urgence, sac isotherme) — voir
+ * supabase/migrations/20260624190000_delivery_package_extras_pricing.sql.
+ * Remplace les constantes DELIVERY_EXTRAS codées en dur.
+ */
+export const listDeliveryExtrasPricing = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    await assertAdmin(context.supabase, context.userId);
+    const { data, error } = await context.supabase
+      .from("delivery_extras_pricing")
+      .select("*")
+      .order("extra_key");
+    if (error) throw new Error(error.message);
+    return data ?? [];
+  });
+
+export const updateDeliveryExtrasPricing = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: unknown) =>
+    z
+      .object({
+        id: z.string().uuid(),
+        fee_xof: z.number().int().min(0),
+        percent_extra: z.number().min(0).max(200),
+        active: z.boolean(),
+      })
+      .parse(d),
+  )
+  .handler(async ({ data, context }) => {
+    await assertAdmin(context.supabase, context.userId);
+    const { id, ...patch } = data;
+    const { data: updated, error } = await context.supabase
+      .from("delivery_extras_pricing")
+      .update({ ...patch, updated_by: context.userId })
+      .eq("id", id)
+      .select()
+      .single();
+    if (error) throw new Error(error.message);
+    await logAudit(await getActor(context), {
+      action: "delivery_extras_pricing.update",
+      target_type: "delivery_extras_pricing",
+      target_id: id,
+      target_label: updated?.extra_key ?? null,
+      details: patch,
+    });
+    return updated;
+  });
+
 /* ====================== Tarif dynamique (trafic + météo) ====================== */
 
 /**

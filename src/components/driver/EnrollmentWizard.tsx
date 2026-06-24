@@ -38,6 +38,7 @@ type Profile = {
   vehicle_condition_url?: string | null;
   insurance_document_url?: string | null;
   insurance_expires_at?: string | null;
+  has_insulated_bag?: boolean | null;
   status?: string;
   rejection_reason?: string | null;
   enrollment_submitted_at?: string | null;
@@ -69,6 +70,7 @@ export function EnrollmentWizard({
   const [model, setVehicleModel] = useState(profile.vehicle_model ?? "");
   const [color, setVehicleColor] = useState(profile.vehicle_color ?? "");
   const [insuranceExpiresAt, setInsuranceExpiresAt] = useState(profile.insurance_expires_at ?? "");
+  const [hasInsulatedBag, setHasInsulatedBag] = useState(profile.has_insulated_bag ?? false);
 
   const progress = enrollmentProgress({
     ...profile,
@@ -95,6 +97,7 @@ export function EnrollmentWizard({
         vehicle_model: model || undefined,
         vehicle_color: color || undefined,
         insurance_expires_at: insuranceExpiresAt || undefined,
+        has_insulated_bag: partnerType === "delivery" ? hasInsulatedBag : undefined,
       },
     }),
     onSuccess: () => { toast.success("Informations enregistrées"); onRefresh(); setStep(1); },
@@ -249,6 +252,24 @@ export function EnrollmentWizard({
                 Vous recevrez des notifications à l'approche de cette date. L'assureur devra valider votre dossier.
               </p>
             </div>
+            {partnerType === "delivery" && (
+              <div className="sm:col-span-2">
+                <label className="flex items-start gap-3 rounded-xl border border-border p-3">
+                  <input
+                    type="checkbox"
+                    className="mt-0.5 h-4 w-4"
+                    checked={hasInsulatedBag}
+                    onChange={(e) => setHasInsulatedBag(e.target.checked)}
+                  />
+                  <span>
+                    <span className="block text-sm font-medium">Je dispose d'un sac isotherme</span>
+                    <span className="mt-0.5 block text-xs text-muted-foreground">
+                      Requis pour accepter les livraisons avec l'option « Sac isotherme » (repas, produits frais).
+                    </span>
+                  </span>
+                </label>
+              </div>
+            )}
           </div>
 
           <Button

@@ -18,7 +18,7 @@ import {
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Bar, BarChart, CartesianGrid, Legend, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { formatXof } from "@/lib/pricing";
-import { DELIVERY_VEHICLES, type DeliveryVehicle } from "@/lib/delivery-pricing";
+import { DELIVERY_VEHICLES, PACKAGE_TYPES, DELIVERY_EXTRAS, type DeliveryVehicle, type PackageType } from "@/lib/delivery-pricing";
 import { countriesMatch } from "@/lib/countries";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Switch } from "@/components/ui/switch";
@@ -39,6 +39,10 @@ import {
   updatePricingSetting,
   listDeliveryPricingSettings,
   updateDeliveryPricingSetting,
+  listDeliveryPackagePricing,
+  updateDeliveryPackagePricing,
+  listDeliveryExtrasPricing,
+  updateDeliveryExtrasPricing,
   listDynamicPricingSettings,
   updateDynamicPricingSetting,
   createDynamicPricingSetting,
@@ -1694,6 +1698,8 @@ function PricingTab() {
       </div>
 
       <DeliveryPricingSection />
+      <DeliveryPackagePricingSection />
+      <DeliveryExtrasPricingSection />
       <DynamicPricingSection />
       <CommissionSchedulesSection />
     </div>
@@ -1843,6 +1849,226 @@ function DeliveryPricingSection() {
               <tr>
                 <td colSpan={10} className="px-3 py-6 text-center text-muted-foreground">
                   Aucun véhicule de livraison configuré.
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+/* -------------------- Types de colis (multiplicateur prix) -------------------- */
+function DeliveryPackagePricingSection() {
+  const qc = useQueryClient();
+  const listFn = useServerFn(listDeliveryPackagePricing);
+  const updateFn = useServerFn(updateDeliveryPackagePricing);
+  const { data, isLoading } = useQuery({
+    queryKey: ["admin", "delivery-package-pricing"],
+    queryFn: () => listFn({}),
+  });
+  const [drafts, setDrafts] = useState<Record<string, any>>({});
+
+  const mutation = useMutation({
+    mutationFn: (payload: any) => updateFn({ data: payload }),
+    onSuccess: (_d, vars: any) => {
+      toast.success(`Type de colis ${PACKAGE_TYPES[vars._packageType as PackageType]?.label ?? ""} mis à jour`);
+      setDrafts((d) => {
+        const { [vars.id]: _, ...rest } = d;
+        return rest;
+      });
+      qc.invalidateQueries({ queryKey: ["admin", "delivery-package-pricing"] });
+    },
+    onError: (e: any) => toast.error(e?.message ?? "Erreur de mise à jour"),
+  });
+
+  if (isLoading) return <p className="text-sm text-muted-foreground">Chargement…</p>;
+
+  const rows = (data ?? []) as any[];
+
+  return (
+    <div className="space-y-3">
+      <div className="rounded-2xl border border-border bg-card p-4 text-sm text-muted-foreground">
+        Multiplicateur de prix selon le <strong>type de colis</strong> (appliqué au sous-total base + km + min de la livraison).
+      </div>
+
+      <div className="overflow-x-auto rounded-2xl border border-border bg-card">
+        <table className="w-full text-sm">
+          <thead className="bg-muted/40 text-xs uppercase text-muted-foreground">
+            <tr>
+              <th className="px-3 py-2 text-left">Type de colis</th>
+              <th className="px-3 py-2 text-right">Multiplicateur</th>
+              <th className="px-3 py-2 text-center">Actif</th>
+              <th className="px-3 py-2 text-right">Action</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row) => {
+              const draft = drafts[row.id] ?? {};
+              const current = { ...row, ...draft };
+              const dirty = Object.keys(draft).length > 0;
+              const setField = (k: string, v: any) =>
+                setDrafts((d) => ({ ...d, [row.id]: { ...d[row.id], [k]: v } }));
+              const def = PACKAGE_TYPES[row.package_type as PackageType];
+              return (
+                <tr key={row.id} className="border-t border-border">
+                  <td className="px-3 py-2 font-medium">
+                    {def?.emoji ?? ""} {def?.label ?? row.package_type}
+                  </td>
+                  <td className="px-3 py-2 text-right">
+                    <Input
+                      type="number" step={0.05} min={1} max={5}
+                      className="h-8 w-24 text-right"
+                      value={current.multiplier ?? 1}
+                      onChange={(e) => setField("multiplier", Number(e.target.value))}
+                    />
+                  </td>
+                  <td className="px-3 py-2 text-center">
+                    <input
+                      type="checkbox"
+                      checked={!!current.active}
+                      onChange={(e) => setField("active", e.target.checked)}
+                    />
+                  </td>
+                  <td className="px-3 py-2 text-right">
+                    <Button
+                      size="sm"
+                      disabled={!dirty || mutation.isPending}
+                      onClick={() =>
+                        mutation.mutate({
+                          _packageType: row.package_type,
+                          id: row.id,
+                          multiplier: Number(current.multiplier ?? 1),
+                          active: !!current.active,
+                        } as any)
+                      }
+                    >
+                      Enregistrer
+                    </Button>
+                  </td>
+                </tr>
+              );
+            })}
+            {rows.length === 0 && (
+              <tr>
+                <td colSpan={4} className="px-3 py-6 text-center text-muted-foreground">
+                  Aucun type de colis configuré.
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+/* -------------------- Frais supplémentaires livraison (urgence, sac isotherme) -------------------- */
+function DeliveryExtrasPricingSection() {
+  const qc = useQueryClient();
+  const listFn = useServerFn(listDeliveryExtrasPricing);
+  const updateFn = useServerFn(updateDeliveryExtrasPricing);
+  const { data, isLoading } = useQuery({
+    queryKey: ["admin", "delivery-extras-pricing"],
+    queryFn: () => listFn({}),
+  });
+  const [drafts, setDrafts] = useState<Record<string, any>>({});
+
+  const extraLabel = (key: string) =>
+    key === "urgent" ? DELIVERY_EXTRAS.urgent.label : key === "insulated_bag" ? DELIVERY_EXTRAS.insulated_bag.label : key;
+
+  const mutation = useMutation({
+    mutationFn: (payload: any) => updateFn({ data: payload }),
+    onSuccess: (_d, vars: any) => {
+      toast.success(`Frais "${extraLabel(vars._extraKey)}" mis à jour`);
+      setDrafts((d) => {
+        const { [vars.id]: _, ...rest } = d;
+        return rest;
+      });
+      qc.invalidateQueries({ queryKey: ["admin", "delivery-extras-pricing"] });
+    },
+    onError: (e: any) => toast.error(e?.message ?? "Erreur de mise à jour"),
+  });
+
+  if (isLoading) return <p className="text-sm text-muted-foreground">Chargement…</p>;
+
+  const rows = (data ?? []) as any[];
+
+  return (
+    <div className="space-y-3">
+      <div className="rounded-2xl border border-border bg-card p-4 text-sm text-muted-foreground">
+        Frais additionnels livraison : montant fixe (XOF) + pourcentage appliqué au sous-total (ex. urgence = forfait + % du sous-total).
+      </div>
+
+      <div className="overflow-x-auto rounded-2xl border border-border bg-card">
+        <table className="w-full text-sm">
+          <thead className="bg-muted/40 text-xs uppercase text-muted-foreground">
+            <tr>
+              <th className="px-3 py-2 text-left">Option</th>
+              <th className="px-3 py-2 text-right">Forfait (XOF)</th>
+              <th className="px-3 py-2 text-right">% du sous-total</th>
+              <th className="px-3 py-2 text-center">Actif</th>
+              <th className="px-3 py-2 text-right">Action</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row) => {
+              const draft = drafts[row.id] ?? {};
+              const current = { ...row, ...draft };
+              const dirty = Object.keys(draft).length > 0;
+              const setField = (k: string, v: any) =>
+                setDrafts((d) => ({ ...d, [row.id]: { ...d[row.id], [k]: v } }));
+              return (
+                <tr key={row.id} className="border-t border-border">
+                  <td className="px-3 py-2 font-medium">{extraLabel(row.extra_key)}</td>
+                  <td className="px-3 py-2 text-right">
+                    <Input
+                      type="number" step={50} min={0}
+                      className="h-8 w-24 text-right"
+                      value={current.fee_xof ?? 0}
+                      onChange={(e) => setField("fee_xof", Number(e.target.value))}
+                    />
+                  </td>
+                  <td className="px-3 py-2 text-right">
+                    <Input
+                      type="number" step={1} min={0} max={200}
+                      className="h-8 w-20 text-right"
+                      value={current.percent_extra ?? 0}
+                      onChange={(e) => setField("percent_extra", Number(e.target.value))}
+                    />
+                  </td>
+                  <td className="px-3 py-2 text-center">
+                    <input
+                      type="checkbox"
+                      checked={!!current.active}
+                      onChange={(e) => setField("active", e.target.checked)}
+                    />
+                  </td>
+                  <td className="px-3 py-2 text-right">
+                    <Button
+                      size="sm"
+                      disabled={!dirty || mutation.isPending}
+                      onClick={() =>
+                        mutation.mutate({
+                          _extraKey: row.extra_key,
+                          id: row.id,
+                          fee_xof: Number(current.fee_xof ?? 0),
+                          percent_extra: Number(current.percent_extra ?? 0),
+                          active: !!current.active,
+                        } as any)
+                      }
+                    >
+                      Enregistrer
+                    </Button>
+                  </td>
+                </tr>
+              );
+            })}
+            {rows.length === 0 && (
+              <tr>
+                <td colSpan={5} className="px-3 py-6 text-center text-muted-foreground">
+                  Aucun frais supplémentaire configuré.
                 </td>
               </tr>
             )}

@@ -259,6 +259,8 @@ function PassengerPage() {
           insulatedBag: deliveryInsulatedBag,
           rates: pricingConfig?.deliveryVehicles?.[deliveryVehicle],
           coefficients: pricingConfig?.dynamic,
+          packageMultiplier: pricingConfig?.packageMultipliers?.[packageType],
+          extras: pricingConfig?.deliveryExtras,
         })
       : null;
   const breakdown = serviceMode === "delivery" ? deliveryBreakdown : rideBreakdown;

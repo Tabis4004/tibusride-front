@@ -56,6 +56,8 @@ export type DeliveryPriceBreakdown = {
 
 export type DeliveryVehicleRates = { base: number; perKm: number; perMin: number };
 
+export type DeliveryExtraFee = { feeXof: number; percentExtra: number };
+
 export type DeliveryPriceInput = {
   vehicle: DeliveryVehicle;
   packageType: PackageType;
@@ -69,6 +71,10 @@ export type DeliveryPriceInput = {
   rates?: DeliveryVehicleRates;
   /** Coefficients trafic/météo (DB) ; défaut = anciennes constantes si non fourni. */
   coefficients?: DynamicCoefficients;
+  /** Multiplicateur du type de colis (DB) ; défaut = PACKAGE_TYPES.multiplier codé en dur si non fourni. */
+  packageMultiplier?: number;
+  /** Frais urgence/sac isotherme (DB) ; défaut = DELIVERY_EXTRAS codées en dur si non fourni. */
+  extras?: { urgent: DeliveryExtraFee; insulated_bag: DeliveryExtraFee };
 };
 
 /** Tarif livraison dynamique (distance + durée + trafic + météo + colis + options). */
@@ -87,11 +93,16 @@ export function computeDeliveryPrice(input: DeliveryPriceInput): DeliveryPriceBr
   const v = input.rates ?? DELIVERY_VEHICLES[vehicle];
   const coef = input.coefficients ?? DEFAULT_DYNAMIC_COEFFICIENTS;
   const pkg = PACKAGE_TYPES[packageType];
+  const packageMultiplier = input.packageMultiplier ?? pkg.multiplier;
+  const extras = input.extras ?? {
+    urgent: { feeXof: DELIVERY_EXTRAS.urgent.fee, percentExtra: 25 },
+    insulated_bag: { feeXof: DELIVERY_EXTRAS.insulated_bag.fee, percentExtra: 0 },
+  };
   const base = v.base;
   const distance = Math.round(km * v.perKm);
   const duration = Math.round(durationMin * v.perMin);
   const lineSubtotal = base + distance + duration;
-  const packageSurcharge = Math.round(lineSubtotal * (pkg.multiplier - 1));
+  const packageSurcharge = Math.round(lineSubtotal * (packageMultiplier - 1));
 
   const staticMin = Math.max(1, staticDurationMin ?? durationMin);
   const trafficRatio = durationMin / staticMin;
@@ -104,10 +115,12 @@ export function computeDeliveryPrice(input: DeliveryPriceInput): DeliveryPriceBr
     : coef.weatherSunnyMultiplier;
   const weatherSurcharge = Math.round((lineSubtotal + packageSurcharge) * (weatherMultiplier - 1));
 
-  let urgentFee = urgent ? DELIVERY_EXTRAS.urgent.fee : 0;
-  if (urgent) urgentFee += Math.round((lineSubtotal + packageSurcharge) * 0.25);
+  let urgentFee = urgent ? extras.urgent.feeXof : 0;
+  if (urgent) urgentFee += Math.round((lineSubtotal + packageSurcharge) * (extras.urgent.percentExtra / 100));
 
-  const insulatedBagFee = insulatedBag ? DELIVERY_EXTRAS.insulated_bag.fee : 0;
+  const insulatedBagFee = insulatedBag
+    ? extras.insulated_bag.feeXof + Math.round((lineSubtotal + packageSurcharge) * (extras.insulated_bag.percentExtra / 100))
+    : 0;
 
   const subtotal = lineSubtotal + packageSurcharge + trafficSurcharge + weatherSurcharge;
   const raw = subtotal + urgentFee + insulatedBagFee;

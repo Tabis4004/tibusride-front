@@ -2,7 +2,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { CATEGORIES, type Category } from "@/lib/pricing";
-import { DELIVERY_VEHICLES, type DeliveryVehicle } from "@/lib/delivery-pricing";
+import { DELIVERY_VEHICLES, PACKAGE_TYPES, DELIVERY_EXTRAS, type DeliveryVehicle, type PackageType } from "@/lib/delivery-pricing";
 
 /**
  * Configuration de tarification effective, lue en base — remplace les
@@ -34,9 +34,13 @@ export type EffectiveDynamicCoefficients = {
   roundingIncrementXof: number;
 };
 
+export type EffectiveExtraFee = { feeXof: number; percentExtra: number };
+
 export type EffectivePricingConfig = {
   categories: Record<Category, EffectiveCategoryRates>;
   deliveryVehicles: Record<DeliveryVehicle, EffectiveCategoryRates>;
+  packageMultipliers: Record<PackageType, number>;
+  deliveryExtras: { urgent: EffectiveExtraFee; insulated_bag: EffectiveExtraFee };
   dynamic: EffectiveDynamicCoefficients;
 };
 
@@ -95,6 +99,36 @@ export const getEffectivePricingConfig = createServerFn({ method: "GET" })
       }
     }
 
+    // Multiplicateurs par type de colis — delivery_package_pricing, fallback PACKAGE_TYPES si absent.
+    const { data: packageRows } = await supabase
+      .from("delivery_package_pricing")
+      .select("package_type, multiplier, active")
+      .eq("active", true);
+
+    const packageMultipliers = { ...defaultPackageMultipliers() };
+    for (const row of packageRows ?? []) {
+      const pt = row.package_type as PackageType;
+      if (pt in packageMultipliers) packageMultipliers[pt] = Number(row.multiplier);
+    }
+
+    // Frais supplémentaires livraison (urgence, sac isotherme) — delivery_extras_pricing,
+    // fallback DELIVERY_EXTRAS si absent.
+    const { data: extraRows } = await supabase
+      .from("delivery_extras_pricing")
+      .select("extra_key, fee_xof, percent_extra, active")
+      .eq("active", true);
+
+    const deliveryExtras: { urgent: EffectiveExtraFee; insulated_bag: EffectiveExtraFee } = {
+      urgent: { feeXof: DELIVERY_EXTRAS.urgent.fee, percentExtra: 25 },
+      insulated_bag: { feeXof: DELIVERY_EXTRAS.insulated_bag.fee, percentExtra: 0 },
+    };
+    for (const row of extraRows ?? []) {
+      if (row.extra_key === "urgent" || row.extra_key === "insulated_bag") {
+        const key = row.extra_key as "urgent" | "insulated_bag";
+        deliveryExtras[key] = { feeXof: row.fee_xof, percentExtra: Number(row.percent_extra) };
+      }
+    }
+
     // Coefficients trafic/météo — résolus par programme, sinon défaut global.
     const { data: dyn, error: dynError } = await supabase.rpc(
       "resolve_dynamic_pricing_settings",
@@ -114,7 +148,7 @@ export const getEffectivePricingConfig = createServerFn({ method: "GET" })
           roundingIncrementXof: Number(dyn.rounding_increment_xof ?? FALLBACK_DYNAMIC.roundingIncrementXof),
         };
 
-    return { categories, deliveryVehicles, dynamic };
+    return { categories, deliveryVehicles, packageMultipliers, deliveryExtras, dynamic };
   });
 
 function defaultCategoryRates(): Record<Category, EffectiveCategoryRates> {
@@ -131,6 +165,14 @@ function defaultDeliveryRates(): Record<DeliveryVehicle, EffectiveCategoryRates>
   for (const key of Object.keys(DELIVERY_VEHICLES) as DeliveryVehicle[]) {
     const v = DELIVERY_VEHICLES[key];
     out[key] = { base: v.base, perKm: v.perKm, perMin: v.perMin, minFare: 0 };
+  }
+  return out;
+}
+
+function defaultPackageMultipliers(): Record<PackageType, number> {
+  const out = {} as Record<PackageType, number>;
+  for (const key of Object.keys(PACKAGE_TYPES) as PackageType[]) {
+    out[key] = PACKAGE_TYPES[key].multiplier;
   }
   return out;
 }
