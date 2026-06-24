@@ -1,9 +1,6 @@
-import logoAsset from "@/assets/tibus-logo.png.asset.json";
-import { useCountryMarketOptional } from "@/hooks/use-country-market";
-import { isEcoTibus, marketAppName } from "@/lib/country-market";
-
-/** URL Lovable (/__l5e/...) indisponible hors Lovable Cloud — on affiche le texte seul. */
-const logoSrc = logoAsset.url.includes("/__l5e/") ? null : logoAsset.url;
+/** Logo de marque unique (flamme) : nom et icône fixes "Tibus Ride" partout dans l'app. */
+const logoSrc = "/pwa/icon-512.png";
+const APP_NAME = "Tibus Ride";
 
 export function Logo({
   size = 32,
@@ -14,30 +11,18 @@ export function Logo({
   compact?: boolean;
   appName?: string;
 }) {
-  const market = useCountryMarketOptional();
-  const name = appName ?? marketAppName(market?.config);
-  const eco = isEcoTibus(market?.config);
-  const initial = name.charAt(0).toUpperCase();
+  const name = appName ?? APP_NAME;
 
   return (
     <div className="flex items-center gap-2">
-      {logoSrc && !eco ? (
-        <img
-          src={logoSrc}
-          alt={name}
-          width={size}
-          height={size}
-          style={{ width: size, height: size }}
-          className="object-contain"
-        />
-      ) : (
-        <span
-          className="flex items-center justify-center rounded-lg bg-primary font-display text-sm font-bold text-primary-foreground"
-          style={{ width: size, height: size }}
-        >
-          {initial}
-        </span>
-      )}
+      <img
+        src={logoSrc}
+        alt={name}
+        width={size}
+        height={size}
+        style={{ width: size, height: size }}
+        className="object-contain"
+      />
       {!compact && (
         <span className="font-display text-xl font-bold tracking-tight text-foreground">
           {name}
