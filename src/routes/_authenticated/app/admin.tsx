@@ -59,6 +59,8 @@ import {
   recordInvoicePayment,
   listInvoicePayments,
 } from "@/lib/admin.functions";
+import { listInsuredDrivers, verifyDriverInsurance, getInsuranceDocumentSignedUrl } from "@/lib/insurance.functions";
+import { INSURANCE_STATUS_LABEL, type InsuranceStatus } from "@/lib/driver-enrollment";
 import { listDriverWallets, adminWalletTopup, adminWalletAdjust } from "@/lib/wallet.functions";
 import {
   ArrowLeft,
@@ -191,6 +193,7 @@ function AdminPage() {
     { key: "wallets", title: "Wallets", description: "Soldes et ajustements chauffeurs", keywords: ["wallet","solde","paiement","chauffeur"], icon: Wallet, defaultPalette: 6, group: "Finance", roles: ["superadmin","admin"] },
     { key: "audit", title: "Journal d'audit", description: "Historique des actions admin", keywords: ["audit","journal","historique","log"], icon: FileText, defaultPalette: 7, group: "Sécurité", roles: ["superadmin","admin"], countKey: "auditToday", countLabel: "aujourd'hui" },
     { key: "fraud", title: "Anti-fraude", description: "Signaux et alertes", keywords: ["fraude","fraud","alerte","sécurité"], icon: ShieldAlert, defaultPalette: 8, group: "Sécurité", roles: ["superadmin","admin","support"], countKey: "fraudAlerts", countLabel: "alertes 24h" },
+    { key: "insurance", title: "Assurance", description: "Validation des dossiers et renouvellements chauffeurs", keywords: ["assurance","insurance","assureur","renouvellement","validation"], icon: ShieldCheck, defaultPalette: 13, group: "Sécurité", roles: ["superadmin","admin"] },
     { key: "rewards", title: "Récompenses", description: "Programmes de fidélité et bonus", keywords: ["récompense","reward","bonus","fidélité"], icon: Gift, defaultPalette: 9, group: "Croissance", roles: ["superadmin","admin"] },
     { key: "metrics", title: "Métriques", description: "Indicateurs et KPIs", keywords: ["métrique","kpi","statistique","metric"], icon: Coins, defaultPalette: 10, group: "Croissance", roles: ["superadmin","admin"] },
   ];
@@ -244,6 +247,7 @@ function AdminPage() {
         {section === "wallets" && <WalletsTab />}
         {section === "audit" && <AuditTab />}
         {section === "fraud" && <FraudTab />}
+        {section === "insurance" && <InsuranceTab />}
         {section === "rewards" && (
           <div className="space-y-4">
             <RewardsTab />
@@ -3034,6 +3038,107 @@ function FraudTab() {
             {l.details && Object.keys(l.details).length > 0 && (
               <pre className="mt-1 overflow-x-auto rounded bg-muted/50 p-2 text-xs">{JSON.stringify(l.details, null, 2)}</pre>
             )}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ============ Assurance : validation des dossiers / renouvellements ============
+function insuranceStatusClass(status: string) {
+  if (status === "verified") return "border-success/40 bg-success/10 text-success";
+  if (status === "expired") return "border-destructive/40 bg-destructive/10 text-destructive";
+  return "border-warning/40 bg-warning/10 text-warning";
+}
+
+function InsuranceTab() {
+  const qc = useQueryClient();
+  const [filter, setFilter] = useState<"all" | InsuranceStatus>("all");
+  const listFn = useServerFn(listInsuredDrivers);
+  const verifyFn = useServerFn(verifyDriverInsurance);
+  const signedUrlFn = useServerFn(getInsuranceDocumentSignedUrl);
+
+  const q = useQuery({
+    queryKey: ["admin", "insured-drivers"],
+    refetchInterval: 30000,
+    queryFn: () => listFn(),
+  });
+
+  const verify = useMutation({
+    mutationFn: (driverId: string) => verifyFn({ data: { driverId } }),
+    onSuccess: () => {
+      toast.success("Assurance validée");
+      qc.invalidateQueries({ queryKey: ["admin", "insured-drivers"] });
+    },
+    onError: (e: any) => toast.error(e?.message ?? "Erreur"),
+  });
+
+  const viewDoc = useMutation({
+    mutationFn: (driverId: string) => signedUrlFn({ data: { driverId } }),
+    onSuccess: (r: any) => window.open(r.url, "_blank", "noopener,noreferrer"),
+    onError: (e: any) => toast.error(e?.message ?? "Document introuvable"),
+  });
+
+  const drivers = ((q.data ?? []) as any[]).filter((d) => filter === "all" || d.insurance_status === filter);
+
+  return (
+    <div className="space-y-4 pt-4">
+      <div className="rounded-2xl border border-border bg-card p-4 text-sm text-muted-foreground">
+        Dossiers d'assurance des chauffeurs : <strong>en attente</strong> (première soumission ou renouvellement),
+        <strong> validés</strong>, ou <strong>expirés</strong>. Consultez le document avant de valider un
+        renouvellement.
+      </div>
+      <div className="flex flex-wrap gap-2">
+        {(["all", "pending", "verified", "expired"] as const).map((f) => (
+          <Button key={f} size="sm" variant={filter === f ? "default" : "outline"} onClick={() => setFilter(f)}>
+            {f === "all" ? "Tous" : INSURANCE_STATUS_LABEL[f]}
+          </Button>
+        ))}
+        <span className="ml-auto self-center text-xs text-muted-foreground">{drivers.length} dossier(s)</span>
+      </div>
+      <div className="space-y-2">
+        {q.isLoading && <div className="text-sm text-muted-foreground">Chargement…</div>}
+        {!q.isLoading && drivers.length === 0 && (
+          <div className="rounded-xl border border-border bg-card p-8 text-center text-sm text-muted-foreground">
+            Aucun chauffeur assuré dans cette catégorie.
+          </div>
+        )}
+        {drivers.map((d) => (
+          <div key={d.user_id} className="flex flex-wrap items-start justify-between gap-3 rounded-xl border border-border bg-card p-4">
+            <div className="min-w-0 space-y-1">
+              <div className="font-medium">{d.full_name ?? "Sans nom"}</div>
+              <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
+                {d.phone && <span>{d.phone}</span>}
+                {d.city && <span>{d.city}{d.country ? `, ${d.country}` : ""}</span>}
+                {d.vehicle_type && <span className="capitalize">{d.vehicle_type}</span>}
+              </div>
+              <div className="text-xs text-muted-foreground">
+                Expire le {d.insurance_expires_at ? new Date(d.insurance_expires_at).toLocaleDateString("fr-FR") : "—"}
+                {typeof d.days_remaining === "number" && (
+                  <span className={`ml-1 ${d.days_remaining < 0 ? "text-destructive" : d.days_remaining <= 7 ? "text-warning" : ""}`}>
+                    ({d.days_remaining < 0 ? "expirée" : `${d.days_remaining} j restants`})
+                  </span>
+                )}
+              </div>
+            </div>
+            <div className="flex shrink-0 flex-col items-end gap-2">
+              <span className={`rounded-full border px-2 py-0.5 text-xs font-medium ${insuranceStatusClass(d.insurance_status)}`}>
+                {INSURANCE_STATUS_LABEL[d.insurance_status as InsuranceStatus] ?? d.insurance_status}
+              </span>
+              <div className="flex gap-2">
+                {d.insurance_document_url && (
+                  <Button size="sm" variant="outline" disabled={viewDoc.isPending} onClick={() => viewDoc.mutate(d.user_id)}>
+                    Voir le document
+                  </Button>
+                )}
+                {d.insurance_status !== "verified" && (
+                  <Button size="sm" disabled={verify.isPending} onClick={() => verify.mutate(d.user_id)}>
+                    Valider
+                  </Button>
+                )}
+              </div>
+            </div>
           </div>
         ))}
       </div>

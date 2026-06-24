@@ -8,7 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import { ShieldCheck, Phone, MapPin, Car } from "lucide-react";
-import { listInsuredDrivers, verifyDriverInsurance } from "@/lib/insurance.functions";
+import { listInsuredDrivers, verifyDriverInsurance, getInsuranceDocumentSignedUrl } from "@/lib/insurance.functions";
 import { INSURANCE_STATUS_LABEL, type InsuranceStatus } from "@/lib/driver-enrollment";
 import { cn } from "@/lib/utils";
 
@@ -38,6 +38,7 @@ function InsurerDashboard() {
 
   const listFn = useServerFn(listInsuredDrivers);
   const verifyFn = useServerFn(verifyDriverInsurance);
+  const signedUrlFn = useServerFn(getInsuranceDocumentSignedUrl);
 
   const q = useQuery({
     queryKey: ["insurer", "insured-drivers"],
@@ -52,6 +53,12 @@ function InsurerDashboard() {
       toast.success("Assurance validée");
       qc.invalidateQueries({ queryKey: ["insurer", "insured-drivers"] });
     },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  const viewDoc = useMutation({
+    mutationFn: (driverId: string) => signedUrlFn({ data: { driverId } }),
+    onSuccess: (r) => window.open(r.url, "_blank", "noopener,noreferrer"),
     onError: (e: Error) => toast.error(e.message),
   });
 
@@ -109,11 +116,18 @@ function InsurerDashboard() {
                 <Badge variant="outline" className={statusBadgeClass(d.insurance_status)}>
                   {INSURANCE_STATUS_LABEL[d.insurance_status as InsuranceStatus] ?? d.insurance_status}
                 </Badge>
-                {d.insurance_status !== "verified" && (
-                  <Button size="sm" disabled={verify.isPending} onClick={() => verify.mutate(d.user_id)}>
-                    Valider
-                  </Button>
-                )}
+                <div className="flex gap-2">
+                  {d.insurance_document_url && (
+                    <Button size="sm" variant="outline" disabled={viewDoc.isPending} onClick={() => viewDoc.mutate(d.user_id)}>
+                      Voir le document
+                    </Button>
+                  )}
+                  {d.insurance_status !== "verified" && (
+                    <Button size="sm" disabled={verify.isPending} onClick={() => verify.mutate(d.user_id)}>
+                      Valider
+                    </Button>
+                  )}
+                </div>
               </div>
             </CardContent>
           </Card>

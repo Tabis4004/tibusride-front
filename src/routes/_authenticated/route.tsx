@@ -85,6 +85,11 @@ function AppLayout() {
                 <Button variant="ghost" size="sm" className="gap-2"><Inbox className="h-4 w-4" />Support</Button>
               </Link>
             )}
+            {roles.includes("insurer") && (
+              <Link to="/app/insurer">
+                <Button variant="ghost" size="sm" className="gap-2"><ShieldCheck className="h-4 w-4" />Assurance</Button>
+              </Link>
+            )}
             <Link to="/app/rides">
               <Button variant="ghost" size="sm" className="gap-2"><LayoutDashboard className="h-4 w-4" />Mes courses</Button>
             </Link>
@@ -121,6 +126,9 @@ function AppLayout() {
           )}
           {(roles.includes("support") || roles.includes("admin") || roles.includes("superadmin")) && (
             <Link to="/app/support-inbox"><Button variant="ghost" size="sm">Inbox</Button></Link>
+          )}
+          {roles.includes("insurer") && (
+            <Link to="/app/insurer"><Button variant="ghost" size="sm">Assurance</Button></Link>
           )}
           <Link to="/app/rides"><Button variant="ghost" size="sm">Courses</Button></Link>
           <Link to="/app/rewards"><Button variant="ghost" size="sm">Récompenses</Button></Link>

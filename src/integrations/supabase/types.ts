@@ -2632,6 +2632,10 @@ export type Database = {
         Returns: number
       }
       is_superadmin: { Args: { _uid: string }; Returns: boolean }
+      get_insurance_document_path: {
+        Args: { _driver_id: string }
+        Returns: string
+      }
       list_insured_drivers: {
         Args: never
         Returns: {
