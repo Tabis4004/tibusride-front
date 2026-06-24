@@ -27,6 +27,7 @@ import { useCountryMarket } from "@/hooks/use-country-market";
 import { isEcoTibus, marketAppName } from "@/lib/country-market";
 import { MarketProgramSwitcher } from "@/components/MarketProgramSwitcher";
 import { getCurrentPosition } from "@/lib/native-geolocation";
+import { RideTrackingMap, type LatLng } from "@/components/RideTrackingMap";
 
 export const Route = createFileRoute("/_authenticated/app/driver")({
   head: () => ({ meta: [{ title: "Espace chauffeur & livreur — Tibus Ride" }] }),
@@ -208,6 +209,10 @@ function DriverPage() {
       {driverQ.data.is_online && <IdleLocationReporter />}
       <PendingOfferBanner />
 
+      {driverQ.data.is_online && (!myRidesQ.data || myRidesQ.data.length === 0) && (
+        <DriverIdleMap />
+      )}
+
       <div className="flex flex-wrap items-center justify-between gap-4 rounded-3xl border border-border bg-card p-6">
         <div>
           <h1 className="font-display text-2xl font-bold">Tableau de bord</h1>
@@ -253,7 +258,11 @@ function DriverPage() {
                     {r.status === "in_progress" && <Button size="sm" onClick={() => updateStatus.mutate({ rideId: r.id, status: "completed" })}>Terminer</Button>}
                   </div>
                 } />
-                <DriverLocationSharer rideId={r.id} />
+                <DriverLocationSharer
+                  rideId={r.id}
+                  pickup={r.pickup_lat && r.pickup_lng ? { lat: r.pickup_lat, lng: r.pickup_lng } : null}
+                  dropoff={r.dropoff_lat && r.dropoff_lng ? { lat: r.dropoff_lat, lng: r.dropoff_lng } : null}
+                />
                 {r.passenger_phone && r.passenger_shares_phone && (
                   <div className="rounded-xl border border-border bg-card px-4 py-2 text-xs">
                     Passager : <a className="font-semibold text-primary" href={`tel:${r.passenger_phone}`}>{r.passenger_phone}</a>
@@ -504,29 +513,91 @@ function PendingOfferBanner() {
   if (!offer) return null;
   const ride = offer.rides;
   const secondsLeft = Math.max(0, Math.round((new Date(offer.expires_at).getTime() - Date.now()) / 1000));
+  const isDelivery = ride?.service_type === "delivery";
+  const deliveryVehicle = ride?.delivery_vehicle as keyof typeof DELIVERY_VEHICLES | undefined;
+  const vehicleEmoji = isDelivery && deliveryVehicle
+    ? DELIVERY_VEHICLES[deliveryVehicle]?.emoji
+    : CATEGORIES[ride?.category as keyof typeof CATEGORIES]?.emoji;
+  const vehicleLabel = isDelivery && deliveryVehicle
+    ? DELIVERY_VEHICLES[deliveryVehicle]?.label
+    : CATEGORIES[ride?.category as keyof typeof CATEGORIES]?.label;
 
+  // Avant acceptation : aucune adresse précise, aucun prix, aucune identité
+  // passager — uniquement distance / type de véhicule / ville. Les détails
+  // complets n'arrivent qu'après l'acceptation (cf. myRidesQ qui fait alors
+  // un select("*") légitime sur la course acceptée).
   return (
     <div className="rounded-3xl border-2 border-primary bg-primary/5 p-5">
       <div className="flex items-center justify-between gap-2">
         <span className="rounded-full bg-primary px-3 py-1 text-xs font-semibold text-primary-foreground">
-          Nouvelle course proposée — {secondsLeft}s pour répondre
+          Nouvelle {isDelivery ? "livraison" : "course"} proposée — {secondsLeft}s pour répondre
         </span>
         {typeof offer.distance_km === "number" && (
           <span className="text-xs text-muted-foreground">≈ {offer.distance_km.toFixed(1)} km de vous</span>
         )}
       </div>
       {ride && (
-        <div className="mt-3 grid gap-2 text-sm sm:grid-cols-2">
-          <div className="flex items-start gap-2"><MapPin className="h-4 w-4 text-success mt-0.5 shrink-0" /><div className="truncate">{ride.pickup_address}</div></div>
-          <div className="flex items-start gap-2"><MapPin className="h-4 w-4 text-primary mt-0.5 shrink-0" /><div className="truncate">{ride.dropoff_address}</div></div>
+        <div className="mt-3 flex flex-wrap items-center gap-2 text-sm">
+          <span className="text-2xl">{vehicleEmoji ?? "📦"}</span>
+          {vehicleLabel && <span className="rounded-full bg-secondary px-2 py-0.5 text-xs">{vehicleLabel}</span>}
+          {ride.city && <span className="rounded-full bg-secondary px-2 py-0.5 text-xs">{ride.city}</span>}
+          {typeof ride.duration_min === "number" && (
+            <span className="text-xs text-muted-foreground">≈ {ride.duration_min} min de trajet</span>
+          )}
         </div>
       )}
-      {ride && <div className="mt-2 font-display text-lg font-bold text-primary">{formatXof(ride.price_xof)}</div>}
+      <p className="mt-2 text-[11px] text-muted-foreground">
+        Adresse de départ, destination, prix et contact du passager s'affichent après acceptation.
+      </p>
       <div className="mt-4 flex gap-2">
         <Button onClick={() => accept.mutate(offer.ride_id)} disabled={accept.isPending}>Accepter</Button>
         <Button variant="outline" onClick={() => decline.mutate(offer.ride_id)} disabled={decline.isPending}>Refuser</Button>
       </div>
     </div>
+  );
+}
+
+/**
+ * Carte par défaut du tableau de bord conducteur : tant qu'aucune course
+ * n'est en cours, affiche la position GPS courante du chauffeur (centrée,
+ * suivie en direct) — c'est depuis cette vue qu'il verra arriver les
+ * notifications d'offre de course (PendingOfferBanner au-dessus).
+ */
+function DriverIdleMap() {
+  const [pos, setPos] = useState<LatLng | null>(null);
+  const [status, setStatus] = useState<"idle" | "ok" | "denied" | "error">("idle");
+
+  useEffect(() => {
+    if (typeof navigator === "undefined" || !navigator.geolocation) {
+      setStatus("error");
+      return;
+    }
+    const watchId = navigator.geolocation.watchPosition(
+      (p) => {
+        setStatus("ok");
+        setPos({ lat: p.coords.latitude, lng: p.coords.longitude });
+      },
+      (err) => setStatus(err.code === err.PERMISSION_DENIED ? "denied" : "error"),
+      { enableHighAccuracy: true, maximumAge: 8000, timeout: 15000 },
+    );
+    return () => navigator.geolocation.clearWatch(watchId);
+  }, []);
+
+  return (
+    <section className="space-y-2">
+      <h2 className="font-display text-base font-semibold">Votre position</h2>
+      {pos ? (
+        <RideTrackingMap pickup={null} dropoff={null} driver={pos} center={pos} followDriver height={260} />
+      ) : (
+        <div className="flex h-[260px] items-center justify-center rounded-2xl border border-dashed border-border text-sm text-muted-foreground">
+          {status === "denied"
+            ? "Autorisez la géolocalisation pour afficher votre position sur la carte."
+            : status === "error"
+              ? "Géolocalisation indisponible."
+              : "Localisation en cours…"}
+        </div>
+      )}
+    </section>
   );
 }
 
@@ -624,9 +695,15 @@ function DriverZoneSettings() {
   );
 }
 
-/** Streams the driver's GPS position to the ride row every ~6s while active. */
-function DriverLocationSharer({ rideId }: { rideId: string }) {
+/**
+ * Streams the driver's GPS position to the ride row every ~6s while active,
+ * et affiche la carte de progression (position chauffeur + départ/arrivée)
+ * — c'est la vue "détails visibles après acceptation" demandée : une fois la
+ * course acceptée, le chauffeur voit sa progression sur la carte.
+ */
+function DriverLocationSharer({ rideId, pickup, dropoff }: { rideId: string; pickup: LatLng | null; dropoff: LatLng | null }) {
   const [status, setStatus] = useState<"idle" | "ok" | "denied" | "error">("idle");
+  const [pos, setPos] = useState<LatLng | null>(null);
   useEffect(() => {
     if (typeof navigator === "undefined" || !navigator.geolocation) {
       setStatus("error");
@@ -634,13 +711,14 @@ function DriverLocationSharer({ rideId }: { rideId: string }) {
     }
     let lastSent = 0;
     const watchId = navigator.geolocation.watchPosition(
-      async (pos) => {
+      async (p) => {
+        setPos({ lat: p.coords.latitude, lng: p.coords.longitude });
         const now = Date.now();
         if (now - lastSent < 6000) return;
         lastSent = now;
         const { error } = await supabase.from("rides").update({
-          driver_lat: pos.coords.latitude,
-          driver_lng: pos.coords.longitude,
+          driver_lat: p.coords.latitude,
+          driver_lng: p.coords.longitude,
           driver_location_updated_at: new Date().toISOString(),
         }).eq("id", rideId);
         if (!error) setStatus("ok");
@@ -652,11 +730,16 @@ function DriverLocationSharer({ rideId }: { rideId: string }) {
   }, [rideId]);
 
   return (
-    <div className="rounded-xl border border-border bg-card px-4 py-2 text-xs text-muted-foreground">
-      {status === "ok" && <>📍 Position partagée avec le passager (mise à jour en direct)</>}
-      {status === "idle" && <>📍 Activation du partage de position…</>}
-      {status === "denied" && <span className="text-destructive">⚠ Autorisez la géolocalisation pour que le passager vous suive.</span>}
-      {status === "error" && <span className="text-destructive">⚠ Impossible d'accéder à la géolocalisation.</span>}
+    <div className="space-y-2">
+      <div className="rounded-xl border border-border bg-card px-4 py-2 text-xs text-muted-foreground">
+        {status === "ok" && <>📍 Position partagée avec le passager (mise à jour en direct)</>}
+        {status === "idle" && <>📍 Activation du partage de position…</>}
+        {status === "denied" && <span className="text-destructive">⚠ Autorisez la géolocalisation pour que le passager vous suive.</span>}
+        {status === "error" && <span className="text-destructive">⚠ Impossible d'accéder à la géolocalisation.</span>}
+      </div>
+      {(pos || pickup || dropoff) && (
+        <RideTrackingMap pickup={pickup} dropoff={dropoff} driver={pos} followDriver height={260} />
+      )}
     </div>
   );
 }

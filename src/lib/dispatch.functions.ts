@@ -87,14 +87,26 @@ export const clearMyZone = createServerFn({ method: "POST" })
     return { ok: true as const };
   });
 
-/** Conducteur/livreur : offre de course actuellement en attente de sa réponse, s'il y en a une. */
+/**
+ * Conducteur/livreur : offre de course actuellement en attente de sa réponse,
+ * s'il y en a une.
+ *
+ * IMPORTANT (confidentialité avant acceptation) : avant que le chauffeur
+ * n'accepte, il ne doit voir QUE des informations minimales (distance, type
+ * de véhicule/catégorie, ville) — jamais le prix, l'adresse précise de
+ * départ/arrivée, ni l'identité du passager. Comme RLS ne filtre que les
+ * LIGNES (pas les colonnes), un `select("*, rides:ride_id(*)")` exposerait
+ * toutes ces colonnes sensibles dans la réponse réseau même si l'UI ne les
+ * affiche pas (visible via les devtools réseau). On fait donc deux requêtes
+ * séparées avec une projection de colonnes minimale sur `rides`.
+ */
 export const getMyPendingOffer = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
     const { supabase, userId } = context;
-    const { data, error } = await supabase
+    const { data: offer, error } = await supabase
       .from("ride_offers")
-      .select("*, rides:ride_id(*)")
+      .select("id, ride_id, driver_id, distance_km, status, offered_at, expires_at")
       .eq("driver_id", userId)
       .eq("status", "pending")
       .gt("expires_at", new Date().toISOString())
@@ -102,7 +114,16 @@ export const getMyPendingOffer = createServerFn({ method: "GET" })
       .limit(1)
       .maybeSingle();
     if (error) throw error;
-    return data;
+    if (!offer) return null;
+
+    const { data: ride, error: rideError } = await supabase
+      .from("rides")
+      .select("id, service_type, category, delivery_vehicle, city, distance_km, duration_min")
+      .eq("id", offer.ride_id)
+      .maybeSingle();
+    if (rideError) throw rideError;
+
+    return { ...offer, rides: ride };
   });
 
 /** Conducteur/livreur : accepte l'offre en cours pour cette course. */
