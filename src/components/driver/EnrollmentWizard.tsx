@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { defaultCityForCountry } from "@/lib/pricing";
 import {
+  DOC_COLUMN,
   ENROLLMENT_DOCS,
   PARTNER_TYPES,
   VEHICLE_TYPES,
@@ -35,10 +36,16 @@ type Profile = {
   license_document_url?: string | null;
   vehicle_document_url?: string | null;
   vehicle_condition_url?: string | null;
+  insurance_document_url?: string | null;
   status?: string;
   rejection_reason?: string | null;
   enrollment_submitted_at?: string | null;
 };
+
+/** Lit l'URL/chemin du document `kind` sur un profil, via la colonne mappée. */
+function docPath(profile: Profile, kind: EnrollmentDocKind): string | null | undefined {
+  return (profile as Record<string, string | null | undefined>)[DOC_COLUMN[kind]];
+}
 
 export function EnrollmentWizard({
   profile,
@@ -250,11 +257,7 @@ export function EnrollmentWizard({
               kind={doc.kind}
               label={doc.label}
               hint={doc.hint}
-              pathOrUrl={
-                doc.kind === "license" ? profile.license_document_url
-                : doc.kind === "vehicle" ? profile.vehicle_document_url
-                : profile.vehicle_condition_url
-              }
+              pathOrUrl={docPath(profile, doc.kind)}
               onUploaded={onRefresh}
             />
           ))}
@@ -296,10 +299,7 @@ function DocChecklist({ profile }: { profile: Profile }) {
   return (
     <ul className="mt-4 space-y-2 text-left text-sm">
       {ENROLLMENT_DOCS.map((doc) => {
-        const ok =
-          doc.kind === "license" ? !!profile.license_document_url
-          : doc.kind === "vehicle" ? !!profile.vehicle_document_url
-          : !!profile.vehicle_condition_url;
+        const ok = !!docPath(profile, doc.kind);
         return (
           <li key={doc.kind} className="flex items-center gap-2">
             {ok ? <CheckCircle2 className="h-4 w-4 text-success" /> : <FileUp className="h-4 w-4 text-muted-foreground" />}

@@ -2,7 +2,15 @@ import type { Category } from "@/lib/pricing";
 
 export type PartnerType = "ride" | "delivery";
 export type VehicleType = "car" | "motorcycle" | "van" | "tricycle" | "two_wheel";
-export type EnrollmentDocKind = "license" | "vehicle" | "vehicle_condition";
+export type EnrollmentDocKind = "license" | "vehicle" | "vehicle_condition" | "insurance";
+
+/** Colonne driver_profiles correspondant à chaque type de document. */
+export const DOC_COLUMN: Record<EnrollmentDocKind, string> = {
+  license: "license_document_url",
+  vehicle: "vehicle_document_url",
+  vehicle_condition: "vehicle_condition_url",
+  insurance: "insurance_document_url",
+};
 
 export const PARTNER_TYPES: { value: PartnerType; label: string; description: string }[] = [
   { value: "ride", label: "Chauffeur (courses)", description: "Transport de passagers — taxi, éco, confort…" },
@@ -31,6 +39,7 @@ export { DELIVERY_ASSIGNMENT_CATEGORIES as DELIVERY_CATEGORIES } from "@/lib/del
 export const ENROLLMENT_DOCS: { kind: EnrollmentDocKind; label: string; hint: string }[] = [
   { kind: "license", label: "Permis de conduire", hint: "Photo ou scan lisible (recto/verso si nécessaire)" },
   { kind: "vehicle", label: "Carte grise", hint: "Document officiel du véhicule ou de la moto" },
+  { kind: "insurance", label: "Assurance", hint: "Attestation d'assurance en cours de validité" },
   { kind: "vehicle_condition", label: "État du véhicule / moto", hint: "Photos récentes : extérieur, intérieur, plaque visible" },
 ];
 
@@ -38,6 +47,7 @@ export function enrollmentProgress(profile: {
   license_document_url?: string | null;
   vehicle_document_url?: string | null;
   vehicle_condition_url?: string | null;
+  insurance_document_url?: string | null;
   city?: string | null;
   license_number?: string | null;
   vehicle_type?: string | null;
@@ -51,6 +61,7 @@ export function enrollmentProgress(profile: {
     !!profile.license_document_url,
     !!profile.vehicle_document_url,
     !!profile.vehicle_condition_url,
+    !!profile.insurance_document_url,
   ];
   const done = checks.filter(Boolean).length;
   return { done, total: checks.length, complete: done === checks.length };

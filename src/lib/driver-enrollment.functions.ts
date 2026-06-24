@@ -1,13 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
-import type { EnrollmentDocKind } from "@/lib/driver-enrollment";
-
-const DOC_COLUMN: Record<EnrollmentDocKind, string> = {
-  license: "license_document_url",
-  vehicle: "vehicle_document_url",
-  vehicle_condition: "vehicle_condition_url",
-};
+import { DOC_COLUMN, type EnrollmentDocKind } from "@/lib/driver-enrollment";
 
 const ALLOWED_TYPES = ["image/jpeg", "image/png", "image/webp", "application/pdf"];
 
@@ -46,7 +40,7 @@ export const uploadMyDriverDocument = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d) =>
     z.object({
-      kind: z.enum(["license", "vehicle", "vehicle_condition"]),
+      kind: z.enum(["license", "vehicle", "vehicle_condition", "insurance"]),
       filename: z.string().max(200),
       contentType: z.string().max(100),
       base64: z.string().max(8_000_000),
@@ -129,6 +123,7 @@ export const submitEnrollmentForReview = createServerFn({ method: "POST" })
     if (!prof.license_number?.trim()) missing.push("n° permis");
     if (!prof.license_document_url) missing.push("permis de conduire");
     if (!prof.vehicle_document_url) missing.push("carte grise");
+    if (!prof.insurance_document_url) missing.push("assurance");
     if (!prof.vehicle_condition_url) missing.push("photos état véhicule/moto");
     if (missing.length) {
       throw new Error(`Dossier incomplet : ${missing.join(", ")}.`);

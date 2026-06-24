@@ -424,7 +424,7 @@ export const uploadDriverDocument = createServerFn({ method: "POST" })
     z
       .object({
         userId: z.string().uuid(),
-        kind: z.enum(["id", "license", "vehicle", "vehicle_condition"]),
+        kind: z.enum(["id", "license", "vehicle", "vehicle_condition", "insurance"]),
         filename: z.string().max(200),
         contentType: z.string().max(100),
         // base64-encoded file content
@@ -454,6 +454,7 @@ export const uploadDriverDocument = createServerFn({ method: "POST" })
       data.kind === "id" ? "id_document_url"
       : data.kind === "license" ? "license_document_url"
       : data.kind === "vehicle_condition" ? "vehicle_condition_url"
+      : data.kind === "insurance" ? "insurance_document_url"
       : "vehicle_document_url";
     const { error: updErr } = await supabaseAdmin
       .from("driver_profiles")
