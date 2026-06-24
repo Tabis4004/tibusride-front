@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { CATEGORIES, estimateDistance, estimateDuration, formatXof, getServiceZone, isInServiceZone, resolveServiceCity, type Category } from "@/lib/pricing";
+import { CATEGORIES, countryForCoords, estimateDistance, estimateDuration, formatXof, getServiceZone, isInServiceZone, resolveServiceCity, type Category } from "@/lib/pricing";
 import { Switch } from "@/components/ui/switch";
 import { computeDynamicPrice, estimateDriverWaitMin, type DynamicPriceBreakdown, type WeatherKind } from "@/lib/dynamic-pricing";
 import {
@@ -37,7 +37,7 @@ import { Link } from "@tanstack/react-router";
 import { cn } from "@/lib/utils";
 import { formatDriverArrivalMessage, formatDriverVehicleDescription, type DriverVehiclePublic } from "@/lib/driver-vehicle";
 import { useCountryMarket } from "@/hooks/use-country-market";
-import { isEcoTibus, marketAppName, type PaymentMethodValue } from "@/lib/country-market";
+import { fetchDefaultMarketProgram, isEcoTibus, marketAppName, type PaymentMethodValue } from "@/lib/country-market";
 import { MarketProgramSwitcher } from "@/components/MarketProgramSwitcher";
 
 export const Route = createFileRoute("/_authenticated/app/passenger")({
@@ -81,13 +81,30 @@ function PassengerPage() {
   const weatherFn = useServerFn(getWeatherAtPoint);
   const [weather, setWeather] = useState<WeatherKind>("sunny");
 
+  // Règle : le tarif et la commission liés à une course se résolvent sur
+  // l'adresse GPS réelle de départ, sans aucune considération de ville ou de
+  // pays enregistrés au profil. Le passager n'a aucune contrainte ici — il
+  // peut commander depuis n'importe quelle adresse, son pays de profil ne
+  // joue aucun rôle dans le calcul.
+  const pickupCountry = useMemo(() => (pickupLL ? countryForCoords(pickupLL) : null), [pickupLL]);
+  const pickupProgramQ = useQuery({
+    queryKey: ["pickup-market-program", pickupCountry],
+    queryFn: () => fetchDefaultMarketProgram(pickupCountry!),
+    enabled: !!pickupCountry,
+    staleTime: 5 * 60 * 1000,
+  });
+  // Tant que le point de départ n'est pas encore géocodé, on retombe sur le
+  // programme du profil (affichage initial uniquement) — dès que pickupLL
+  // est connu, c'est lui qui décide.
+  const pricingProgramId = pickupProgramQ.data?.programId ?? marketConfig?.programId ?? null;
+
   // Tarif dynamique : base/km/min (pricing_settings) + coefficients trafic/météo
   // (dynamic_pricing_settings, scoped programme) — résolus en base, plus de
   // constantes codées en dur dans dynamic-pricing.ts/delivery-pricing.ts.
   const pricingConfigFn = useServerFn(getEffectivePricingConfig);
   const pricingConfigQ = useQuery({
-    queryKey: ["pricing-config", marketConfig?.programId ?? null],
-    queryFn: () => pricingConfigFn({ data: { programId: marketConfig?.programId ?? null } }),
+    queryKey: ["pricing-config", pricingProgramId],
+    queryFn: () => pricingConfigFn({ data: { programId: pricingProgramId } }),
     staleTime: 60_000,
   });
 
@@ -333,6 +350,11 @@ function PassengerPage() {
         pickup_lng: pickupLL?.lng ?? null,
         dropoff_lat: dropoffLL?.lat ?? null,
         dropoff_lng: dropoffLL?.lng ?? null,
+        // Pays et programme = résolus depuis l'adresse GPS réelle de départ
+        // (pickupCountry/pricingProgramId), jamais depuis le pays du profil —
+        // c'est ce qui fixe le tarif et la commission appliqués à cette course.
+        country: pickupCountry ?? undefined,
+        program_id: pricingProgramId ?? undefined,
         city,
         category: serviceMode === "delivery" ? "eco" : category,
         service_type: serviceMode,

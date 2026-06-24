@@ -157,6 +157,15 @@ export function countryForCity(city: string): ServiceCountry | undefined {
   return getServiceZone(city)?.country as ServiceCountry | undefined;
 }
 
+/**
+ * Pays résolu depuis un point GPS réel (zone de service la plus proche) —
+ * base de l'application des tarifs/commission. Aucun lien avec le pays ou
+ * la ville enregistrés au profil : uniquement l'adresse actuelle de départ.
+ */
+export function countryForCoords(point: { lat: number; lng: number }): string {
+  return countryForCity(nearestServiceCity(point)) ?? CITIES[0].country;
+}
+
 function haversineKm(a: { lat: number; lng: number }, b: { lat: number; lng: number }): number {
   const R = 6371;
   const toRad = (d: number) => (d * Math.PI) / 180;

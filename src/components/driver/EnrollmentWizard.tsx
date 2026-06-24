@@ -4,7 +4,7 @@ import { useServerFn } from "@tanstack/react-start";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { CITIES } from "@/lib/pricing";
+import { defaultCityForCountry } from "@/lib/pricing";
 import {
   ENROLLMENT_DOCS,
   PARTNER_TYPES,
@@ -40,11 +40,22 @@ type Profile = {
   enrollment_submitted_at?: string | null;
 };
 
-export function EnrollmentWizard({ profile, onRefresh }: { profile: Profile; onRefresh: () => void }) {
+export function EnrollmentWizard({
+  profile,
+  country,
+  onRefresh,
+}: {
+  profile: Profile;
+  /** Pays choisi par le chauffeur/livreur à l'inscription — seule donnée requise ici. */
+  country?: string | null;
+  onRefresh: () => void;
+}) {
   const [step, setStep] = useState(0);
   const [partnerType, setPartnerType] = useState<PartnerType>((profile.partner_type as PartnerType) ?? "ride");
   const [vehicleType, setVehicleType] = useState<VehicleType>((profile.vehicle_type as VehicleType) ?? "car");
-  const [city, setCity] = useState(profile.city ?? "");
+  // La ville n'est plus choisie manuellement : elle découle uniquement du
+  // pays sélectionné à l'inscription (aucune liste de villes à l'enrôlement).
+  const city = defaultCityForCountry(country) ?? profile.city ?? "";
   const [license, setLicense] = useState(profile.license_number ?? "");
   const [plate, setPlate] = useState(profile.vehicle_plate ?? "");
   const [model, setVehicleModel] = useState(profile.vehicle_model ?? "");
@@ -193,14 +204,11 @@ export function EnrollmentWizard({ profile, onRefresh }: { profile: Profile; onR
           <div className="grid gap-3 sm:grid-cols-2">
             <div className="sm:col-span-2">
               <Label>Ville d'activité</Label>
-              <select
-                className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-                value={city}
-                onChange={(e) => setCity(e.target.value)}
-              >
-                <option value="">— choisir —</option>
-                {CITIES.map((c) => <option key={c.value} value={c.value}>{c.value} ({c.country})</option>)}
-              </select>
+              <p className="mt-1 rounded-md border border-input bg-muted/30 px-3 py-2 text-sm text-muted-foreground">
+                {city
+                  ? `${city} — déterminée automatiquement par votre pays`
+                  : "Renseignez votre pays dans votre profil pour déterminer votre ville d'activité"}
+              </p>
             </div>
             <div>
               <Label>N° permis</Label>

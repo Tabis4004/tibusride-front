@@ -190,6 +190,7 @@ function DriverPage() {
     return (
       <EnrollmentWizard
         profile={driverQ.data}
+        country={myCountry}
         onRefresh={() => qc.invalidateQueries({ queryKey: ["driver-profile"] })}
       />
     );
