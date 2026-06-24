@@ -72,101 +72,101 @@
 :root {
   --radius: 0.875rem;
 
-  /* Background : blanc froid légèrement bleuté */
-  --background: oklch(0.985 0.005 250);
-  --foreground: oklch(0.20 0.05 255);
+  /* Background : blanc froid légèrement verdâtre */
+  --background: oklch(0.985 0.005 167);
+  --foreground: oklch(0.20 0.05 172);
 
   --card: oklch(1 0 0);
-  --card-foreground: oklch(0.20 0.05 255);
+  --card-foreground: oklch(0.20 0.05 172);
   --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.20 0.05 255);
+  --popover-foreground: oklch(0.20 0.05 172);
 
-  /* Primary : bleu marine profond */
-  --primary: oklch(0.32 0.13 258);
-  --primary-foreground: oklch(0.99 0.005 250);
+  /* Primary : vert vif — couleur de marque tibus.app */
+  --primary: oklch(0.55 0.14 175);
+  --primary-foreground: oklch(0.99 0.005 167);
 
-  /* Secondary : bleu ciel doux */
-  --secondary: oklch(0.94 0.025 235);
-  --secondary-foreground: oklch(0.28 0.10 258);
+  /* Secondary : vert d'eau doux */
+  --secondary: oklch(0.94 0.025 152);
+  --secondary-foreground: oklch(0.28 0.10 175);
 
-  --muted: oklch(0.95 0.012 240);
-  --muted-foreground: oklch(0.48 0.04 255);
+  --muted: oklch(0.95 0.012 157);
+  --muted-foreground: oklch(0.48 0.04 172);
 
-  /* Accent : bleu clair lumineux (du logo) */
-  --accent: oklch(0.72 0.13 230);
-  --accent-foreground: oklch(0.18 0.06 258);
+  /* Accent : vert clair lumineux */
+  --accent: oklch(0.72 0.13 147);
+  --accent-foreground: oklch(0.18 0.06 175);
 
   --destructive: oklch(0.58 0.22 28);
-  --destructive-foreground: oklch(0.99 0.005 250);
+  --destructive-foreground: oklch(0.99 0.005 167);
 
   --success: oklch(0.58 0.13 155);
-  --success-foreground: oklch(0.99 0.005 250);
+  --success-foreground: oklch(0.99 0.005 167);
 
   --warning: oklch(0.78 0.16 75);
-  --warning-foreground: oklch(0.22 0.05 258);
+  --warning-foreground: oklch(0.22 0.05 175);
 
-  --border: oklch(0.91 0.015 240);
-  --input: oklch(0.93 0.015 240);
-  --ring: oklch(0.32 0.13 258);
+  --border: oklch(0.91 0.015 157);
+  --input: oklch(0.93 0.015 157);
+  --ring: oklch(0.55 0.14 175);
 
-  /* Tokens nommés (bleu marine / bleu clair) */
-  --sand: oklch(0.94 0.025 235);
-  --clay: oklch(0.32 0.13 258);
-  --baobab: oklch(0.55 0.15 235);
-  --night: oklch(0.18 0.06 258);
+  /* Tokens nommés (vert vif / vert d'eau) */
+  --sand: oklch(0.94 0.025 152);
+  --clay: oklch(0.40 0.13 172);
+  --baobab: oklch(0.55 0.15 152);
+  --night: oklch(0.18 0.06 175);
 
-  --chart-1: oklch(0.32 0.13 258);
-  --chart-2: oklch(0.55 0.15 235);
-  --chart-3: oklch(0.72 0.13 230);
-  --chart-4: oklch(0.45 0.18 265);
+  --chart-1: oklch(0.55 0.14 175);
+  --chart-2: oklch(0.55 0.15 152);
+  --chart-3: oklch(0.72 0.13 147);
+  --chart-4: oklch(0.45 0.18 182);
   --chart-5: oklch(0.78 0.16 75);
 
-  --sidebar: oklch(0.97 0.008 245);
-  --sidebar-foreground: oklch(0.20 0.05 255);
-  --sidebar-primary: oklch(0.32 0.13 258);
-  --sidebar-primary-foreground: oklch(0.99 0.005 250);
-  --sidebar-accent: oklch(0.94 0.025 235);
-  --sidebar-accent-foreground: oklch(0.28 0.10 258);
-  --sidebar-border: oklch(0.91 0.015 240);
-  --sidebar-ring: oklch(0.32 0.13 258);
+  --sidebar: oklch(0.97 0.008 162);
+  --sidebar-foreground: oklch(0.20 0.05 172);
+  --sidebar-primary: oklch(0.55 0.14 175);
+  --sidebar-primary-foreground: oklch(0.99 0.005 167);
+  --sidebar-accent: oklch(0.94 0.025 152);
+  --sidebar-accent-foreground: oklch(0.28 0.10 175);
+  --sidebar-border: oklch(0.91 0.015 157);
+  --sidebar-ring: oklch(0.55 0.14 175);
 }
 
 .dark {
-  --background: oklch(0.16 0.04 258);
-  --foreground: oklch(0.96 0.012 240);
-  --card: oklch(0.21 0.05 258);
-  --card-foreground: oklch(0.96 0.012 240);
-  --popover: oklch(0.21 0.05 258);
-  --popover-foreground: oklch(0.96 0.012 240);
-  --primary: oklch(0.62 0.16 235);
-  --primary-foreground: oklch(0.14 0.04 258);
-  --secondary: oklch(0.28 0.06 258);
-  --secondary-foreground: oklch(0.96 0.012 240);
-  --muted: oklch(0.25 0.05 258);
-  --muted-foreground: oklch(0.72 0.03 240);
-  --accent: oklch(0.55 0.15 235);
-  --accent-foreground: oklch(0.96 0.012 240);
+  --background: oklch(0.16 0.04 175);
+  --foreground: oklch(0.96 0.012 157);
+  --card: oklch(0.21 0.05 175);
+  --card-foreground: oklch(0.96 0.012 157);
+  --popover: oklch(0.21 0.05 175);
+  --popover-foreground: oklch(0.96 0.012 157);
+  --primary: oklch(0.62 0.15 172);
+  --primary-foreground: oklch(0.14 0.04 175);
+  --secondary: oklch(0.28 0.06 175);
+  --secondary-foreground: oklch(0.96 0.012 157);
+  --muted: oklch(0.25 0.05 175);
+  --muted-foreground: oklch(0.72 0.03 157);
+  --accent: oklch(0.55 0.15 152);
+  --accent-foreground: oklch(0.96 0.012 157);
   --destructive: oklch(0.65 0.22 28);
-  --destructive-foreground: oklch(0.96 0.012 240);
+  --destructive-foreground: oklch(0.96 0.012 157);
   --success: oklch(0.65 0.13 155);
-  --success-foreground: oklch(0.96 0.012 240);
+  --success-foreground: oklch(0.96 0.012 157);
   --warning: oklch(0.78 0.16 75);
-  --warning-foreground: oklch(0.16 0.04 258);
+  --warning-foreground: oklch(0.16 0.04 175);
   --border: oklch(1 0 0 / 12%);
   --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.62 0.16 235);
-  --sand: oklch(0.55 0.10 235);
-  --clay: oklch(0.62 0.16 235);
-  --baobab: oklch(0.55 0.15 235);
-  --night: oklch(0.14 0.04 258);
-  --sidebar: oklch(0.18 0.05 258);
-  --sidebar-foreground: oklch(0.96 0.012 240);
-  --sidebar-primary: oklch(0.62 0.16 235);
-  --sidebar-primary-foreground: oklch(0.14 0.04 258);
-  --sidebar-accent: oklch(0.28 0.06 258);
-  --sidebar-accent-foreground: oklch(0.96 0.012 240);
+  --ring: oklch(0.62 0.15 172);
+  --sand: oklch(0.55 0.10 152);
+  --clay: oklch(0.62 0.15 172);
+  --baobab: oklch(0.55 0.15 152);
+  --night: oklch(0.14 0.04 175);
+  --sidebar: oklch(0.18 0.05 175);
+  --sidebar-foreground: oklch(0.96 0.012 157);
+  --sidebar-primary: oklch(0.62 0.15 172);
+  --sidebar-primary-foreground: oklch(0.14 0.04 175);
+  --sidebar-accent: oklch(0.28 0.06 175);
+  --sidebar-accent-foreground: oklch(0.96 0.012 157);
   --sidebar-border: oklch(1 0 0 / 12%);
-  --sidebar-ring: oklch(0.62 0.16 235);
+  --sidebar-ring: oklch(0.62 0.15 172);
 }
 
 @layer base {
@@ -183,18 +183,18 @@
 @layer components {
   .bg-sunset {
     background-image:
-      radial-gradient(at 20% 10%, oklch(0.72 0.13 230 / 0.45) 0px, transparent 50%),
-      radial-gradient(at 80% 0%, oklch(0.32 0.13 258 / 0.40) 0px, transparent 55%),
-      radial-gradient(at 50% 100%, oklch(0.55 0.15 235 / 0.25) 0px, transparent 55%),
-      linear-gradient(180deg, oklch(0.985 0.005 250) 0%, oklch(0.94 0.025 235) 100%);
+      radial-gradient(at 20% 10%, oklch(0.72 0.13 147 / 0.45) 0px, transparent 50%),
+      radial-gradient(at 80% 0%, oklch(0.32 0.13 175 / 0.40) 0px, transparent 55%),
+      radial-gradient(at 50% 100%, oklch(0.55 0.15 152 / 0.25) 0px, transparent 55%),
+      linear-gradient(180deg, oklch(0.985 0.005 167) 0%, oklch(0.94 0.025 152) 100%);
   }
   .bg-night-gradient {
-    background-image: linear-gradient(160deg, oklch(0.18 0.06 258) 0%, oklch(0.28 0.10 258) 100%);
+    background-image: linear-gradient(160deg, oklch(0.18 0.06 175) 0%, oklch(0.28 0.10 175) 100%);
   }
   .pattern-mud {
     background-image:
-      repeating-linear-gradient(45deg, oklch(0.32 0.13 258 / 0.06) 0 2px, transparent 2px 14px),
-      repeating-linear-gradient(-45deg, oklch(0.32 0.13 258 / 0.06) 0 2px, transparent 2px 14px);
+      repeating-linear-gradient(45deg, oklch(0.32 0.13 175 / 0.06) 0 2px, transparent 2px 14px),
+      repeating-linear-gradient(-45deg, oklch(0.32 0.13 175 / 0.06) 0 2px, transparent 2px 14px);
   }
 
   .native-shell {
@@ -203,7 +203,7 @@
   }
 
   .native-tabbar {
-    box-shadow: 0 -4px 24px oklch(0.2 0.05 255 / 0.08);
+    box-shadow: 0 -4px 24px oklch(0.2 0.05 172 / 0.08);
   }
 
   .native-cta-bar .shadow-soft {

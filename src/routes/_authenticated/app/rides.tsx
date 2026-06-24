@@ -2,8 +2,9 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/use-auth";
-import { CATEGORIES, formatXof } from "@/lib/pricing";
+import { CATEGORIES, formatXof, type Category } from "@/lib/pricing";
 import { MapPin } from "lucide-react";
+import { CarIcon } from "@/components/CarIcon";
 
 export const Route = createFileRoute("/_authenticated/app/rides")({
   head: () => ({ meta: [{ title: "Mes courses — Tibus Ride" }] }),
@@ -46,7 +47,9 @@ function RidesPage() {
           <div key={r.id} className="rounded-2xl border border-border bg-card p-4">
             <div className="flex items-center justify-between gap-3">
               <div className="flex items-center gap-2 text-sm">
-                <span className="text-xl">{CATEGORIES[r.category as keyof typeof CATEGORIES]?.emoji}</span>
+                {CATEGORIES[r.category as Category] && (
+                  <CarIcon category={r.category as Category} className="h-6 w-9" />
+                )}
                 <span className="text-xs text-muted-foreground">{new Date(r.created_at).toLocaleString("fr-FR")}</span>
                 <span className="rounded-full bg-secondary px-2 py-0.5 text-xs">{r.city}</span>
                 <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${

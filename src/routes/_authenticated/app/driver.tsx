@@ -6,9 +6,10 @@ import { useAuth } from "@/hooks/use-auth";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
-import { CATEGORIES, formatXof } from "@/lib/pricing";
+import { CATEGORIES, formatXof, type Category } from "@/lib/pricing";
 import { toast } from "sonner";
 import { Car, Clock, MapPin, Wallet } from "lucide-react";
+import { CarIcon } from "@/components/CarIcon";
 import { useServerFn } from "@tanstack/react-start";
 import { getMyWallet } from "@/lib/wallet.functions";
 import { getNotificationPrefs } from "@/lib/tracking.functions";
@@ -438,9 +439,8 @@ function RideCard({ ride, actions }: { ride: any; actions: React.ReactNode }) {
   const isDelivery = ride.service_type === "delivery";
   const deliveryVehicle = ride.delivery_vehicle as keyof typeof DELIVERY_VEHICLES | undefined;
   const packageType = ride.package_type as keyof typeof PACKAGE_TYPES | undefined;
-  const vehicleEmoji = isDelivery && deliveryVehicle
-    ? DELIVERY_VEHICLES[deliveryVehicle]?.emoji
-    : CATEGORIES[ride.category as keyof typeof CATEGORIES]?.emoji;
+  const vehicleEmoji = isDelivery && deliveryVehicle ? DELIVERY_VEHICLES[deliveryVehicle]?.emoji : undefined;
+  const rideCategory = !isDelivery ? (ride.category as Category) : undefined;
   const vehicleLabel = isDelivery && deliveryVehicle
     ? DELIVERY_VEHICLES[deliveryVehicle]?.label
     : CATEGORIES[ride.category as keyof typeof CATEGORIES]?.label;
@@ -449,7 +449,11 @@ function RideCard({ ride, actions }: { ride: any; actions: React.ReactNode }) {
     <div className="rounded-2xl border border-border bg-card p-4">
       <div className="flex items-center justify-between gap-3">
         <div className="flex flex-wrap items-center gap-2 text-sm">
-          <span className="text-2xl">{vehicleEmoji ?? "📦"}</span>
+          {rideCategory && CATEGORIES[rideCategory] ? (
+            <CarIcon category={rideCategory} className="h-7 w-11" />
+          ) : (
+            <span className="text-2xl">{vehicleEmoji ?? "📦"}</span>
+          )}
           {isDelivery && (
             <span className="rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary">Livraison</span>
           )}
@@ -641,9 +645,8 @@ function PendingOfferBanner() {
   const secondsLeft = Math.max(0, Math.round((new Date(offer.expires_at).getTime() - Date.now()) / 1000));
   const isDelivery = ride?.service_type === "delivery";
   const deliveryVehicle = ride?.delivery_vehicle as keyof typeof DELIVERY_VEHICLES | undefined;
-  const vehicleEmoji = isDelivery && deliveryVehicle
-    ? DELIVERY_VEHICLES[deliveryVehicle]?.emoji
-    : CATEGORIES[ride?.category as keyof typeof CATEGORIES]?.emoji;
+  const vehicleEmoji = isDelivery && deliveryVehicle ? DELIVERY_VEHICLES[deliveryVehicle]?.emoji : undefined;
+  const offerRideCategory = !isDelivery ? (ride?.category as Category) : undefined;
   const vehicleLabel = isDelivery && deliveryVehicle
     ? DELIVERY_VEHICLES[deliveryVehicle]?.label
     : CATEGORIES[ride?.category as keyof typeof CATEGORIES]?.label;
@@ -664,7 +667,11 @@ function PendingOfferBanner() {
       </div>
       {ride && (
         <div className="mt-3 flex flex-wrap items-center gap-2 text-sm">
-          <span className="text-2xl">{vehicleEmoji ?? "📦"}</span>
+          {offerRideCategory && CATEGORIES[offerRideCategory] ? (
+            <CarIcon category={offerRideCategory} className="h-7 w-11" />
+          ) : (
+            <span className="text-2xl">{vehicleEmoji ?? "📦"}</span>
+          )}
           {vehicleLabel && <span className="rounded-full bg-secondary px-2 py-0.5 text-xs">{vehicleLabel}</span>}
           {ride.city && <span className="rounded-full bg-secondary px-2 py-0.5 text-xs">{ride.city}</span>}
           {typeof ride.duration_min === "number" && (

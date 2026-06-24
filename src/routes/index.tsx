@@ -1,8 +1,9 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { Logo } from "@/components/Logo";
 import { Button } from "@/components/ui/button";
-import { CATEGORIES, CITIES } from "@/lib/pricing";
+import { CATEGORIES, CITIES, type Category } from "@/lib/pricing";
 import { ArrowRight, Banknote, MapPin, ShieldCheck, Smartphone, Star, Wifi } from "lucide-react";
+import { CarIcon } from "@/components/CarIcon";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -91,7 +92,7 @@ function Landing() {
               <div className="mt-4 grid grid-cols-2 gap-2">
                 {(Object.entries(CATEGORIES) as Array<[keyof typeof CATEGORIES, typeof CATEGORIES[keyof typeof CATEGORIES]]>).slice(0, 4).map(([key, c]) => (
                   <div key={key} className="rounded-xl border border-border bg-background p-3">
-                    <div className="text-2xl">{c.emoji}</div>
+                    <CarIcon category={key} className="h-8 w-12" />
                     <div className="mt-1 text-sm font-semibold">{c.label}</div>
                     <div className="text-xs text-muted-foreground">{c.eta}</div>
                   </div>
@@ -117,7 +118,7 @@ function Landing() {
         <div className="mt-12 grid gap-6 sm:grid-cols-2 lg:grid-cols-5">
           {(Object.entries(CATEGORIES) as Array<[string, typeof CATEGORIES[keyof typeof CATEGORIES]]>).map(([key, c]) => (
             <div key={key} className="group rounded-2xl border border-border bg-card p-6 transition-all hover:-translate-y-1 hover:shadow-[var(--shadow-soft)]">
-              <div className="text-4xl">{c.emoji}</div>
+              <CarIcon category={key as Category} className="h-12 w-20" />
               <h3 className="mt-4 font-display text-xl font-semibold">{c.label}</h3>
               <p className="mt-1 text-sm text-muted-foreground">{c.capacity}</p>
               <p className="mt-2 text-xs text-muted-foreground">{c.description}</p>

@@ -9,8 +9,9 @@ import { toast } from "sonner";
 import { ArrowLeft, Download, FileText, MapPin, Phone, MessageCircle, Sparkles, Wallet } from "lucide-react";
 import { RideTrackingMap, type LatLng } from "@/components/RideTrackingMap";
 import { exportRideHistoryCsv, getRideHistory, logContactView, toggleContactShare } from "@/lib/tracking.functions";
-import { formatXof, CATEGORIES } from "@/lib/pricing";
+import { formatXof, CATEGORIES, type Category } from "@/lib/pricing";
 import { useAuth } from "@/hooks/use-auth";
+import { CarIcon } from "@/components/CarIcon";
 import jsPDF from "jspdf";
 
 export const Route = createFileRoute("/_authenticated/app/ride/$rideId")({
@@ -163,7 +164,9 @@ function RideDetailPage() {
 
       <header className="rounded-3xl border border-border bg-card p-5">
         <div className="flex items-center gap-2 text-sm">
-          <span className="text-2xl">{CATEGORIES[ride.category as keyof typeof CATEGORIES]?.emoji}</span>
+          {CATEGORIES[ride.category as Category] && (
+            <CarIcon category={ride.category as Category} className="h-7 w-11" />
+          )}
           <span className="rounded-full bg-secondary px-2 py-0.5 text-xs">{ride.city}</span>
           <span className="rounded-full bg-primary/15 px-2 py-0.5 text-xs font-medium text-primary">{ride.status}</span>
           <span className="ml-auto font-display text-2xl font-bold">{formatXof(ride.price_xof)}</span>

@@ -28,6 +28,7 @@ import { RideTrackingMap, type LatLng } from "@/components/RideTrackingMap";
 import { computeRoute, reverseGeocode, getWeatherAtPoint, geocodeAddress } from "@/lib/maps.functions";
 import { AddressAutocomplete } from "@/components/AddressAutocomplete";
 import { DeliveryPartnerAds } from "@/components/DeliveryPartnerAds";
+import { CarIcon } from "@/components/CarIcon";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { getNotificationPrefs } from "@/lib/tracking.functions";
 import { getNotifyPermission, requestNotifyPermission, showLocalNotification } from "@/lib/notify";
@@ -441,7 +442,7 @@ function PassengerPage() {
             </button>
             <button
               type="button"
-              onClick={() => { setServiceMode("delivery"); setTripOpen(true); }}
+              onClick={() => setServiceMode("delivery")}
               className={cn(
                 "rounded-2xl border p-3 text-left transition-all",
                 serviceMode === "delivery" ? "border-primary/30 bg-primary/5 ring-1 ring-primary/20" : "border-border bg-muted/30",
@@ -614,7 +615,7 @@ function PassengerPage() {
                           selected ? "border-primary bg-primary/5 ring-2 ring-primary/20" : "border-border hover:border-primary/50",
                         ].join(" ")}
                       >
-                        <div className="text-xl">{c.emoji}</div>
+                        <CarIcon category={key} className="mx-auto h-7 w-11" />
                         <div className="mt-0.5 text-[10px] font-semibold leading-tight">{c.label}</div>
                       </button>
                     );
