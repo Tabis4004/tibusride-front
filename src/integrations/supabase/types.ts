@@ -1465,6 +1465,7 @@ export type Database = {
       }
       reward_settings: {
         Row: {
+          driver_offer_penalty_xof: number
           driver_referral_bonus_xof: number
           driver_referral_per_ride_xof: number
           driver_share_bonus_xof: number
@@ -1476,6 +1477,7 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          driver_offer_penalty_xof?: number
           driver_referral_bonus_xof?: number
           driver_referral_per_ride_xof?: number
           driver_share_bonus_xof?: number
@@ -1487,6 +1489,7 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          driver_offer_penalty_xof?: number
           driver_referral_bonus_xof?: number
           driver_referral_per_ride_xof?: number
           driver_share_bonus_xof?: number
@@ -2475,6 +2478,10 @@ export type Database = {
         Args: { _ride_id: string }
         Returns: undefined
       }
+      penalize_self_ignored_ride: {
+        Args: { _ride_id: string }
+        Returns: number
+      }
       dispatch_offer_next: {
         Args: { _ride_id: string }
         Returns: string
@@ -2657,6 +2664,7 @@ export type Database = {
         | "refund"
         | "reward"
         | "referral"
+        | "penalty"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -2873,6 +2881,7 @@ export const Constants = {
         "refund",
         "reward",
         "referral",
+        "penalty",
       ],
     },
   },

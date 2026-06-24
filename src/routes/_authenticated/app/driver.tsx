@@ -12,7 +12,7 @@ import { Car, Clock, MapPin, Wallet } from "lucide-react";
 import { useServerFn } from "@tanstack/react-start";
 import { getMyWallet } from "@/lib/wallet.functions";
 import { getNotificationPrefs } from "@/lib/tracking.functions";
-import { getNotifyPermission, requestNotifyPermission, showLocalNotification, speakAnnouncement } from "@/lib/notify";
+import { getNotifyPermission, requestNotifyPermission, showLocalNotification, speakAnnouncement, primeSpeechSynthesis } from "@/lib/notify";
 
 /** Durée (s) d'affichage du popup d'alerte "nouvelle course" en mode liste
  * ouverte (self_assign) — en mode 'proximity', c'est `ride_offers.expires_at`
@@ -28,6 +28,7 @@ import {
   getMyPendingOffer,
   acceptRideOffer,
   declineRideOffer,
+  penalizeSelfIgnoredRide,
 } from "@/lib/dispatch.functions";
 import { EnrollmentWizard } from "@/components/driver/EnrollmentWizard";
 import { PARTNER_TYPES, VEHICLE_TYPES, RIDE_CATEGORIES, DELIVERY_CATEGORIES, INSURANCE_STATUS_LABEL, type InsuranceStatus } from "@/lib/driver-enrollment";
@@ -134,12 +135,32 @@ function DriverPage() {
   // message vocal "Vous avez une commande" — en plus du toast/bip existants.
   const [newRidePopup, setNewRidePopup] = useState<{ id: string; title: string; description: string } | null>(null);
   const [newRidePopupSeconds, setNewRidePopupSeconds] = useState(SELF_ASSIGN_POPUP_SECONDS);
+  const penalizeFn = useServerFn(penalizeSelfIgnoredRide);
+  const penalize = useMutation({
+    mutationFn: (rideId: string) => penalizeFn({ data: { rideId } }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["my-wallet"] }),
+    // Non bloquant : une pénalité ratée (offline, etc.) ne doit jamais gêner le chauffeur.
+    onError: () => {},
+  });
+  // "Ignorer" explicite OU laisser filer le compte à rebours sans réagir :
+  // dans les deux cas le chauffeur a vu passer une course sans répondre,
+  // donc la pénalité s'applique de la même façon.
+  const dismissPopupWithPenalty = (rideId: string) => {
+    penalize.mutate(rideId);
+    toast.warning("Course ignorée — pénalité appliquée sur votre wallet.");
+    setNewRidePopup(null);
+  };
   useEffect(() => {
     if (!newRidePopup) return;
     setNewRidePopupSeconds(SELF_ASSIGN_POPUP_SECONDS);
     const timer = setInterval(() => {
       setNewRidePopupSeconds((s) => {
-        if (s <= 1) { clearInterval(timer); setNewRidePopup(null); return 0; }
+        if (s <= 1) {
+          clearInterval(timer);
+          penalize.mutate(newRidePopup.id);
+          setNewRidePopup(null);
+          return 0;
+        }
         return s - 1;
       });
     }, 1000);
@@ -264,17 +285,28 @@ function DriverPage() {
       <PendingOfferBanner />
 
       {/* Popup minuté "nouvelle course" — mode self_assign, voir SELF_ASSIGN_POPUP_SECONDS. */}
-      <Dialog open={!!newRidePopup} onOpenChange={(open) => { if (!open) setNewRidePopup(null); }}>
+      <Dialog open={!!newRidePopup} onOpenChange={() => {}}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>{newRidePopup?.title ?? "Nouvelle course disponible !"}</DialogTitle>
             <DialogDescription>{newRidePopup?.description}</DialogDescription>
           </DialogHeader>
           <p className="text-sm text-muted-foreground">
-            Disponible encore {newRidePopupSeconds}s — rendez-vous dans la liste des courses disponibles pour l'accepter.
+            Disponible encore {newRidePopupSeconds}s — ignorer ou laisser expirer entraîne une pénalité sur votre wallet.
           </p>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setNewRidePopup(null)}>Ignorer</Button>
+            <Button
+              variant="outline"
+              onClick={() => newRidePopup && dismissPopupWithPenalty(newRidePopup.id)}
+            >
+              Ignorer
+            </Button>
+            <Button
+              onClick={() => newRidePopup && accept.mutate(newRidePopup.id)}
+              disabled={accept.isPending}
+            >
+              Accepter
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -299,7 +331,7 @@ function DriverPage() {
           <span className="text-sm font-medium">{driverQ.data.is_online ? "En ligne" : "Hors ligne"}</span>
           <Switch
             checked={driverQ.data.is_online}
-            onCheckedChange={(v) => toggleOnline.mutate(v)}
+            onCheckedChange={(v) => { primeSpeechSynthesis(); toggleOnline.mutate(v); }}
           />
         </div>
       </div>

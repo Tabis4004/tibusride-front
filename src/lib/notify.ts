@@ -96,21 +96,98 @@ export async function showLocalNotification(title: string, body: string): Promis
 }
 
 /**
- * Message vocal court (ex. "Vous avez une commande") via l'API Web Speech
- * Synthesis — contrairement à l'API Notification, c'est une API JS standard
- * disponible aussi bien sur le WebView Android (Chromium) que sur le
- * navigateur desktop, donc aucun plugin natif supplémentaire n'est requis.
- * Silencieux si indisponible.
+ * Message vocal court (ex. "Vous avez une commande").
+ *
+ * Constat (cause du silence observé sur Android) : `window.speechSynthesis`
+ * du WebView Android Chromium délègue au moteur TTS système, qui (a) doit
+ * avoir un pack de voix fr-FR installé, et (b) n'expose ses voix qu'après
+ * l'event `voiceschanged` — un `speak()` appelé avant que les voix soient
+ * chargées est silencieusement ignoré (aucune erreur JS, le `try/catch`
+ * masquait tout). De plus, les politiques "autoplay" de Chrome/WebView
+ * bloquent parfois `speak()` tant qu'aucun geste utilisateur n'a eu lieu
+ * dans la session — d'où `primeSpeechSynthesis()` ci-dessous, à appeler
+ * sur un geste connu (ex. toggle "En ligne").
+ *
+ * Si un plugin Capacitor TTS natif est présent (ex.
+ * @capacitor-community/text-to-speech, après `npm install` + `npx cap
+ * sync`), on l'utilise en priorité — il passe directement par l'API
+ * Android TextToSpeech, plus fiable que le WebView. Pas d'import statique
+ * (même pattern que LocalNotifications plus haut) : on lit le registre
+ * runtime `window.Capacitor.Plugins.TextToSpeech` pour rester fonctionnel
+ * (et typecheck-able) même sans le plugin installé.
  */
+interface TextToSpeechPlugin {
+  speak(opts: { text: string; lang?: string; rate?: number; volume?: number; category?: string }): Promise<unknown>;
+}
+
+function getTtsPlugin(): TextToSpeechPlugin | undefined {
+  const cap = (window as unknown as { Capacitor?: { Plugins?: Record<string, unknown> } }).Capacitor;
+  return cap?.Plugins?.TextToSpeech as TextToSpeechPlugin | undefined;
+}
+
+let speechPrimed = false;
+
+/**
+ * À appeler une fois, sur un geste utilisateur certain (ex. clic sur le
+ * toggle "En ligne") : prononce un son quasi inaudible pour lever le verrou
+ * "autoplay" de certains WebView avant qu'une vraie annonce soit nécessaire.
+ * Sans effet si un plugin natif est dispo (pas concerné par cette politique).
+ */
+export function primeSpeechSynthesis(): void {
+  if (speechPrimed) return;
+  speechPrimed = true;
+  try {
+    if (getTtsPlugin()) return;
+    if (typeof window === "undefined" || !("speechSynthesis" in window)) return;
+    const utter = new SpeechSynthesisUtterance(" ");
+    utter.volume = 0;
+    window.speechSynthesis.speak(utter);
+  } catch {
+    // Non bloquant.
+  }
+}
+
+function speakWithWebApi(text: string): void {
+  const synth = window.speechSynthesis;
+  const utter = new SpeechSynthesisUtterance(text);
+  utter.lang = "fr-FR";
+  utter.rate = 1;
+  utter.volume = 1;
+  const voices = synth.getVoices();
+  if (voices.length > 0) {
+    const frVoice = voices.find((v) => v.lang?.toLowerCase().startsWith("fr"));
+    if (frVoice) utter.voice = frVoice;
+    synth.cancel();
+    synth.speak(utter);
+    return;
+  }
+  // Voix pas encore chargées (race condition fréquente au démarrage de
+  // l'app) : on attend `voiceschanged` une seule fois avant de parler,
+  // avec un filet de sécurité si l'event ne se déclenche jamais.
+  let spoken = false;
+  const trySpeak = () => {
+    if (spoken) return;
+    spoken = true;
+    synth.cancel();
+    synth.speak(utter);
+  };
+  const onVoices = () => {
+    synth.removeEventListener("voiceschanged", onVoices);
+    trySpeak();
+  };
+  synth.addEventListener("voiceschanged", onVoices);
+  setTimeout(trySpeak, 800);
+}
+
 export function speakAnnouncement(text: string): void {
   try {
+    const plugin = getTtsPlugin();
+    if (plugin) {
+      plugin.speak({ text, lang: "fr-FR", rate: 1, volume: 1, category: "ambient" }).catch(() => {});
+      return;
+    }
     if (typeof window === "undefined" || !("speechSynthesis" in window)) return;
-    const utter = new SpeechSynthesisUtterance(text);
-    utter.lang = "fr-FR";
-    utter.rate = 1;
-    utter.volume = 1;
-    window.speechSynthesis.cancel();
-    window.speechSynthesis.speak(utter);
+    speakWithWebApi(text);
   } catch {
     // Non bloquant : une voix manquée ne doit jamais casser le reste de l'UI.
   }
