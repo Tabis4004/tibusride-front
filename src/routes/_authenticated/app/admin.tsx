@@ -418,13 +418,29 @@ function DriversTab() {
   const { data } = useQuery({
     queryKey: ["admin-drivers"],
     queryFn: async () => {
-      const { data, error } = await supabase
+      // Pas de FK directe driver_profiles.user_id -> profiles.id (les deux
+      // référencent auth.users séparément), donc PostgREST ne peut pas faire
+      // l'embed `profiles:user_id(...)` : la requête échouait silencieusement
+      // (PGRST200, "no relationship found"), data restait vide -> "Aucun
+      // partenaire." même quand des chauffeurs en attente existaient.
+      // Fix : deux requêtes séparées + merge côté client.
+      const { data: drivers, error } = await supabase
         .from("driver_profiles")
-        .select("*, profiles:user_id(full_name, phone, city)")
+        .select("*")
         .order("created_at", { ascending: false })
         .limit(500);
       if (error) throw error;
-      return data ?? [];
+      const userIds = (drivers ?? []).map((d: any) => d.user_id).filter(Boolean);
+      let profilesById: Record<string, any> = {};
+      if (userIds.length > 0) {
+        const { data: profilesData, error: profilesError } = await supabase
+          .from("profiles")
+          .select("id, full_name, phone, city")
+          .in("id", userIds);
+        if (profilesError) throw profilesError;
+        profilesById = Object.fromEntries((profilesData ?? []).map((p: any) => [p.id, p]));
+      }
+      return (drivers ?? []).map((d: any) => ({ ...d, profiles: profilesById[d.user_id] ?? null }));
     },
   });
 
