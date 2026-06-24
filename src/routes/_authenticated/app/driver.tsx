@@ -11,12 +11,22 @@ import { Car, Clock, MapPin, Wallet } from "lucide-react";
 import { useServerFn } from "@tanstack/react-start";
 import { getMyWallet } from "@/lib/wallet.functions";
 import { getNotificationPrefs } from "@/lib/tracking.functions";
+import {
+  reportMyLocation,
+  getMyZone,
+  setMyZone,
+  clearMyZone,
+  getMyPendingOffer,
+  acceptRideOffer,
+  declineRideOffer,
+} from "@/lib/dispatch.functions";
 import { EnrollmentWizard } from "@/components/driver/EnrollmentWizard";
 import { PARTNER_TYPES, VEHICLE_TYPES, RIDE_CATEGORIES, DELIVERY_CATEGORIES } from "@/lib/driver-enrollment";
 import { DELIVERY_VEHICLES, PACKAGE_TYPES, vehicleFromAssignedCategory } from "@/lib/delivery-pricing";
 import { useCountryMarket } from "@/hooks/use-country-market";
 import { isEcoTibus, marketAppName } from "@/lib/country-market";
 import { MarketProgramSwitcher } from "@/components/MarketProgramSwitcher";
+import { getCurrentPosition } from "@/lib/native-geolocation";
 
 export const Route = createFileRoute("/_authenticated/app/driver")({
   head: () => ({ meta: [{ title: "Espace chauffeur & livreur — Tibus Ride" }] }),
@@ -194,6 +204,9 @@ function DriverPage() {
 
   return (
     <div className="space-y-6">
+      {driverQ.data.is_online && <IdleLocationReporter />}
+      <PendingOfferBanner />
+
       <div className="flex flex-wrap items-center justify-between gap-4 rounded-3xl border border-border bg-card p-6">
         <div>
           <h1 className="font-display text-2xl font-bold">Tableau de bord</h1>
@@ -220,6 +233,8 @@ function DriverPage() {
         <Stat icon={Car} label="Courses effectuées" value={String(driverQ.data.rides_count)} />
         <Stat icon={Clock} label="Note moyenne" value={`${Number(driverQ.data.rating_avg ?? 5).toFixed(1)} / 5`} />
       </div>
+
+      <DriverZoneSettings />
 
       <WalletSection />
 
@@ -421,6 +436,190 @@ function WalletSection() {
         )}
       </div>
     </section>
+  );
+}
+
+/**
+ * Tant que le conducteur est en ligne (même sans course en cours), signale sa
+ * position courante au serveur. C'est cette position qui permet au moteur de
+ * dispatch (mode 'proximity') de le considérer comme candidat le plus proche
+ * pour une nouvelle demande. Sans ce composant, driver_profiles.current_lat/
+ * current_lng restent figés et le dispatch par proximité ne peut pas trouver
+ * de conducteur disponible.
+ */
+function IdleLocationReporter() {
+  const reportFn = useServerFn(reportMyLocation);
+  useEffect(() => {
+    let lastSent = 0;
+    let cancelled = false;
+    let timer: ReturnType<typeof setInterval> | null = null;
+
+    const send = async () => {
+      try {
+        const pos = await getCurrentPosition({ maximumAge: 8000 });
+        if (cancelled) return;
+        const now = Date.now();
+        if (now - lastSent < 9000) return;
+        lastSent = now;
+        await reportFn({ data: { lat: pos.coords.lat, lng: pos.coords.lng } });
+      } catch {
+        // Géolocalisation indisponible/refusée : on retentera au prochain tick.
+      }
+    };
+
+    send();
+    timer = setInterval(send, 10000);
+    return () => { cancelled = true; if (timer) clearInterval(timer); };
+  }, [reportFn]);
+
+  return null;
+}
+
+/** Bandeau d'offre de course poussée par le moteur de dispatch (mode 'proximity'). */
+function PendingOfferBanner() {
+  const qc = useQueryClient();
+  const getOfferFn = useServerFn(getMyPendingOffer);
+  const acceptFn = useServerFn(acceptRideOffer);
+  const declineFn = useServerFn(declineRideOffer);
+
+  const offerQ = useQuery({
+    queryKey: ["my-pending-offer"],
+    queryFn: () => getOfferFn(),
+    refetchInterval: 3000,
+  });
+
+  const accept = useMutation({
+    mutationFn: (rideId: string) => acceptFn({ data: { rideId } }),
+    onSuccess: () => { toast.success("Course acceptée !"); qc.invalidateQueries(); },
+    onError: (e: Error) => { toast.error(e.message); qc.invalidateQueries({ queryKey: ["my-pending-offer"] }); },
+  });
+  const decline = useMutation({
+    mutationFn: (rideId: string) => declineFn({ data: { rideId } }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["my-pending-offer"] }),
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  const offer = offerQ.data as any;
+  if (!offer) return null;
+  const ride = offer.rides;
+  const secondsLeft = Math.max(0, Math.round((new Date(offer.expires_at).getTime() - Date.now()) / 1000));
+
+  return (
+    <div className="rounded-3xl border-2 border-primary bg-primary/5 p-5">
+      <div className="flex items-center justify-between gap-2">
+        <span className="rounded-full bg-primary px-3 py-1 text-xs font-semibold text-primary-foreground">
+          Nouvelle course proposée — {secondsLeft}s pour répondre
+        </span>
+        {typeof offer.distance_km === "number" && (
+          <span className="text-xs text-muted-foreground">≈ {offer.distance_km.toFixed(1)} km de vous</span>
+        )}
+      </div>
+      {ride && (
+        <div className="mt-3 grid gap-2 text-sm sm:grid-cols-2">
+          <div className="flex items-start gap-2"><MapPin className="h-4 w-4 text-success mt-0.5 shrink-0" /><div className="truncate">{ride.pickup_address}</div></div>
+          <div className="flex items-start gap-2"><MapPin className="h-4 w-4 text-primary mt-0.5 shrink-0" /><div className="truncate">{ride.dropoff_address}</div></div>
+        </div>
+      )}
+      {ride && <div className="mt-2 font-display text-lg font-bold text-primary">{formatXof(ride.price_xof)}</div>}
+      <div className="mt-4 flex gap-2">
+        <Button onClick={() => accept.mutate(offer.ride_id)} disabled={accept.isPending}>Accepter</Button>
+        <Button variant="outline" onClick={() => decline.mutate(offer.ride_id)} disabled={decline.isPending}>Refuser</Button>
+      </div>
+    </div>
+  );
+}
+
+/** Réglage de la zone d'opération (cercle centre + rayon) du conducteur/livreur. */
+function DriverZoneSettings() {
+  const qc = useQueryClient();
+  const getZoneFn = useServerFn(getMyZone);
+  const setZoneFn = useServerFn(setMyZone);
+  const clearZoneFn = useServerFn(clearMyZone);
+  const [open, setOpen] = useState(false);
+  const [radiusKm, setRadiusKm] = useState(5);
+  const [locating, setLocating] = useState(false);
+
+  const zoneQ = useQuery({ queryKey: ["my-zone"], queryFn: () => getZoneFn() });
+
+  useEffect(() => {
+    if (zoneQ.data?.radius_km) setRadiusKm(Number(zoneQ.data.radius_km));
+  }, [zoneQ.data?.radius_km]);
+
+  const save = useMutation({
+    mutationFn: async () => {
+      setLocating(true);
+      try {
+        const pos = await getCurrentPosition();
+        return setZoneFn({ data: { centerLat: pos.coords.lat, centerLng: pos.coords.lng, radiusKm, isActive: true } });
+      } finally {
+        setLocating(false);
+      }
+    },
+    onSuccess: () => { toast.success("Zone d'opération enregistrée."); qc.invalidateQueries({ queryKey: ["my-zone"] }); },
+    onError: () => toast.error("Impossible d'obtenir votre position. Autorisez la géolocalisation."),
+  });
+
+  const toggleActive = useMutation({
+    mutationFn: (isActive: boolean) => {
+      if (!zoneQ.data) throw new Error("Aucune zone définie.");
+      return setZoneFn({ data: { centerLat: zoneQ.data.center_lat, centerLng: zoneQ.data.center_lng, radiusKm: Number(zoneQ.data.radius_km), isActive } });
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["my-zone"] }),
+  });
+
+  const clear = useMutation({
+    mutationFn: () => clearZoneFn(),
+    onSuccess: () => { toast.success("Zone supprimée — vous êtes disponible partout dans votre pays."); qc.invalidateQueries({ queryKey: ["my-zone"] }); },
+  });
+
+  return (
+    <div className="rounded-3xl border border-border bg-card p-5">
+      <button className="flex w-full items-center justify-between text-left" onClick={() => setOpen((o) => !o)}>
+        <div>
+          <h3 className="font-display text-base font-semibold">Ma zone d'opération</h3>
+          <p className="text-xs text-muted-foreground">
+            {zoneQ.data
+              ? `Rayon de ${Number(zoneQ.data.radius_km)} km${zoneQ.data.is_active ? "" : " (désactivée)"} — vous ne recevrez des propositions que dans ce périmètre.`
+              : "Aucune zone définie — vous pouvez recevoir des courses partout dans votre pays."}
+          </p>
+        </div>
+        <span className="text-xs text-primary">{open ? "Fermer" : "Configurer"}</span>
+      </button>
+      {open && (
+        <div className="mt-4 space-y-3 border-t border-border pt-4">
+          {zoneQ.data && (
+            <div className="flex items-center justify-between text-sm">
+              <span>Zone active</span>
+              <Switch checked={zoneQ.data.is_active} onCheckedChange={(v) => toggleActive.mutate(v)} />
+            </div>
+          )}
+          <div>
+            <label className="text-xs font-medium text-muted-foreground">Rayon (km)</label>
+            <input
+              type="range" min={1} max={50} step={1}
+              value={radiusKm}
+              onChange={(e) => setRadiusKm(Number(e.target.value))}
+              className="w-full"
+            />
+            <div className="text-right text-xs text-muted-foreground">{radiusKm} km</div>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            La zone est centrée sur votre position actuelle au moment de l'enregistrement.
+            Vous pourrez la redéfinir à tout moment depuis votre position du jour.
+          </p>
+          <div className="flex flex-wrap gap-2">
+            <Button size="sm" onClick={() => save.mutate()} disabled={save.isPending || locating}>
+              {locating ? "Localisation…" : "Utiliser ma position actuelle"}
+            </Button>
+            {zoneQ.data && (
+              <Button size="sm" variant="outline" onClick={() => clear.mutate()} disabled={clear.isPending}>
+                Supprimer la zone
+              </Button>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
   );
 }
 

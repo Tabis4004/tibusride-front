@@ -833,6 +833,7 @@ export type Database = {
           currency: string
           default_language: string
           dispatch_mode: string
+          dispatch_offer_seconds: number
           display_name: string
           features: Json
           governance_min_notice_days: number
@@ -857,6 +858,7 @@ export type Database = {
           currency?: string
           default_language?: string
           dispatch_mode?: string
+          dispatch_offer_seconds?: number
           display_name: string
           features?: Json
           governance_min_notice_days?: number
@@ -881,6 +883,7 @@ export type Database = {
           currency?: string
           default_language?: string
           dispatch_mode?: string
+          dispatch_offer_seconds?: number
           display_name?: string
           features?: Json
           governance_min_notice_days?: number
@@ -900,6 +903,86 @@ export type Database = {
             columns: ["stakeholder_org_id"]
             isOneToOne: false
             referencedRelation: "stakeholder_organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      driver_zones: {
+        Row: {
+          center_lat: number
+          center_lng: number
+          created_at: string
+          driver_id: string
+          id: string
+          is_active: boolean
+          radius_km: number
+          updated_at: string
+        }
+        Insert: {
+          center_lat: number
+          center_lng: number
+          created_at?: string
+          driver_id: string
+          id?: string
+          is_active?: boolean
+          radius_km?: number
+          updated_at?: string
+        }
+        Update: {
+          center_lat?: number
+          center_lng?: number
+          created_at?: string
+          driver_id?: string
+          id?: string
+          is_active?: boolean
+          radius_km?: number
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      ride_offers: {
+        Row: {
+          created_at: string
+          distance_km: number | null
+          driver_id: string
+          expires_at: string
+          id: string
+          offered_at: string
+          responded_at: string | null
+          ride_id: string
+          sequence_no: number
+          status: string
+        }
+        Insert: {
+          created_at?: string
+          distance_km?: number | null
+          driver_id: string
+          expires_at: string
+          id?: string
+          offered_at?: string
+          responded_at?: string | null
+          ride_id: string
+          sequence_no?: number
+          status?: string
+        }
+        Update: {
+          created_at?: string
+          distance_km?: number | null
+          driver_id?: string
+          expires_at?: string
+          id?: string
+          offered_at?: string
+          responded_at?: string | null
+          ride_id?: string
+          sequence_no?: number
+          status?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ride_offers_ride_id_fkey"
+            columns: ["ride_id"]
+            isOneToOne: false
+            referencedRelation: "rides"
             referencedColumns: ["id"]
           },
         ]
@@ -2212,6 +2295,7 @@ export type Database = {
           currency: string
           default_language: string
           dispatch_mode: string
+          dispatch_offer_seconds: number
           display_name: string
           features: Json
           governance_min_notice_days: number
@@ -2231,6 +2315,79 @@ export type Database = {
           isOneToOne: true
           isSetofReturn: false
         }
+      }
+      accept_ride_offer: {
+        Args: { _ride_id: string }
+        Returns: {
+          accepted_at: string | null
+          cancelled_at: string | null
+          category: Database["public"]["Enums"]["vehicle_category"]
+          city: string
+          commission_rate: number | null
+          commission_xof: number | null
+          completed_at: string | null
+          country: string | null
+          created_at: string
+          currency: string
+          delivery_confirmation_code: string | null
+          delivery_confirmed_at: string | null
+          delivery_insulated_bag: boolean
+          delivery_photo_url: string | null
+          delivery_urgent: boolean
+          delivery_vehicle: string | null
+          distance_km: number | null
+          driver_earnings_xof: number | null
+          driver_id: string | null
+          driver_lat: number | null
+          driver_lng: number | null
+          driver_location_updated_at: string | null
+          driver_shares_phone: boolean
+          dropoff_address: string
+          dropoff_lat: number | null
+          dropoff_lng: number | null
+          duration_min: number | null
+          eta_seconds: number | null
+          id: string
+          market_program: Database["public"]["Enums"]["market_program"] | null
+          notes: string | null
+          package_type: string | null
+          passenger_id: string
+          passenger_phone: string | null
+          passenger_shares_phone: boolean
+          payment_method: Database["public"]["Enums"]["payment_method"]
+          pickup_address: string
+          pickup_lat: number | null
+          pickup_lng: number | null
+          price_xof: number
+          program_id: string | null
+          requested_at: string
+          service_type: string
+          started_at: string | null
+          status: Database["public"]["Enums"]["ride_status"]
+          updated_at: string
+        }
+        SetofOptions: {
+          from: "*"
+          to: "rides"
+          isOneToOne: true
+          isSetofReturn: false
+        }
+      }
+      decline_ride_offer: {
+        Args: { _ride_id: string }
+        Returns: undefined
+      }
+      dispatch_offer_next: {
+        Args: { _ride_id: string }
+        Returns: string
+      }
+      haversine_km: {
+        Args: { lat1: number; lng1: number; lat2: number; lng2: number }
+        Returns: number
+      }
+      expire_ride_offers: {
+        Args: Record<PropertyKey, never>
+        Returns: undefined
       }
       redeem_points_for_ride: {
         Args: { _pts: number; _ride_id: string }
