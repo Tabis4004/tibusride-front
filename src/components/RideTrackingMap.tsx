@@ -205,7 +205,10 @@ export function RideTrackingMap({
           });
           if (mapRef.current) obs.observe(mapRef.current, { childList: true, subtree: true });
           mapObj.current.__errObs = obs;
-          mapObj.current.__errTimer = window.setTimeout(() => { obs.disconnect(); switchFallback(); }, 4000);
+          // Si aucune erreur n'a été détectée dans la fenêtre d'observation, on
+          // arrête simplement la surveillance — la carte fonctionne normalement.
+          // (Avant : ce timeout forçait le repli même sans erreur réelle.)
+          mapObj.current.__errTimer = window.setTimeout(() => { obs.disconnect(); }, 4000);
         }
 
         if (interactive) {
