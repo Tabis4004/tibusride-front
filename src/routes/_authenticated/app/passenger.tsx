@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { CATEGORIES, countryForCoords, estimateDistance, estimateDuration, formatXof, getServiceZone, isInServiceZone, resolveServiceCity, type Category } from "@/lib/pricing";
+import { CATEGORIES, countryForCoords, estimateDistance, estimateDuration, formatXof, getServiceZone, isInServiceZone, nearestServiceCity, resolveServiceCity, type Category } from "@/lib/pricing";
 import { Switch } from "@/components/ui/switch";
 import { computeDynamicPrice, estimateDriverWaitMin, type DynamicPriceBreakdown, type WeatherKind } from "@/lib/dynamic-pricing";
 import {
@@ -98,6 +98,16 @@ function PassengerPage() {
   // programme du profil (affichage initial uniquement) — dès que pickupLL
   // est connu, c'est lui qui décide.
   const pricingProgramId = pickupProgramQ.data?.programId ?? marketConfig?.programId ?? null;
+
+  // Même règle pour la zone de service : dès que le point de départ est connu
+  // (GPS, carte ou adresse tapée/sélectionnée), c'est lui qui détermine la
+  // ville/zone de référence — le profil n'est qu'un repli avant ce moment,
+  // pour éviter qu'une adresse réelle en Côte d'Ivoire (ex.) ne soit comparée
+  // par erreur au rayon de Dakar parce que le profil était vide.
+  useEffect(() => {
+    if (!pickupLL) return;
+    setCity(nearestServiceCity(pickupLL));
+  }, [pickupLL?.lat, pickupLL?.lng]);
 
   // Tarif dynamique : base/km/min (pricing_settings) + coefficients trafic/météo
   // (dynamic_pricing_settings, scoped programme) — résolus en base, plus de
