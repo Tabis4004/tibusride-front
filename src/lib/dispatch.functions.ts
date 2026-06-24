@@ -187,8 +187,10 @@ export const declineRideOffer = createServerFn({ method: "POST" })
 /**
  * Conducteur/livreur (mode self_assign) : signale qu'il a ignoré ou laissé
  * expirer le popup "nouvelle course disponible" sans réagir — applique la
- * pénalité reward (wallet) configurée par les admins (reward_settings.
- * driver_offer_penalty_xof). Idempotent côté SQL par (driver, ride).
+ * pénalité reward EN POINTS (wallet reward séparé, pas le wallet FCFA) ainsi
+ * qu'une régression temporaire dans le classement de dispatch, configurées
+ * par les admins (table driver_penalty_rules, code 'self_assign_ignored').
+ * Idempotent côté SQL par (driver, ride).
  */
 export const penalizeSelfIgnoredRide = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
@@ -197,5 +199,5 @@ export const penalizeSelfIgnoredRide = createServerFn({ method: "POST" })
     const { supabase } = context;
     const { data: balance, error } = await supabase.rpc("penalize_self_ignored_ride", { _ride_id: data.rideId });
     if (error) throw new Error(error.message);
-    return { balance_xof: balance as number };
+    return { points_balance: balance as number };
   });

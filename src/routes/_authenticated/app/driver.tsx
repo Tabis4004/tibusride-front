@@ -138,7 +138,7 @@ function DriverPage() {
   const penalizeFn = useServerFn(penalizeSelfIgnoredRide);
   const penalize = useMutation({
     mutationFn: (rideId: string) => penalizeFn({ data: { rideId } }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["my-wallet"] }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["my-reward-wallet"] }),
     // Non bloquant : une pénalité ratée (offline, etc.) ne doit jamais gêner le chauffeur.
     onError: () => {},
   });
@@ -147,7 +147,7 @@ function DriverPage() {
   // donc la pénalité s'applique de la même façon.
   const dismissPopupWithPenalty = (rideId: string) => {
     penalize.mutate(rideId);
-    toast.warning("Course ignorée — pénalité appliquée sur votre wallet.");
+    toast.warning("Course ignorée — pénalité appliquée sur vos points reward.");
     setNewRidePopup(null);
   };
   useEffect(() => {
@@ -292,7 +292,7 @@ function DriverPage() {
             <DialogDescription>{newRidePopup?.description}</DialogDescription>
           </DialogHeader>
           <p className="text-sm text-muted-foreground">
-            Disponible encore {newRidePopupSeconds}s — ignorer ou laisser expirer entraîne une pénalité sur votre wallet.
+            Disponible encore {newRidePopupSeconds}s — ignorer ou laisser expirer entraîne une pénalité sur vos points reward.
           </p>
           <DialogFooter>
             <Button

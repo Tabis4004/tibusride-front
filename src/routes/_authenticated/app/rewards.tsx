@@ -11,9 +11,10 @@ import { Label } from "@/components/ui/label";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
-import { Copy, Gift, Share2, Wallet, Users, Sparkles, Plus, ArrowDownToLine, ArrowUpFromLine, CheckCircle2 } from "lucide-react";
+import { Copy, Gift, Share2, Wallet, Users, Sparkles, Plus, ArrowDownToLine, ArrowUpFromLine, CheckCircle2, Award } from "lucide-react";
 import { formatXof } from "@/lib/pricing";
 import { createGeniuspayTopup } from "@/lib/geniuspay.functions";
+import { getMyRewardWallet, redeemDriverPoints } from "@/lib/driver-reward.functions";
 
 export const Route = createFileRoute("/_authenticated/app/rewards")({
   head: () => ({ meta: [{ title: "Récompenses & Wallet — Tibus Ride" }] }),
@@ -74,6 +75,27 @@ function RewardsPage() {
         .limit(20);
       return data ?? [];
     },
+  });
+
+  // Driver reward points wallet (distinct from FCFA wallet above)
+  const getRewardFn = useServerFn(getMyRewardWallet);
+  const rewardWalletQ = useQuery({
+    queryKey: ["my-reward-wallet", user?.id],
+    enabled: !!user && isDriver,
+    queryFn: () => getRewardFn(),
+  });
+
+  const redeemFn = useServerFn(redeemDriverPoints);
+  const [redeemAmount, setRedeemAmount] = useState(0);
+  const redeemMut = useMutation({
+    mutationFn: (points: number) => redeemFn({ data: { points } }),
+    onSuccess: (res) => {
+      toast.success(`${res.xof_credit} XOF crédités sur votre wallet chauffeur`);
+      setRedeemAmount(0);
+      qc.invalidateQueries({ queryKey: ["my-reward-wallet"] });
+      qc.invalidateQueries({ queryKey: ["driver-wallet"] });
+    },
+    onError: (e: Error) => toast.error(e.message ?? "Erreur"),
   });
 
   // Passenger wallet
@@ -303,6 +325,47 @@ function RewardsPage() {
         </Card>
       </div>
 
+      {/* Driver reward points wallet */}
+      {isDriver && (
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="flex items-center gap-2 text-base"><Award className="h-5 w-5" />Wallet Reward (points)</CardTitle>
+            <CardDescription>
+              Gagnés en acceptant/terminant des courses et en parrainant des conducteurs. Perdus en cas de pénalité
+              (offre ignorée/refusée, course annulée, mauvaise note…). Convertibles en FCFA sur votre wallet chauffeur.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <div className="text-3xl font-bold">{(rewardWalletQ.data?.points_balance ?? 0).toLocaleString()} pts</div>
+            <div className="text-sm text-muted-foreground">
+              1 pt ≈ {formatXof(rewardWalletQ.data?.point_value_xof ?? 1)} · minimum {rewardWalletQ.data?.min_redeem_pts ?? 0} pts pour convertir
+            </div>
+            <div className="flex flex-wrap items-end gap-2">
+              <div>
+                <Label className="text-xs">Points à convertir</Label>
+                <Input
+                  type="number"
+                  min={0}
+                  className="w-32"
+                  value={redeemAmount}
+                  onChange={(e) => setRedeemAmount(Number(e.target.value))}
+                />
+              </div>
+              <Button
+                onClick={() => redeemMut.mutate(redeemAmount)}
+                disabled={
+                  redeemMut.isPending ||
+                  redeemAmount < (rewardWalletQ.data?.min_redeem_pts ?? 1) ||
+                  redeemAmount > (rewardWalletQ.data?.points_balance ?? 0)
+                }
+              >
+                Convertir en FCFA
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       {/* Referral code */}
       <Card>
         <CardHeader>
@@ -389,6 +452,7 @@ function RewardsPage() {
       <Tabs defaultValue={isDriver ? "driver" : "pax"}>
         <TabsList>
           {isDriver && <TabsTrigger value="driver">Transactions chauffeur</TabsTrigger>}
+          {isDriver && <TabsTrigger value="reward">Transactions reward</TabsTrigger>}
           <TabsTrigger value="pax">Transactions passager</TabsTrigger>
           <TabsTrigger value="refs">Mes filleuls ({refsQ.data?.length ?? 0})</TabsTrigger>
           {isDriver && <TabsTrigger value="shares">Partages</TabsTrigger>}
@@ -409,6 +473,27 @@ function RewardsPage() {
                   </div>
                   <div className={`font-semibold ${t.amount_xof >= 0 ? "text-green-600" : "text-orange-600"}`}>
                     {t.amount_xof >= 0 ? "+" : ""}{formatXof(t.amount_xof)}
+                  </div>
+                </div>
+              ))}
+            </CardContent></Card>
+          </TabsContent>
+        )}
+
+        {isDriver && (
+          <TabsContent value="reward">
+            <Card><CardContent className="pt-6 space-y-2">
+              {(rewardWalletQ.data?.transactions ?? []).length === 0 && (
+                <p className="text-sm text-muted-foreground">Aucune transaction.</p>
+              )}
+              {(rewardWalletQ.data?.transactions ?? []).map((t: any) => (
+                <div key={t.id} className="flex items-center justify-between border-b pb-2 text-sm last:border-0">
+                  <div>
+                    <div className="font-medium capitalize">{t.type?.replace(/_/g, " ")} {t.notes && <span className="text-muted-foreground font-normal">— {t.notes}</span>}</div>
+                    <div className="text-xs text-muted-foreground">{new Date(t.created_at).toLocaleString()}</div>
+                  </div>
+                  <div className={`font-semibold ${t.points >= 0 ? "text-green-600" : "text-orange-600"}`}>
+                    {t.points >= 0 ? "+" : ""}{t.points} pts
                   </div>
                 </div>
               ))}

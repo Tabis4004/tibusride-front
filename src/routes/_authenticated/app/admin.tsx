@@ -19,6 +19,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { formatXof } from "@/lib/pricing";
 import { countriesMatch } from "@/lib/countries";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
+import { Switch } from "@/components/ui/switch";
 import { toast } from "sonner";
 import {
   listUsers,
@@ -240,7 +241,12 @@ function AdminPage() {
         {section === "wallets" && <WalletsTab />}
         {section === "audit" && <AuditTab />}
         {section === "fraud" && <FraudTab />}
-        {section === "rewards" && <RewardsTab />}
+        {section === "rewards" && (
+          <div className="space-y-4">
+            <RewardsTab />
+            <DriverPenaltyRulesTab />
+          </div>
+        )}
         {section === "metrics" && <MetricsTab />}
       </div>
     );
@@ -2898,6 +2904,11 @@ function RewardsTab() {
     passenger_referral_bonus_pts: data.passenger_referral_bonus_pts,
     passenger_ride_earn_pts: data.passenger_ride_earn_pts,
     point_value_xof: Number(data.point_value_xof),
+    driver_point_value_xof: Number(data.driver_point_value_xof),
+    driver_ride_accept_pts: data.driver_ride_accept_pts,
+    driver_ride_completed_pts: data.driver_ride_completed_pts,
+    driver_referral_pts: data.driver_referral_pts,
+    driver_min_redeem_pts: data.driver_min_redeem_pts,
   } : null);
 
   const save = useMutation({
@@ -2923,6 +2934,11 @@ function RewardsTab() {
     { key: "driver_share_daily_cap", label: "Plafond partages par jour (chauffeur)" },
     { key: "driver_referral_bonus_xof", label: "Bonus parrainage chauffeur (XOF)" },
     { key: "driver_referral_per_ride_xof", label: "Bonus par course du filleul (XOF)" },
+    { key: "driver_ride_accept_pts", label: "Points reward : course acceptée" },
+    { key: "driver_ride_completed_pts", label: "Points reward : course terminée" },
+    { key: "driver_referral_pts", label: "Points reward : parrainage conducteur" },
+    { key: "driver_point_value_xof", label: "Valeur d'1 point reward conducteur (XOF)", step: 0.1 },
+    { key: "driver_min_redeem_pts", label: "Minimum de points pour convertir" },
   ];
 
   return (
@@ -2951,6 +2967,127 @@ function RewardsTab() {
         {form && (
           <Button variant="ghost" onClick={() => setForm(null)}>Annuler</Button>
         )}
+      </div>
+    </div>
+  );
+}
+
+// ============ Driver penalty rules catalog (points reward) ============
+type PenaltyRule = {
+  id: string;
+  code: string;
+  label: string;
+  points_penalty: number;
+  dispatch_cooldown_seconds: number;
+  is_active: boolean;
+};
+
+function DriverPenaltyRulesTab() {
+  const qc = useQueryClient();
+  const { data, isLoading } = useQuery({
+    queryKey: ["admin", "driver_penalty_rules"],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("driver_penalty_rules")
+        .select("*")
+        .order("code", { ascending: true });
+      if (error) throw error;
+      return (data ?? []) as PenaltyRule[];
+    },
+  });
+  const [edits, setEdits] = useState<Record<string, Partial<PenaltyRule>>>({});
+
+  const save = useMutation({
+    mutationFn: async (rule: PenaltyRule) => {
+      const { error } = await supabase
+        .from("driver_penalty_rules")
+        .update({
+          points_penalty: rule.points_penalty,
+          dispatch_cooldown_seconds: rule.dispatch_cooldown_seconds,
+          is_active: rule.is_active,
+        } as never)
+        .eq("id", rule.id);
+      if (error) throw error;
+    },
+    onSuccess: (_data, rule) => {
+      toast.success(`Règle "${rule.label}" mise à jour`);
+      setEdits((e) => {
+        const next = { ...e };
+        delete next[rule.id];
+        return next;
+      });
+      qc.invalidateQueries({ queryKey: ["admin", "driver_penalty_rules"] });
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  if (isLoading) return <div className="py-6 text-center text-sm text-muted-foreground">Chargement…</div>;
+
+  return (
+    <div className="space-y-4 rounded-3xl border border-border bg-card/40 p-4">
+      <div>
+        <h3 className="font-semibold">Catalogue des pénalités conducteurs</h3>
+        <p className="text-xs text-muted-foreground">
+          Points retirés du wallet reward + durée de régression dans le classement de dispatch (le conducteur passe
+          après les autres pendant cette durée, même s'il est le plus proche).
+        </p>
+      </div>
+      <div className="space-y-2">
+        {(data ?? []).map((rule) => {
+          const merged = { ...rule, ...edits[rule.id] };
+          const dirty = !!edits[rule.id];
+          return (
+            <div key={rule.id} className="grid gap-2 rounded-2xl border border-border/60 p-3 sm:grid-cols-[1fr_auto_auto_auto]">
+              <div>
+                <div className="text-sm font-medium">{merged.label}</div>
+                <div className="font-mono text-xs text-muted-foreground">{merged.code}</div>
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">Points retirés</Label>
+                <Input
+                  type="number"
+                  min={0}
+                  className="w-28"
+                  value={merged.points_penalty}
+                  onChange={(e) =>
+                    setEdits((s) => ({ ...s, [rule.id]: { ...s[rule.id], points_penalty: Number(e.target.value) } }))
+                  }
+                />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">Régression dispatch (s)</Label>
+                <Input
+                  type="number"
+                  min={0}
+                  className="w-28"
+                  value={merged.dispatch_cooldown_seconds}
+                  onChange={(e) =>
+                    setEdits((s) => ({
+                      ...s,
+                      [rule.id]: { ...s[rule.id], dispatch_cooldown_seconds: Number(e.target.value) },
+                    }))
+                  }
+                />
+              </div>
+              <div className="flex items-end gap-2">
+                <div className="flex flex-col items-center gap-1">
+                  <Label className="text-xs">Active</Label>
+                  <Switch
+                    checked={merged.is_active}
+                    onCheckedChange={(v) => setEdits((s) => ({ ...s, [rule.id]: { ...s[rule.id], is_active: v } }))}
+                  />
+                </div>
+                <Button
+                  size="sm"
+                  disabled={!dirty || save.isPending}
+                  onClick={() => save.mutate(merged as PenaltyRule)}
+                >
+                  Enregistrer
+                </Button>
+              </div>
+            </div>
+          );
+        })}
       </div>
     </div>
   );

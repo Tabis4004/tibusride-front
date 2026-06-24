@@ -377,6 +377,39 @@ export type Database = {
         }
         Relationships: []
       }
+      driver_penalty_rules: {
+        Row: {
+          code: string
+          created_at: string
+          dispatch_cooldown_seconds: number
+          id: string
+          is_active: boolean
+          label: string
+          points_penalty: number
+          updated_at: string
+        }
+        Insert: {
+          code: string
+          created_at?: string
+          dispatch_cooldown_seconds?: number
+          id?: string
+          is_active?: boolean
+          label: string
+          points_penalty?: number
+          updated_at?: string
+        }
+        Update: {
+          code?: string
+          created_at?: string
+          dispatch_cooldown_seconds?: number
+          id?: string
+          is_active?: boolean
+          label?: string
+          points_penalty?: number
+          updated_at?: string
+        }
+        Relationships: []
+      }
       driver_profiles: {
         Row: {
           assigned_category: string | null
@@ -385,6 +418,7 @@ export type Database = {
           created_at: string
           current_lat: number | null
           current_lng: number | null
+          dispatch_deprioritized_until: string | null
           enrollment_notes: string | null
           enrollment_submitted_at: string | null
           fuel_type: Database["public"]["Enums"]["fuel_type"] | null
@@ -427,6 +461,7 @@ export type Database = {
           created_at?: string
           current_lat?: number | null
           current_lng?: number | null
+          dispatch_deprioritized_until?: string | null
           enrollment_notes?: string | null
           enrollment_submitted_at?: string | null
           fuel_type?: Database["public"]["Enums"]["fuel_type"] | null
@@ -469,6 +504,7 @@ export type Database = {
           created_at?: string
           current_lat?: number | null
           current_lng?: number | null
+          dispatch_deprioritized_until?: string | null
           enrollment_notes?: string | null
           enrollment_submitted_at?: string | null
           fuel_type?: Database["public"]["Enums"]["fuel_type"] | null
@@ -521,6 +557,71 @@ export type Database = {
           },
         ]
       }
+      driver_reward_transactions: {
+        Row: {
+          balance_after_pts: number
+          created_at: string
+          created_by: string | null
+          driver_id: string
+          id: string
+          notes: string | null
+          points: number
+          reference: string | null
+          ride_id: string | null
+          type: Database["public"]["Enums"]["driver_reward_tx_type"]
+        }
+        Insert: {
+          balance_after_pts: number
+          created_at?: string
+          created_by?: string | null
+          driver_id: string
+          id?: string
+          notes?: string | null
+          points: number
+          reference?: string | null
+          ride_id?: string | null
+          type: Database["public"]["Enums"]["driver_reward_tx_type"]
+        }
+        Update: {
+          balance_after_pts?: number
+          created_at?: string
+          created_by?: string | null
+          driver_id?: string
+          id?: string
+          notes?: string | null
+          points?: number
+          reference?: string | null
+          ride_id?: string | null
+          type?: Database["public"]["Enums"]["driver_reward_tx_type"]
+        }
+        Relationships: [
+          {
+            foreignKeyName: "driver_reward_transactions_ride_id_fkey"
+            columns: ["ride_id"]
+            isOneToOne: false
+            referencedRelation: "rides"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      driver_reward_wallets: {
+        Row: {
+          points_balance: number
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          points_balance?: number
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          points_balance?: number
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       driver_wallets: {
         Row: {
           balance_xof: number
@@ -538,6 +639,102 @@ export type Database = {
           user_id?: string
         }
         Relationships: []
+      }
+      driver_zones: {
+        Row: {
+          center_lat: number
+          center_lng: number
+          created_at: string
+          driver_id: string
+          id: string
+          is_active: boolean
+          radius_km: number
+          updated_at: string
+        }
+        Insert: {
+          center_lat: number
+          center_lng: number
+          created_at?: string
+          driver_id: string
+          id?: string
+          is_active?: boolean
+          radius_km?: number
+          updated_at?: string
+        }
+        Update: {
+          center_lat?: number
+          center_lng?: number
+          created_at?: string
+          driver_id?: string
+          id?: string
+          is_active?: boolean
+          radius_km?: number
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      dynamic_pricing_settings: {
+        Row: {
+          active: boolean
+          created_at: string
+          id: string
+          notes: string | null
+          program_id: string | null
+          rounding_increment_xof: number
+          traffic_coefficient: number
+          traffic_ratio_cap: number
+          updated_at: string
+          updated_by: string | null
+          weather_cloudy_multiplier: number
+          weather_rainy_multiplier: number
+          weather_sunny_multiplier: number
+        }
+        Insert: {
+          active?: boolean
+          created_at?: string
+          id?: string
+          notes?: string | null
+          program_id?: string | null
+          rounding_increment_xof?: number
+          traffic_coefficient?: number
+          traffic_ratio_cap?: number
+          updated_at?: string
+          updated_by?: string | null
+          weather_cloudy_multiplier?: number
+          weather_rainy_multiplier?: number
+          weather_sunny_multiplier?: number
+        }
+        Update: {
+          active?: boolean
+          created_at?: string
+          id?: string
+          notes?: string | null
+          program_id?: string | null
+          rounding_increment_xof?: number
+          traffic_coefficient?: number
+          traffic_ratio_cap?: number
+          updated_at?: string
+          updated_by?: string | null
+          weather_cloudy_multiplier?: number
+          weather_rainy_multiplier?: number
+          weather_sunny_multiplier?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "dynamic_pricing_settings_program_id_fkey"
+            columns: ["program_id"]
+            isOneToOne: false
+            referencedRelation: "country_market_config"
+            referencedColumns: ["program_id"]
+          },
+          {
+            foreignKeyName: "dynamic_pricing_settings_program_id_fkey"
+            columns: ["program_id"]
+            isOneToOne: false
+            referencedRelation: "market_programs"
+            referencedColumns: ["program_id"]
+          },
+        ]
       }
       fraud_logs: {
         Row: {
@@ -949,86 +1146,6 @@ export type Database = {
           },
         ]
       }
-      driver_zones: {
-        Row: {
-          center_lat: number
-          center_lng: number
-          created_at: string
-          driver_id: string
-          id: string
-          is_active: boolean
-          radius_km: number
-          updated_at: string
-        }
-        Insert: {
-          center_lat: number
-          center_lng: number
-          created_at?: string
-          driver_id: string
-          id?: string
-          is_active?: boolean
-          radius_km?: number
-          updated_at?: string
-        }
-        Update: {
-          center_lat?: number
-          center_lng?: number
-          created_at?: string
-          driver_id?: string
-          id?: string
-          is_active?: boolean
-          radius_km?: number
-          updated_at?: string
-        }
-        Relationships: []
-      }
-      ride_offers: {
-        Row: {
-          created_at: string
-          distance_km: number | null
-          driver_id: string
-          expires_at: string
-          id: string
-          offered_at: string
-          responded_at: string | null
-          ride_id: string
-          sequence_no: number
-          status: string
-        }
-        Insert: {
-          created_at?: string
-          distance_km?: number | null
-          driver_id: string
-          expires_at: string
-          id?: string
-          offered_at?: string
-          responded_at?: string | null
-          ride_id: string
-          sequence_no?: number
-          status?: string
-        }
-        Update: {
-          created_at?: string
-          distance_km?: number | null
-          driver_id?: string
-          expires_at?: string
-          id?: string
-          offered_at?: string
-          responded_at?: string | null
-          ride_id?: string
-          sequence_no?: number
-          status?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "ride_offers_ride_id_fkey"
-            columns: ["ride_id"]
-            isOneToOne: false
-            referencedRelation: "rides"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
       notification_prefs: {
         Row: {
           channel_system: boolean
@@ -1165,62 +1282,6 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "rides"
             referencedColumns: ["id"]
-          },
-        ]
-      }
-      dynamic_pricing_settings: {
-        Row: {
-          active: boolean
-          created_at: string
-          id: string
-          notes: string | null
-          program_id: string | null
-          rounding_increment_xof: number
-          traffic_coefficient: number
-          traffic_ratio_cap: number
-          updated_at: string
-          updated_by: string | null
-          weather_cloudy_multiplier: number
-          weather_rainy_multiplier: number
-          weather_sunny_multiplier: number
-        }
-        Insert: {
-          active?: boolean
-          created_at?: string
-          id?: string
-          notes?: string | null
-          program_id?: string | null
-          rounding_increment_xof?: number
-          traffic_coefficient?: number
-          traffic_ratio_cap?: number
-          updated_at?: string
-          updated_by?: string | null
-          weather_cloudy_multiplier?: number
-          weather_rainy_multiplier?: number
-          weather_sunny_multiplier?: number
-        }
-        Update: {
-          active?: boolean
-          created_at?: string
-          id?: string
-          notes?: string | null
-          program_id?: string | null
-          rounding_increment_xof?: number
-          traffic_coefficient?: number
-          traffic_ratio_cap?: number
-          updated_at?: string
-          updated_by?: string | null
-          weather_cloudy_multiplier?: number
-          weather_rainy_multiplier?: number
-          weather_sunny_multiplier?: number
-        }
-        Relationships: [
-          {
-            foreignKeyName: "dynamic_pricing_settings_program_id_fkey"
-            columns: ["program_id"]
-            isOneToOne: false
-            referencedRelation: "market_programs"
-            referencedColumns: ["program_id"]
           },
         ]
       }
@@ -1465,9 +1526,13 @@ export type Database = {
       }
       reward_settings: {
         Row: {
-          driver_offer_penalty_xof: number
+          driver_min_redeem_pts: number
+          driver_point_value_xof: number
           driver_referral_bonus_xof: number
           driver_referral_per_ride_xof: number
+          driver_referral_pts: number
+          driver_ride_accept_pts: number
+          driver_ride_completed_pts: number
           driver_share_bonus_xof: number
           driver_share_daily_cap: number
           id: boolean
@@ -1477,9 +1542,13 @@ export type Database = {
           updated_at: string
         }
         Insert: {
-          driver_offer_penalty_xof?: number
+          driver_min_redeem_pts?: number
+          driver_point_value_xof?: number
           driver_referral_bonus_xof?: number
           driver_referral_per_ride_xof?: number
+          driver_referral_pts?: number
+          driver_ride_accept_pts?: number
+          driver_ride_completed_pts?: number
           driver_share_bonus_xof?: number
           driver_share_daily_cap?: number
           id?: boolean
@@ -1489,9 +1558,13 @@ export type Database = {
           updated_at?: string
         }
         Update: {
-          driver_offer_penalty_xof?: number
+          driver_min_redeem_pts?: number
+          driver_point_value_xof?: number
           driver_referral_bonus_xof?: number
           driver_referral_per_ride_xof?: number
+          driver_referral_pts?: number
+          driver_ride_accept_pts?: number
+          driver_ride_completed_pts?: number
           driver_share_bonus_xof?: number
           driver_share_daily_cap?: number
           id?: boolean
@@ -1501,6 +1574,53 @@ export type Database = {
           updated_at?: string
         }
         Relationships: []
+      }
+      ride_offers: {
+        Row: {
+          created_at: string
+          distance_km: number | null
+          driver_id: string
+          expires_at: string
+          id: string
+          offered_at: string
+          responded_at: string | null
+          ride_id: string
+          sequence_no: number
+          status: string
+        }
+        Insert: {
+          created_at?: string
+          distance_km?: number | null
+          driver_id: string
+          expires_at: string
+          id?: string
+          offered_at?: string
+          responded_at?: string | null
+          ride_id: string
+          sequence_no?: number
+          status?: string
+        }
+        Update: {
+          created_at?: string
+          distance_km?: number | null
+          driver_id?: string
+          expires_at?: string
+          id?: string
+          offered_at?: string
+          responded_at?: string | null
+          ride_id?: string
+          sequence_no?: number
+          status?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ride_offers_ride_id_fkey"
+            columns: ["ride_id"]
+            isOneToOne: false
+            referencedRelation: "rides"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       ride_payouts: {
         Row: {
@@ -2198,225 +2318,6 @@ export type Database = {
       }
     }
     Functions: {
-      admin_country: { Args: { _uid: string }; Returns: string }
-      apply_passenger_wallet_tx: {
-        Args: {
-          _amount_pts: number
-          _notes?: string
-          _reference?: string
-          _ride_id?: string
-          _type: Database["public"]["Enums"]["passenger_wallet_tx_type"]
-          _user_id: string
-        }
-        Returns: number
-      }
-      apply_wallet_transaction: {
-        Args: {
-          _actor?: string
-          _amount_xof: number
-          _driver_id: string
-          _notes?: string
-          _reference?: string
-          _ride_id?: string
-          _type: Database["public"]["Enums"]["wallet_tx_type"]
-        }
-        Returns: number
-      }
-      claim_driver_share_reward: { Args: { _channel: string }; Returns: Json }
-      confirm_topup: {
-        Args: { _provider_ref?: string; _topup_id: string }
-        Returns: Json
-      }
-      country_slug: { Args: { _country: string }; Returns: string }
-      get_country_market_config: {
-        Args: { _country: string }
-        Returns: {
-          auth_email: boolean | null
-          auth_phone_otp: boolean | null
-          branding: Json | null
-          commission_default: number | null
-          commission_locked: boolean | null
-          country: string | null
-          created_at: string | null
-          currency: string | null
-          default_language: string | null
-          dispatch_mode: string | null
-          display_name: string | null
-          features: Json | null
-          governance_min_notice_days: number | null
-          is_active: boolean | null
-          notes: string | null
-          program_code: Database["public"]["Enums"]["market_program"] | null
-          program_id: string | null
-          stakeholder_org_id: string | null
-          supported_languages: string[] | null
-          updated_at: string | null
-          updated_by: string | null
-        }
-        SetofOptions: {
-          from: "*"
-          to: "country_market_config"
-          isOneToOne: true
-          isSetofReturn: false
-        }
-      }
-      get_default_market_program: {
-        Args: { _country: string }
-        Returns: {
-          auth_email: boolean
-          auth_phone_otp: boolean
-          branding: Json
-          commission_default: number
-          commission_locked: boolean
-          country: string
-          created_at: string
-          currency: string
-          default_language: string
-          dispatch_mode: string
-          display_name: string
-          features: Json
-          governance_min_notice_days: number
-          is_active: boolean
-          is_default: boolean
-          notes: string | null
-          program_code: Database["public"]["Enums"]["market_program"]
-          program_id: string
-          stakeholder_org_id: string | null
-          supported_languages: string[]
-          updated_at: string
-          updated_by: string | null
-        }
-        SetofOptions: {
-          from: "*"
-          to: "market_programs"
-          isOneToOne: true
-          isSetofReturn: false
-        }
-      }
-      get_market_program: {
-        Args: { _program_id: string }
-        Returns: {
-          auth_email: boolean
-          auth_phone_otp: boolean
-          branding: Json
-          commission_default: number
-          commission_locked: boolean
-          country: string
-          created_at: string
-          currency: string
-          default_language: string
-          dispatch_mode: string
-          display_name: string
-          features: Json
-          governance_min_notice_days: number
-          is_active: boolean
-          is_default: boolean
-          notes: string | null
-          program_code: Database["public"]["Enums"]["market_program"]
-          program_id: string
-          stakeholder_org_id: string | null
-          supported_languages: string[]
-          updated_at: string
-          updated_by: string | null
-        }
-        SetofOptions: {
-          from: "*"
-          to: "market_programs"
-          isOneToOne: true
-          isSetofReturn: false
-        }
-      }
-      get_or_create_referral_code: {
-        Args: { _user_id: string }
-        Returns: string
-      }
-      get_ride_driver_public: {
-        Args: { _ride_id: string }
-        Returns: {
-          avatar_url: string
-          full_name: string
-          phone: string
-          rating_avg: number
-          vehicle_color: string
-          vehicle_model: string
-          vehicle_plate: string
-        }[]
-      }
-      has_role: {
-        Args: {
-          _role: Database["public"]["Enums"]["app_role"]
-          _user_id: string
-        }
-        Returns: boolean
-      }
-      is_superadmin: { Args: { _uid: string }; Returns: boolean }
-      list_market_programs: {
-        Args: { _country: string }
-        Returns: {
-          auth_email: boolean
-          auth_phone_otp: boolean
-          branding: Json
-          commission_default: number
-          commission_locked: boolean
-          country: string
-          created_at: string
-          currency: string
-          default_language: string
-          dispatch_mode: string
-          display_name: string
-          features: Json
-          governance_min_notice_days: number
-          is_active: boolean
-          is_default: boolean
-          notes: string | null
-          program_code: Database["public"]["Enums"]["market_program"]
-          program_id: string
-          stakeholder_org_id: string | null
-          supported_languages: string[]
-          updated_at: string
-          updated_by: string | null
-        }[]
-        SetofOptions: {
-          from: "*"
-          to: "market_programs"
-          isOneToOne: false
-          isSetofReturn: true
-        }
-      }
-      set_default_market_program: {
-        Args: { _country: string; _program_id: string }
-        Returns: {
-          auth_email: boolean
-          auth_phone_otp: boolean
-          branding: Json
-          commission_default: number
-          commission_locked: boolean
-          country: string
-          created_at: string
-          currency: string
-          default_language: string
-          dispatch_mode: string
-          dispatch_offer_seconds: number
-          display_name: string
-          features: Json
-          governance_min_notice_days: number
-          is_active: boolean
-          is_default: boolean
-          notes: string | null
-          program_code: Database["public"]["Enums"]["market_program"]
-          program_id: string
-          stakeholder_org_id: string | null
-          supported_languages: string[]
-          updated_at: string
-          updated_by: string | null
-        }
-        SetofOptions: {
-          from: "*"
-          to: "market_programs"
-          isOneToOne: true
-          isSetofReturn: false
-        }
-      }
       accept_ride_offer: {
         Args: { _ride_id: string }
         Returns: {
@@ -2474,31 +2375,261 @@ export type Database = {
           isSetofReturn: false
         }
       }
-      decline_ride_offer: {
+      admin_apply_driver_penalty: {
+        Args: { _code: string; _driver_id: string; _ride_id?: string }
+        Returns: number
+      }
+      admin_country: { Args: { _uid: string }; Returns: string }
+      apply_driver_penalty: {
+        Args: {
+          _code: string
+          _driver_id: string
+          _reference?: string
+          _ride_id?: string
+        }
+        Returns: number
+      }
+      apply_driver_reward_tx: {
+        Args: {
+          _actor?: string
+          _driver_id: string
+          _notes?: string
+          _points: number
+          _reference?: string
+          _ride_id?: string
+          _type: Database["public"]["Enums"]["driver_reward_tx_type"]
+        }
+        Returns: number
+      }
+      apply_passenger_wallet_tx: {
+        Args: {
+          _amount_pts: number
+          _notes?: string
+          _reference?: string
+          _ride_id?: string
+          _type: Database["public"]["Enums"]["passenger_wallet_tx_type"]
+          _user_id: string
+        }
+        Returns: number
+      }
+      apply_wallet_transaction: {
+        Args: {
+          _actor?: string
+          _amount_xof: number
+          _driver_id: string
+          _notes?: string
+          _reference?: string
+          _ride_id?: string
+          _type: Database["public"]["Enums"]["wallet_tx_type"]
+        }
+        Returns: number
+      }
+      claim_driver_share_reward: { Args: { _channel: string }; Returns: Json }
+      confirm_topup: {
+        Args: { _provider_ref?: string; _topup_id: string }
+        Returns: Json
+      }
+      country_slug: { Args: { _country: string }; Returns: string }
+      decline_ride_offer: { Args: { _ride_id: string }; Returns: undefined }
+      dispatch_offer_next: { Args: { _ride_id: string }; Returns: string }
+      dispatch_rank_candidates: {
         Args: { _ride_id: string }
-        Returns: undefined
+        Returns: {
+          distance_km: number
+          driver_id: string
+        }[]
+      }
+      expire_ride_offers: { Args: never; Returns: undefined }
+      generate_insurance_alerts: { Args: never; Returns: undefined }
+      get_country_market_config: {
+        Args: { _country: string }
+        Returns: {
+          auth_email: boolean | null
+          auth_phone_otp: boolean | null
+          branding: Json | null
+          commission_default: number | null
+          commission_locked: boolean | null
+          country: string | null
+          created_at: string | null
+          currency: string | null
+          default_language: string | null
+          dispatch_mode: string | null
+          display_name: string | null
+          features: Json | null
+          governance_min_notice_days: number | null
+          is_active: boolean | null
+          notes: string | null
+          program_code: Database["public"]["Enums"]["market_program"] | null
+          program_id: string | null
+          stakeholder_org_id: string | null
+          supported_languages: string[] | null
+          updated_at: string | null
+          updated_by: string | null
+        }
+        SetofOptions: {
+          from: "*"
+          to: "country_market_config"
+          isOneToOne: true
+          isSetofReturn: false
+        }
+      }
+      get_default_market_program: {
+        Args: { _country: string }
+        Returns: {
+          auth_email: boolean
+          auth_phone_otp: boolean
+          branding: Json
+          commission_default: number
+          commission_locked: boolean
+          country: string
+          created_at: string
+          currency: string
+          default_language: string
+          dispatch_mode: string
+          dispatch_offer_seconds: number
+          display_name: string
+          features: Json
+          governance_min_notice_days: number
+          is_active: boolean
+          is_default: boolean
+          notes: string | null
+          program_code: Database["public"]["Enums"]["market_program"]
+          program_id: string
+          stakeholder_org_id: string | null
+          supported_languages: string[]
+          updated_at: string
+          updated_by: string | null
+        }
+        SetofOptions: {
+          from: "*"
+          to: "market_programs"
+          isOneToOne: true
+          isSetofReturn: false
+        }
+      }
+      get_market_program: {
+        Args: { _program_id: string }
+        Returns: {
+          auth_email: boolean
+          auth_phone_otp: boolean
+          branding: Json
+          commission_default: number
+          commission_locked: boolean
+          country: string
+          created_at: string
+          currency: string
+          default_language: string
+          dispatch_mode: string
+          dispatch_offer_seconds: number
+          display_name: string
+          features: Json
+          governance_min_notice_days: number
+          is_active: boolean
+          is_default: boolean
+          notes: string | null
+          program_code: Database["public"]["Enums"]["market_program"]
+          program_id: string
+          stakeholder_org_id: string | null
+          supported_languages: string[]
+          updated_at: string
+          updated_by: string | null
+        }
+        SetofOptions: {
+          from: "*"
+          to: "market_programs"
+          isOneToOne: true
+          isSetofReturn: false
+        }
+      }
+      get_or_create_referral_code: {
+        Args: { _user_id: string }
+        Returns: string
+      }
+      get_ride_driver_public: {
+        Args: { _ride_id: string }
+        Returns: {
+          avatar_url: string
+          full_name: string
+          phone: string
+          rating_avg: number
+          vehicle_color: string
+          vehicle_model: string
+          vehicle_plate: string
+        }[]
+      }
+      has_role: {
+        Args: {
+          _role: Database["public"]["Enums"]["app_role"]
+          _user_id: string
+        }
+        Returns: boolean
+      }
+      haversine_km: {
+        Args: { lat1: number; lat2: number; lng1: number; lng2: number }
+        Returns: number
+      }
+      is_superadmin: { Args: { _uid: string }; Returns: boolean }
+      list_insured_drivers: {
+        Args: never
+        Returns: {
+          city: string
+          country: string
+          days_remaining: number
+          full_name: string
+          insurance_document_url: string
+          insurance_expires_at: string
+          insurance_status: string
+          partner_type: string
+          phone: string
+          user_id: string
+          vehicle_type: string
+        }[]
+      }
+      list_market_programs: {
+        Args: { _country: string }
+        Returns: {
+          auth_email: boolean
+          auth_phone_otp: boolean
+          branding: Json
+          commission_default: number
+          commission_locked: boolean
+          country: string
+          created_at: string
+          currency: string
+          default_language: string
+          dispatch_mode: string
+          dispatch_offer_seconds: number
+          display_name: string
+          features: Json
+          governance_min_notice_days: number
+          is_active: boolean
+          is_default: boolean
+          notes: string | null
+          program_code: Database["public"]["Enums"]["market_program"]
+          program_id: string
+          stakeholder_org_id: string | null
+          supported_languages: string[]
+          updated_at: string
+          updated_by: string | null
+        }[]
+        SetofOptions: {
+          from: "*"
+          to: "market_programs"
+          isOneToOne: false
+          isSetofReturn: true
+        }
       }
       penalize_self_ignored_ride: {
         Args: { _ride_id: string }
         Returns: number
       }
-      dispatch_offer_next: {
-        Args: { _ride_id: string }
-        Returns: string
-      }
-      haversine_km: {
-        Args: { lat1: number; lng1: number; lat2: number; lng2: number }
-        Returns: number
-      }
-      expire_ride_offers: {
-        Args: Record<PropertyKey, never>
-        Returns: undefined
-      }
+      redeem_driver_points: { Args: { _points: number }; Returns: Json }
       redeem_points_for_ride: {
         Args: { _pts: number; _ride_id: string }
         Returns: Json
       }
       register_referral: { Args: { _code: string }; Returns: Json }
+      renew_my_insurance: { Args: { _expires_at: string }; Returns: undefined }
       resolve_commission: {
         Args: {
           _at: string
@@ -2523,9 +2654,7 @@ export type Database = {
         }[]
       }
       resolve_dynamic_pricing_settings: {
-        Args: {
-          _program_id: string | null
-        }
+        Args: { _program_id: string }
         Returns: {
           active: boolean
           created_at: string
@@ -2541,6 +2670,12 @@ export type Database = {
           weather_rainy_multiplier: number
           weather_sunny_multiplier: number
         }
+        SetofOptions: {
+          from: "*"
+          to: "dynamic_pricing_settings"
+          isOneToOne: true
+          isSetofReturn: false
+        }
       }
       resolve_program_commission: {
         Args: {
@@ -2554,32 +2689,42 @@ export type Database = {
           commission_type: Database["public"]["Enums"]["commission_kind"]
         }[]
       }
-      list_insured_drivers: {
-        Args: Record<PropertyKey, never>
+      set_default_market_program: {
+        Args: { _country: string; _program_id: string }
         Returns: {
-          user_id: string
-          full_name: string | null
-          phone: string | null
-          country: string | null
-          city: string | null
-          vehicle_type: string | null
-          partner_type: string | null
-          insurance_status: string
-          insurance_expires_at: string | null
-          insurance_document_url: string | null
-          days_remaining: number | null
-        }[]
+          auth_email: boolean
+          auth_phone_otp: boolean
+          branding: Json
+          commission_default: number
+          commission_locked: boolean
+          country: string
+          created_at: string
+          currency: string
+          default_language: string
+          dispatch_mode: string
+          dispatch_offer_seconds: number
+          display_name: string
+          features: Json
+          governance_min_notice_days: number
+          is_active: boolean
+          is_default: boolean
+          notes: string | null
+          program_code: Database["public"]["Enums"]["market_program"]
+          program_id: string
+          stakeholder_org_id: string | null
+          supported_languages: string[]
+          updated_at: string
+          updated_by: string | null
+        }
+        SetofOptions: {
+          from: "*"
+          to: "market_programs"
+          isOneToOne: true
+          isSetofReturn: false
+        }
       }
       verify_driver_insurance: {
         Args: { _driver_id: string }
-        Returns: undefined
-      }
-      renew_my_insurance: {
-        Args: { _expires_at: string }
-        Returns: undefined
-      }
-      generate_insurance_alerts: {
-        Args: Record<PropertyKey, never>
         Returns: undefined
       }
     }
@@ -2593,6 +2738,13 @@ export type Database = {
         | "stakeholder"
         | "insurer"
       commission_kind: "percent" | "flat"
+      driver_reward_tx_type:
+        | "ride_accepted"
+        | "ride_completed"
+        | "referral_bonus"
+        | "penalty"
+        | "redeemed"
+        | "admin_adjust"
       driver_status:
         | "pending"
         | "under_review"
@@ -2664,7 +2816,6 @@ export type Database = {
         | "refund"
         | "reward"
         | "referral"
-        | "penalty"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -2802,6 +2953,14 @@ export const Constants = {
         "insurer",
       ],
       commission_kind: ["percent", "flat"],
+      driver_reward_tx_type: [
+        "ride_accepted",
+        "ride_completed",
+        "referral_bonus",
+        "penalty",
+        "redeemed",
+        "admin_adjust",
+      ],
       driver_status: [
         "pending",
         "under_review",
@@ -2881,7 +3040,6 @@ export const Constants = {
         "refund",
         "reward",
         "referral",
-        "penalty",
       ],
     },
   },

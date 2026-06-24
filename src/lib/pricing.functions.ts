@@ -77,7 +77,9 @@ export const getEffectivePricingConfig = createServerFn({ method: "GET" })
     // Coefficients trafic/météo — résolus par programme, sinon défaut global.
     const { data: dyn, error: dynError } = await supabase.rpc(
       "resolve_dynamic_pricing_settings",
-      { _program_id: data.programId ?? null },
+      // Le paramètre SQL accepte NULL (fallback global) ; les types générés le
+      // déclarent comme `string` non-nullable par limitation du générateur.
+      { _program_id: data.programId ?? null } as { _program_id: string },
     );
 
     const dynamic: EffectiveDynamicCoefficients = dynError || !dyn
