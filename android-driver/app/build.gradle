@@ -1,10 +1,10 @@
 apply plugin: 'com.android.application'
 
 android {
-    namespace "com.tibus.ride"
+    namespace "com.tibus.ride.driver"
     compileSdk rootProject.ext.compileSdkVersion
     defaultConfig {
-        applicationId "com.tibus.ride"
+        applicationId "com.tibus.ride.driver"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode 1

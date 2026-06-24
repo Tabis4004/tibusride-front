@@ -1,4 +1,4 @@
-package com.tibus.ride;
+package com.tibus.ride.driver;
 
 import com.getcapacitor.BridgeActivity;
 

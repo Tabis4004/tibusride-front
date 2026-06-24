@@ -1,7 +1,7 @@
 <?xml version='1.0' encoding='utf-8'?>
 <resources>
-    <string name="app_name">Tibus Ride</string>
-    <string name="title_activity_main">Tibus Ride</string>
+    <string name="app_name">Tibus Ride Driver</string>
+    <string name="title_activity_main">Tibus Ride Driver</string>
     <string name="package_name">com.tibus.ride</string>
     <string name="custom_url_scheme">com.tibus.ride</string>
 </resources>

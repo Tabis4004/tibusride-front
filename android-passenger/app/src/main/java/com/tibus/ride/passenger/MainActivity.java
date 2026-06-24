@@ -1,4 +1,4 @@
-package com.getcapacitor.myapp;
+package com.tibus.ride.passenger;
 
 import com.getcapacitor.BridgeActivity;
 

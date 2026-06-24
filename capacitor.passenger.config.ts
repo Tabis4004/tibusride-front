@@ -5,15 +5,15 @@ const serverUrl = process.env.CAPACITOR_SERVER_URL ?? "https://tibusride-front.v
 
 const config: CapacitorConfig = {
   appId: "com.tibus.ride.passenger",
-  appName: "Eco Tibus",
+  appName: "Tibus Ride",
   webDir: "capacitor-shell",
-  androidDir: "android-passenger",
   server: {
     url: serverUrl,
     androidScheme: "https",
     cleartext: false,
   },
   android: {
+    path: "android-passenger",
     allowMixedContent: false,
   },
   plugins: {

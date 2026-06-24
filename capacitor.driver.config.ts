@@ -5,17 +5,19 @@ const serverUrl = process.env.CAPACITOR_SERVER_URL ?? "https://tibusride-front.v
 
 const config: CapacitorConfig = {
   appId: "com.tibus.ride.driver",
-  appName: "Eco Tibus Chauffeur",
+  appName: "Tibus Ride Driver",
   // Voir capacitor-shell/index.html : ne PAS utiliser "public" comme webDir
   // (conflit avec le publicDir Vite, voir incident résolu précédemment).
   webDir: "capacitor-shell",
-  androidDir: "android-driver",
   server: {
     url: serverUrl,
     androidScheme: "https",
     cleartext: false,
   },
   android: {
+    // "androidDir" n'existe pas dans le schéma Capacitor — la bonne clé pour
+    // personnaliser le dossier du projet natif est android.path.
+    path: "android-driver",
     allowMixedContent: false,
   },
   plugins: {
