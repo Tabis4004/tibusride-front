@@ -46,6 +46,7 @@
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
 
     <!-- Notifications (statut de course, chauffeur arrivé, etc. — Android 13+
-         requiert ce runtime permission). -->
+         requiert ce runtime permission). Utilisée par @capacitor/local-notifications
+         car le WebView Android n'implémente pas l'API Notification du navigateur. -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 </manifest>

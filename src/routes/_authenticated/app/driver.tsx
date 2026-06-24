@@ -11,6 +11,7 @@ import { Car, Clock, MapPin, Wallet } from "lucide-react";
 import { useServerFn } from "@tanstack/react-start";
 import { getMyWallet } from "@/lib/wallet.functions";
 import { getNotificationPrefs } from "@/lib/tracking.functions";
+import { getNotifyPermission, requestNotifyPermission, showLocalNotification } from "@/lib/notify";
 import {
   reportMyLocation,
   getMyZone,
@@ -103,12 +104,12 @@ function DriverPage() {
   const prefsQ = useQuery({ queryKey: ["notif-prefs", user?.id], enabled: !!user, queryFn: () => getPrefs() });
   const prefs = prefsQ.data;
 
-  // Ask browser notification permission once if system channel enabled
+  // Demande la permission de notification une seule fois si le canal système est activé.
   useEffect(() => {
-    if (prefs?.channel_system && prefs?.notify_new_ride
-        && typeof Notification !== "undefined" && Notification.permission === "default") {
-      Notification.requestPermission().catch(() => {});
-    }
+    if (!prefs?.channel_system || !prefs?.notify_new_ride) return;
+    getNotifyPermission().then((p) => {
+      if (p === "default") requestNotifyPermission().catch(() => {});
+    });
   }, [prefs?.channel_system, prefs?.notify_new_ride]);
   useEffect(() => {
     if (!myCountry || !driverQ.data?.is_online) return;
@@ -130,8 +131,11 @@ function DriverPage() {
           toast.success(title, { description: `${r.pickup_address ?? ""} → ${r.dropoff_address ?? ""}`.slice(0, 120), duration: 9000 });
         }
         try {
-          if (prefs.channel_system && typeof Notification !== "undefined" && Notification.permission === "granted") {
-            new Notification(isDelivery ? "Nouvelle livraison à proximité" : "Nouvelle course à proximité", { body: `${r.pickup_address ?? "Point de départ"} → ${r.dropoff_address ?? ""}`, tag: `ride-new-${r.id}`, icon: "/favicon.ico" });
+          if (prefs.channel_system) {
+            showLocalNotification(
+              isDelivery ? "Nouvelle livraison à proximité" : "Nouvelle course à proximité",
+              `${r.pickup_address ?? "Point de départ"} → ${r.dropoff_address ?? ""}`,
+            );
           }
           if (prefs.sound_enabled) {
             const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();

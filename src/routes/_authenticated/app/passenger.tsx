@@ -30,6 +30,7 @@ import { AddressAutocomplete } from "@/components/AddressAutocomplete";
 import { DeliveryPartnerAds } from "@/components/DeliveryPartnerAds";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { getNotificationPrefs } from "@/lib/tracking.functions";
+import { getNotifyPermission, requestNotifyPermission, showLocalNotification } from "@/lib/notify";
 import { getEffectivePricingConfig } from "@/lib/pricing.functions";
 import { getCurrentPosition } from "@/lib/native-geolocation";
 import { useNativeApp } from "@/hooks/use-native-app";
@@ -936,11 +937,11 @@ function CurrentRideBanner({ ride: initialRide, onCancel }: { ride: any; onCance
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Ask notification permission on mount
+  // Demande la permission de notification au montage.
   useEffect(() => {
-    if (typeof Notification !== "undefined" && Notification.permission === "default") {
-      Notification.requestPermission().catch(() => {});
-    }
+    getNotifyPermission().then((p) => {
+      if (p === "default") requestNotifyPermission().catch(() => {});
+    });
   }, []);
 
   // Helper: push notification + sound
@@ -950,9 +951,7 @@ function CurrentRideBanner({ ride: initialRide, onCancel }: { ride: any; onCance
       : prefs?.notify_driver_nearby;
     if (opt === false) return;
     toast.success(title, { description: body, duration: 7000 });
-    if (typeof Notification !== "undefined" && Notification.permission === "granted") {
-      try { new Notification(title, { body, tag: `ride-${ride.id}-${type}`, icon: "/favicon.ico" }); } catch {}
-    }
+    showLocalNotification(title, body);
     if (prefs?.sound_enabled !== false) {
       try {
         const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();

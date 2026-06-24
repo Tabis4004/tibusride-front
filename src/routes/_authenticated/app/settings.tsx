@@ -10,6 +10,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/use-auth";
 import { SERVICE_COUNTRIES } from "@/lib/countries";
 import { getNotificationPrefs, updateNotificationPrefs, updateMyCountry } from "@/lib/tracking.functions";
+import { getNotifyPermission, requestNotifyPermission, isNotifySupported, type NotifyPermission } from "@/lib/notify";
 import { Bell, BellOff, Globe } from "lucide-react";
 
 export const Route = createFileRoute("/_authenticated/app/settings")({
@@ -37,9 +38,11 @@ function SettingsPage() {
     },
   });
 
-  const [permission, setPermission] = useState<NotificationPermission>("default");
+  const [permission, setPermission] = useState<NotifyPermission>("default");
+  const [supported, setSupported] = useState(true);
   useEffect(() => {
-    if (typeof Notification !== "undefined") setPermission(Notification.permission);
+    setSupported(isNotifySupported());
+    getNotifyPermission().then(setPermission);
   }, []);
 
   const update = useMutation({
@@ -62,11 +65,11 @@ function SettingsPage() {
   });
 
   const requestPerm = async () => {
-    if (typeof Notification === "undefined") {
-      toast.error("Notifications non supportées par ce navigateur");
+    if (!isNotifySupported()) {
+      toast.error("Notifications non supportées sur cet appareil");
       return;
     }
-    const p = await Notification.requestPermission();
+    const p = await requestNotifyPermission();
     setPermission(p);
     if (p === "granted") toast.success("Notifications activées");
   };
@@ -112,16 +115,21 @@ function SettingsPage() {
           <div className="flex items-center gap-2">
             {permission === "granted" ? <Bell className="h-5 w-5 text-primary" /> : <BellOff className="h-5 w-5 text-muted-foreground" />}
             <div>
-              <h2 className="font-semibold">Notifications du navigateur</h2>
-              <p className="text-xs text-muted-foreground">État : {permission === "granted" ? "autorisé" : permission === "denied" ? "refusé" : "non demandé"}</p>
+              <h2 className="font-semibold">Notifications</h2>
+              <p className="text-xs text-muted-foreground">
+                État : {!supported ? "non disponible sur cette version de l'app" : permission === "granted" ? "autorisé" : permission === "denied" ? "refusé" : "non demandé"}
+              </p>
             </div>
           </div>
-          {permission !== "granted" && (
+          {supported && permission !== "granted" && (
             <Button size="sm" onClick={requestPerm} disabled={permission === "denied"}>Activer</Button>
           )}
         </div>
         {permission === "denied" && (
-          <p className="mt-3 text-xs text-destructive">Les notifications ont été refusées. Réactivez-les dans les paramètres de votre navigateur.</p>
+          <p className="mt-3 text-xs text-destructive">Les notifications ont été refusées. Réactivez-les dans les paramètres de votre appareil.</p>
+        )}
+        {!supported && (
+          <p className="mt-3 text-xs text-muted-foreground">Mettez à jour l'application vers la dernière version pour activer les notifications.</p>
         )}
       </section>
 
