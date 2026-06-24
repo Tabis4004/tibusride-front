@@ -107,6 +107,23 @@ async function getActor(context: any): Promise<{ id: string; email: string | nul
   return { id: context.userId, email: context.claims?.email ?? null };
 }
 
+// Comme assertAdmin, mais ouvert aussi au rôle "support" — utilisé par les
+// fonctions agent (ex. création de ticket pour un utilisateur) accessibles
+// depuis l'Inbox Support, qui n'exige pas le rôle admin complet.
+async function assertAgent(supabase: any, userId: string) {
+  const { data: isSuper, error: superErr } = await supabase.rpc("is_superadmin", { _uid: userId });
+  if (superErr) throw new Error(superErr.message);
+  if (isSuper) return;
+
+  const { data: isAdmin, error: adminErr } = await supabase.rpc("has_role", { _user_id: userId, _role: "admin" });
+  if (adminErr) throw new Error(adminErr.message);
+  if (isAdmin) return;
+
+  const { data: isSupport, error: supportErr } = await supabase.rpc("has_role", { _user_id: userId, _role: "support" });
+  if (supportErr) throw new Error(supportErr.message);
+  if (!isSupport) throw new Error("Forbidden: support or admin role required");
+}
+
 
 export const listUsers = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
@@ -1540,4 +1557,89 @@ export const listInvoicePayments = createServerFn({ method: "GET" })
       .order("paid_on", { ascending: false });
     if (error) throw new Error(error.message);
     return rows ?? [];
+  });
+
+// Recherche d'utilisateurs pour l'agent support — utilisée par le bouton
+// « Nouveau ticket » de l'Inbox Support, qui n'existait pas auparavant
+// (un agent n'avait aucun moyen d'ouvrir un ticket pour un appelant). Le
+// rôle "support" seul n'a pas accès à listUsers (réservé à admin/superadmin),
+// d'où cette variante allégée avec assertAgent.
+export const searchAgentUsers = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: unknown) => z.object({ query: z.string().trim().min(1).max(100) }).parse(d))
+  .handler(async ({ data, context }) => {
+    await assertAgent(context.supabase, context.userId);
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+
+    const { data: authData, error: authErr } = await supabaseAdmin.auth.admin.listUsers({ page: 1, perPage: 200 });
+    if (authErr) throw new Error(authErr.message);
+
+    const ids = authData.users.map((u) => u.id);
+    const { data: profiles } = await supabaseAdmin
+      .from("profiles").select("id, full_name, phone").in("id", ids);
+    const profileMap = new Map((profiles ?? []).map((p: any) => [p.id, p]));
+
+    const needle = data.query.toLowerCase();
+    return authData.users
+      .map((u) => ({
+        id: u.id,
+        email: u.email ?? null,
+        full_name: profileMap.get(u.id)?.full_name ?? null,
+        phone: profileMap.get(u.id)?.phone ?? null,
+      }))
+      .filter((u) =>
+        (u.email ?? "").toLowerCase().includes(needle) ||
+        (u.full_name ?? "").toLowerCase().includes(needle) ||
+        (u.phone ?? "").toLowerCase().includes(needle),
+      )
+      .slice(0, 20);
+  });
+
+// Création d'un ticket par un agent (support/admin/superadmin) pour le compte
+// d'un utilisateur — ex. appel téléphonique, signalement en personne. La
+// policy RLS d'INSERT sur support_tickets exige `created_by = auth.uid()`,
+// ce qui empêche un agent d'ouvrir un ticket pour un tiers : on passe donc
+// par supabaseAdmin (service role) ici.
+export const createTicketAsAgent = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: unknown) =>
+    z.object({
+      userId: z.string().uuid(),
+      subject: z.string().trim().min(3).max(200),
+      category: z.enum(["account", "payment", "ride", "driver", "passenger", "technical", "other"]),
+      priority: z.enum(["low", "normal", "high", "urgent"]).optional(),
+      body: z.string().trim().min(5).max(4000),
+    }).parse(d),
+  )
+  .handler(async ({ data, context }) => {
+    await assertAgent(context.supabase, context.userId);
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+
+    const { data: ticket, error } = await supabaseAdmin
+      .from("support_tickets")
+      .insert({
+        created_by: data.userId,
+        subject: data.subject,
+        category: data.category,
+        priority: data.priority ?? "normal",
+        status: "pending",
+      })
+      .select()
+      .single();
+    if (error) throw new Error(error.message);
+
+    const { error: msgErr } = await supabaseAdmin
+      .from("ticket_messages")
+      .insert({ ticket_id: ticket.id, author_id: context.userId, body: data.body });
+    if (msgErr) throw new Error(msgErr.message);
+
+    const { data: target } = await supabaseAdmin.auth.admin.getUserById(data.userId);
+    await logAudit(await getActor(context), {
+      action: "ticket.create_for_user",
+      target_type: "support_tickets",
+      target_id: ticket.id,
+      target_label: target?.user?.email ?? undefined,
+    });
+
+    return ticket;
   });

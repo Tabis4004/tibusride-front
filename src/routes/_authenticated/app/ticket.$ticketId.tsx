@@ -14,7 +14,13 @@ import {
 import { toast } from "sonner";
 import { ArrowLeft, Lock } from "lucide-react";
 
-export const Route = createFileRoute("/_authenticated/app/support/$ticketId")({
+// Anciennement "support.$ticketId.tsx" : sous ce nom, TanStack Router
+// l'imbriquait automatiquement comme route enfant de "support.tsx" (même
+// préfixe de fichier). Or support.tsx ne rend aucun <Outlet />, donc la
+// navigation vers un ticket réaffichait la page de liste/soumission au lieu
+// du détail du ticket. Renommé en route soeur (comme ride.$rideId.tsx vis-à-vis
+// de rides.tsx) pour casser cette imbrication involontaire.
+export const Route = createFileRoute("/_authenticated/app/ticket/$ticketId")({
   head: () => ({ meta: [{ title: "Ticket — Support" }] }),
   component: TicketView,
 });

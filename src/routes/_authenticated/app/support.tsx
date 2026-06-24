@@ -157,7 +157,7 @@ function SupportPage() {
         {(ticketsQ.data ?? []).map((t) => {
           const s = STATUS_LABEL[t.status] ?? STATUS_LABEL.open;
           return (
-            <Link key={t.id} to="/app/support/$ticketId" params={{ ticketId: t.id }}>
+            <Link key={t.id} to="/app/ticket/$ticketId" params={{ ticketId: t.id }}>
               <Card className="hover:border-primary transition-colors">
                 <CardContent className="py-4 flex items-start justify-between gap-3">
                   <div className="min-w-0">

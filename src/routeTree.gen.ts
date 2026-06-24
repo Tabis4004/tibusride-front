@@ -27,7 +27,7 @@ import { Route as AuthenticatedAppDriverRouteImport } from './routes/_authentica
 import { Route as AuthenticatedAppCompleteProfileRouteImport } from './routes/_authenticated/app/complete-profile'
 import { Route as AuthenticatedAppAdminRouteImport } from './routes/_authenticated/app/admin'
 import { Route as ApiPublicWebhooksTopupRouteImport } from './routes/api/public/webhooks/topup'
-import { Route as AuthenticatedAppSupportTicketIdRouteImport } from './routes/_authenticated/app/support.$ticketId'
+import { Route as AuthenticatedAppTicketTicketIdRouteImport } from './routes/_authenticated/app/ticket.$ticketId'
 import { Route as AuthenticatedAppRideRideIdRouteImport } from './routes/_authenticated/app/ride.$rideId'
 
 const SitemapDotxmlRoute = SitemapDotxmlRouteImport.update({
@@ -123,11 +123,11 @@ const ApiPublicWebhooksTopupRoute = ApiPublicWebhooksTopupRouteImport.update({
   path: '/api/public/webhooks/topup',
   getParentRoute: () => rootRouteImport,
 } as any)
-const AuthenticatedAppSupportTicketIdRoute =
-  AuthenticatedAppSupportTicketIdRouteImport.update({
-    id: '/$ticketId',
-    path: '/$ticketId',
-    getParentRoute: () => AuthenticatedAppSupportRoute,
+const AuthenticatedAppTicketTicketIdRoute =
+  AuthenticatedAppTicketTicketIdRouteImport.update({
+    id: '/ticket/$ticketId',
+    path: '/ticket/$ticketId',
+    getParentRoute: () => AuthenticatedAppRouteRoute,
   } as any)
 const AuthenticatedAppRideRideIdRoute =
   AuthenticatedAppRideRideIdRouteImport.update({
@@ -150,11 +150,11 @@ export interface FileRoutesByFullPath {
   '/app/rewards': typeof AuthenticatedAppRewardsRoute
   '/app/rides': typeof AuthenticatedAppRidesRoute
   '/app/settings': typeof AuthenticatedAppSettingsRoute
-  '/app/support': typeof AuthenticatedAppSupportRouteWithChildren
+  '/app/support': typeof AuthenticatedAppSupportRoute
   '/app/support-inbox': typeof AuthenticatedAppSupportInboxRoute
   '/app/': typeof AuthenticatedAppIndexRoute
   '/app/ride/$rideId': typeof AuthenticatedAppRideRideIdRoute
-  '/app/support/$ticketId': typeof AuthenticatedAppSupportTicketIdRoute
+  '/app/ticket/$ticketId': typeof AuthenticatedAppTicketTicketIdRoute
   '/api/public/webhooks/topup': typeof ApiPublicWebhooksTopupRoute
 }
 export interface FileRoutesByTo {
@@ -170,11 +170,11 @@ export interface FileRoutesByTo {
   '/app/rewards': typeof AuthenticatedAppRewardsRoute
   '/app/rides': typeof AuthenticatedAppRidesRoute
   '/app/settings': typeof AuthenticatedAppSettingsRoute
-  '/app/support': typeof AuthenticatedAppSupportRouteWithChildren
+  '/app/support': typeof AuthenticatedAppSupportRoute
   '/app/support-inbox': typeof AuthenticatedAppSupportInboxRoute
   '/app': typeof AuthenticatedAppIndexRoute
   '/app/ride/$rideId': typeof AuthenticatedAppRideRideIdRoute
-  '/app/support/$ticketId': typeof AuthenticatedAppSupportTicketIdRoute
+  '/app/ticket/$ticketId': typeof AuthenticatedAppTicketTicketIdRoute
   '/api/public/webhooks/topup': typeof ApiPublicWebhooksTopupRoute
 }
 export interface FileRoutesById {
@@ -193,11 +193,11 @@ export interface FileRoutesById {
   '/_authenticated/app/rewards': typeof AuthenticatedAppRewardsRoute
   '/_authenticated/app/rides': typeof AuthenticatedAppRidesRoute
   '/_authenticated/app/settings': typeof AuthenticatedAppSettingsRoute
-  '/_authenticated/app/support': typeof AuthenticatedAppSupportRouteWithChildren
+  '/_authenticated/app/support': typeof AuthenticatedAppSupportRoute
   '/_authenticated/app/support-inbox': typeof AuthenticatedAppSupportInboxRoute
   '/_authenticated/app/': typeof AuthenticatedAppIndexRoute
   '/_authenticated/app/ride/$rideId': typeof AuthenticatedAppRideRideIdRoute
-  '/_authenticated/app/support/$ticketId': typeof AuthenticatedAppSupportTicketIdRoute
+  '/_authenticated/app/ticket/$ticketId': typeof AuthenticatedAppTicketTicketIdRoute
   '/api/public/webhooks/topup': typeof ApiPublicWebhooksTopupRoute
 }
 export interface FileRouteTypes {
@@ -220,7 +220,7 @@ export interface FileRouteTypes {
     | '/app/support-inbox'
     | '/app/'
     | '/app/ride/$rideId'
-    | '/app/support/$ticketId'
+    | '/app/ticket/$ticketId'
     | '/api/public/webhooks/topup'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -240,7 +240,7 @@ export interface FileRouteTypes {
     | '/app/support-inbox'
     | '/app'
     | '/app/ride/$rideId'
-    | '/app/support/$ticketId'
+    | '/app/ticket/$ticketId'
     | '/api/public/webhooks/topup'
   id:
     | '__root__'
@@ -262,7 +262,7 @@ export interface FileRouteTypes {
     | '/_authenticated/app/support-inbox'
     | '/_authenticated/app/'
     | '/_authenticated/app/ride/$rideId'
-    | '/_authenticated/app/support/$ticketId'
+    | '/_authenticated/app/ticket/$ticketId'
     | '/api/public/webhooks/topup'
   fileRoutesById: FileRoutesById
 }
@@ -403,12 +403,12 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiPublicWebhooksTopupRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/_authenticated/app/support/$ticketId': {
-      id: '/_authenticated/app/support/$ticketId'
-      path: '/$ticketId'
-      fullPath: '/app/support/$ticketId'
-      preLoaderRoute: typeof AuthenticatedAppSupportTicketIdRouteImport
-      parentRoute: typeof AuthenticatedAppSupportRoute
+    '/_authenticated/app/ticket/$ticketId': {
+      id: '/_authenticated/app/ticket/$ticketId'
+      path: '/ticket/$ticketId'
+      fullPath: '/app/ticket/$ticketId'
+      preLoaderRoute: typeof AuthenticatedAppTicketTicketIdRouteImport
+      parentRoute: typeof AuthenticatedAppRouteRoute
     }
     '/_authenticated/app/ride/$rideId': {
       id: '/_authenticated/app/ride/$rideId'
@@ -420,20 +420,6 @@ declare module '@tanstack/react-router' {
   }
 }
 
-interface AuthenticatedAppSupportRouteChildren {
-  AuthenticatedAppSupportTicketIdRoute: typeof AuthenticatedAppSupportTicketIdRoute
-}
-
-const AuthenticatedAppSupportRouteChildren: AuthenticatedAppSupportRouteChildren =
-  {
-    AuthenticatedAppSupportTicketIdRoute: AuthenticatedAppSupportTicketIdRoute,
-  }
-
-const AuthenticatedAppSupportRouteWithChildren =
-  AuthenticatedAppSupportRoute._addFileChildren(
-    AuthenticatedAppSupportRouteChildren,
-  )
-
 interface AuthenticatedAppRouteRouteChildren {
   AuthenticatedAppAdminRoute: typeof AuthenticatedAppAdminRoute
   AuthenticatedAppCompleteProfileRoute: typeof AuthenticatedAppCompleteProfileRoute
@@ -443,10 +429,11 @@ interface AuthenticatedAppRouteRouteChildren {
   AuthenticatedAppRewardsRoute: typeof AuthenticatedAppRewardsRoute
   AuthenticatedAppRidesRoute: typeof AuthenticatedAppRidesRoute
   AuthenticatedAppSettingsRoute: typeof AuthenticatedAppSettingsRoute
-  AuthenticatedAppSupportRoute: typeof AuthenticatedAppSupportRouteWithChildren
+  AuthenticatedAppSupportRoute: typeof AuthenticatedAppSupportRoute
   AuthenticatedAppSupportInboxRoute: typeof AuthenticatedAppSupportInboxRoute
   AuthenticatedAppIndexRoute: typeof AuthenticatedAppIndexRoute
   AuthenticatedAppRideRideIdRoute: typeof AuthenticatedAppRideRideIdRoute
+  AuthenticatedAppTicketTicketIdRoute: typeof AuthenticatedAppTicketTicketIdRoute
 }
 
 const AuthenticatedAppRouteRouteChildren: AuthenticatedAppRouteRouteChildren = {
@@ -458,10 +445,11 @@ const AuthenticatedAppRouteRouteChildren: AuthenticatedAppRouteRouteChildren = {
   AuthenticatedAppRewardsRoute: AuthenticatedAppRewardsRoute,
   AuthenticatedAppRidesRoute: AuthenticatedAppRidesRoute,
   AuthenticatedAppSettingsRoute: AuthenticatedAppSettingsRoute,
-  AuthenticatedAppSupportRoute: AuthenticatedAppSupportRouteWithChildren,
+  AuthenticatedAppSupportRoute: AuthenticatedAppSupportRoute,
   AuthenticatedAppSupportInboxRoute: AuthenticatedAppSupportInboxRoute,
   AuthenticatedAppIndexRoute: AuthenticatedAppIndexRoute,
   AuthenticatedAppRideRideIdRoute: AuthenticatedAppRideRideIdRoute,
+  AuthenticatedAppTicketTicketIdRoute: AuthenticatedAppTicketTicketIdRoute,
 }
 
 const AuthenticatedAppRouteRouteWithChildren =
