@@ -1166,9 +1166,35 @@ export const commissionReport = createServerFn({ method: "POST" })
       driverMap = new Map((profs ?? []).map((p: any) => [p.id, p.full_name]));
     }
 
+    // Bonus par course = points reward (acceptation/complétion/parrainage) crédités
+    // au chauffeur pour cette course, convertis en XOF via reward_settings.
+    const rideIds = (rides ?? []).map((r: any) => r.id);
+    const bonusByRide = new Map<string, number>();
+    if (rideIds.length) {
+      const { data: settings } = await context.supabase
+        .from("reward_settings")
+        .select("driver_point_value_xof")
+        .eq("id", true)
+        .maybeSingle();
+      const pointValueXof = Number(settings?.driver_point_value_xof ?? 1);
+
+      const { data: rewardTx } = await context.supabase
+        .from("driver_reward_transactions")
+        .select("ride_id, points, type")
+        .in("ride_id", rideIds)
+        .in("type", ["ride_accepted", "ride_completed", "referral_bonus"]);
+
+      for (const tx of rewardTx ?? []) {
+        if (!tx.ride_id) continue;
+        const prev = bonusByRide.get(tx.ride_id) ?? 0;
+        bonusByRide.set(tx.ride_id, prev + Math.round((tx.points ?? 0) * pointValueXof));
+      }
+    }
+
     const rows = (rides ?? []).map((r: any) => ({
       ...r,
       driver_name: r.driver_id ? driverMap.get(r.driver_id) ?? null : null,
+      bonus_xof: bonusByRide.get(r.id) ?? 0,
     }));
 
     const totals = {
@@ -1176,14 +1202,16 @@ export const commissionReport = createServerFn({ method: "POST" })
       revenue_xof: rows.reduce((s, r) => s + (r.price_xof ?? 0), 0),
       commission_xof: rows.reduce((s, r) => s + (r.commission_xof ?? 0), 0),
       driver_earnings_xof: rows.reduce((s, r) => s + (r.driver_earnings_xof ?? 0), 0),
+      bonus_xof: rows.reduce((s, r) => s + (r.bonus_xof ?? 0), 0),
     };
     const byCategory: Record<string, any> = {};
     const byDriver: Record<string, any> = {};
     rows.forEach((r: any) => {
-      const c = (byCategory[r.category] ??= { category: r.category, rides: 0, revenue_xof: 0, commission_xof: 0 });
+      const c = (byCategory[r.category] ??= { category: r.category, rides: 0, revenue_xof: 0, commission_xof: 0, bonus_xof: 0 });
       c.rides++;
       c.revenue_xof += r.price_xof ?? 0;
       c.commission_xof += r.commission_xof ?? 0;
+      c.bonus_xof += r.bonus_xof ?? 0;
       if (r.driver_id) {
         const d = (byDriver[r.driver_id] ??= {
           driver_id: r.driver_id,
@@ -1192,11 +1220,13 @@ export const commissionReport = createServerFn({ method: "POST" })
           revenue_xof: 0,
           commission_xof: 0,
           earnings_xof: 0,
+          bonus_xof: 0,
         });
         d.rides++;
         d.revenue_xof += r.price_xof ?? 0;
         d.commission_xof += r.commission_xof ?? 0;
         d.earnings_xof += r.driver_earnings_xof ?? 0;
+        d.bonus_xof += r.bonus_xof ?? 0;
       }
     });
     return { rows, totals, byCategory: Object.values(byCategory), byDriver: Object.values(byDriver) };

@@ -16,6 +16,7 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Bar, BarChart, CartesianGrid, Legend, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { formatXof } from "@/lib/pricing";
 import { DELIVERY_VEHICLES, type DeliveryVehicle } from "@/lib/delivery-pricing";
 import { countriesMatch } from "@/lib/countries";
@@ -188,7 +189,7 @@ function AdminPage() {
     { key: "rides", title: "Courses", description: "Historique et détails par course", keywords: ["course","ride","trajet","historique"], icon: ScrollText, defaultPalette: 2, group: "Opérations", roles: ["superadmin","admin","support"] },
     { key: "pricing", title: "Tarifs & commissions", description: "Paliers, catégories et règles", keywords: ["tarif","prix","pricing","commission","paiement"], icon: Tag, defaultPalette: 3, group: "Finance", roles: ["superadmin","admin"] },
     { key: "market-programs", title: "Programmes de marché", description: "Activer/désactiver un programme par pays", keywords: ["programme","market","pays","eco tibus","désactiver","activer"], icon: Globe, defaultPalette: 12, group: "Finance", roles: ["superadmin"] },
-    { key: "commissions-report", title: "Rapport commissions", description: "Synthèse et exports", keywords: ["rapport","report","commission","export","paiement"], icon: BarChart3, defaultPalette: 4, group: "Finance", roles: ["superadmin","admin"] },
+    { key: "commissions-report", title: "Suivi financier KPI", description: "Revenus, commissions, bonus et historique", keywords: ["rapport","report","commission","export","paiement","kpi","finance","bonus","revenu"], icon: BarChart3, defaultPalette: 4, group: "Finance", roles: ["superadmin","admin"] },
     { key: "billing", title: "Facturation", description: "Comptes corporates et factures", keywords: ["facture","invoice","facturation","paiement","corporate"], icon: Receipt, defaultPalette: 5, group: "Finance", roles: ["superadmin","admin"], countKey: "unpaidInvoices", countLabel: "factures impayées" },
     { key: "wallets", title: "Wallets", description: "Soldes et ajustements chauffeurs", keywords: ["wallet","solde","paiement","chauffeur"], icon: Wallet, defaultPalette: 6, group: "Finance", roles: ["superadmin","admin"] },
     { key: "audit", title: "Journal d'audit", description: "Historique des actions admin", keywords: ["audit","journal","historique","log"], icon: FileText, defaultPalette: 7, group: "Sécurité", roles: ["superadmin","admin"], countKey: "auditToday", countLabel: "aujourd'hui" },
@@ -2810,6 +2811,39 @@ function WalletsTab() {
 }
 
 /* ----------------------- Commission report tab ----------------------- */
+
+type ReportGranularity = "day" | "week" | "month";
+
+function periodBucketKey(iso: string, granularity: ReportGranularity) {
+  const d = new Date(iso);
+  if (granularity === "month") {
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+  }
+  if (granularity === "week") {
+    // Lundi de la semaine ISO
+    const day = new Date(d);
+    const dow = (day.getDay() + 6) % 7; // 0 = lundi
+    day.setDate(day.getDate() - dow);
+    return day.toISOString().slice(0, 10);
+  }
+  return d.toISOString().slice(0, 10);
+}
+
+function buildPeriodSeries(rows: any[], granularity: ReportGranularity) {
+  const buckets = new Map<string, { period: string; ca_xof: number; commission_xof: number; bonus_xof: number; courses: number }>();
+  for (const r of rows) {
+    if (!r.completed_at) continue;
+    const key = periodBucketKey(r.completed_at, granularity);
+    const b = buckets.get(key) ?? { period: key, ca_xof: 0, commission_xof: 0, bonus_xof: 0, courses: 0 };
+    b.ca_xof += r.price_xof ?? 0;
+    b.commission_xof += r.commission_xof ?? 0;
+    b.bonus_xof += r.bonus_xof ?? 0;
+    b.courses += 1;
+    buckets.set(key, b);
+  }
+  return Array.from(buckets.values()).sort((a, b) => (a.period < b.period ? -1 : 1));
+}
+
 function CommissionReportTab() {
   const reportFn = useServerFn(commissionReport);
   const today = new Date();
@@ -2820,6 +2854,8 @@ function CommissionReportTab() {
   const [driverId, setDriverId] = useState("");
   const [result, setResult] = useState<any>(null);
   const [loading, setLoading] = useState(false);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [granularity, setGranularity] = useState<ReportGranularity>("day");
 
   const run = async () => {
     setLoading(true);
@@ -2840,21 +2876,24 @@ function CommissionReportTab() {
     }
   };
 
-  const exportRows = () => {
-    if (!result) return;
-    const rows = result.rows.map((r: any) => ({
+  const buildDetailRows = (rows: any[]) =>
+    rows.map((r: any) => ({
       date: r.completed_at,
       categorie: CATEGORY_LABEL[r.category] ?? r.category,
       chauffeur: r.driver_name ?? r.driver_id ?? "",
       ville: r.city,
       depart: r.pickup_address,
       arrivee: r.dropoff_address,
-      prix_xof: r.price_xof ?? 0,
+      montant_xof: r.price_xof ?? 0,
       taux_commission: r.commission_rate ?? "",
       commission_xof: r.commission_xof ?? 0,
+      bonus_xof: r.bonus_xof ?? 0,
       part_chauffeur_xof: r.driver_earnings_xof ?? 0,
     }));
-    downloadCsv(`commissions-${from}_${to}.csv`, rows);
+
+  const exportRows = () => {
+    if (!result) return;
+    downloadCsv(`commissions-${from}_${to}.csv`, buildDetailRows(result.rows));
   };
 
   const exportSummary = () => {
@@ -2865,6 +2904,7 @@ function CommissionReportTab() {
       courses: c.rides,
       ca_xof: c.revenue_xof,
       commission_xof: c.commission_xof,
+      bonus_xof: c.bonus_xof ?? 0,
     }));
     const byDrv = result.byDriver.map((d: any) => ({
       type: "chauffeur",
@@ -2872,15 +2912,41 @@ function CommissionReportTab() {
       courses: d.rides,
       ca_xof: d.revenue_xof,
       commission_xof: d.commission_xof,
+      bonus_xof: d.bonus_xof ?? 0,
     }));
     downloadCsv(`commissions-synthese-${from}_${to}.csv`, [...byCat, ...byDrv]);
   };
 
+  const downloadFullHistory = async () => {
+    setHistoryLoading(true);
+    try {
+      const r = await reportFn({
+        data: {
+          from: new Date("2000-01-01T00:00:00").toISOString(),
+          to: new Date().toISOString(),
+          category: null,
+          driver_id: null,
+        } as any,
+      });
+      if (!r.rows.length) {
+        toast.info("Aucune course terminée trouvée");
+        return;
+      }
+      downloadCsv(`historique-complet-${new Date().toISOString().slice(0, 10)}.csv`, buildDetailRows(r.rows));
+    } catch (e: any) {
+      toast.error(e?.message ?? "Erreur");
+    } finally {
+      setHistoryLoading(false);
+    }
+  };
+
+  const series = result ? buildPeriodSeries(result.rows, granularity) : [];
+
   return (
     <div className="space-y-4">
       <div className="rounded-2xl border border-border bg-card p-4 text-sm text-muted-foreground">
-        Génère un rapport des commissions plateforme pour la comptabilité.
-        Filtrez par période, catégorie et chauffeur, puis exportez en CSV.
+        Suivi financier KPI de la plateforme : revenus par période avec graphique, détail de chaque
+        course (montant, commission, bonus) et historique complet téléchargeable.
       </div>
       <div className="grid gap-3 rounded-2xl border border-border bg-card p-4 md:grid-cols-5">
         <div>
@@ -2914,16 +2980,80 @@ function CommissionReportTab() {
 
       {result && (
         <>
-          <div className="grid gap-4 sm:grid-cols-4">
+          <div className="grid gap-4 sm:grid-cols-5">
             <Metric label="Courses" value={String(result.totals.rides)} />
             <Metric label="Chiffre d'affaires" value={formatXof(result.totals.revenue_xof)} />
             <Metric label="Commission plateforme" value={formatXof(result.totals.commission_xof)} highlight />
+            <Metric label="Bonus chauffeurs" value={formatXof(result.totals.bonus_xof ?? 0)} />
             <Metric label="Part chauffeurs" value={formatXof(result.totals.driver_earnings_xof)} />
           </div>
 
-          <div className="flex gap-2">
+          <div className="rounded-2xl border border-border bg-card p-4">
+            <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+              <div className="text-xs font-medium uppercase text-muted-foreground">Revenus par période</div>
+              <div className="flex gap-1">
+                {(["day", "week", "month"] as ReportGranularity[]).map((g) => (
+                  <Button
+                    key={g}
+                    size="sm"
+                    variant={granularity === g ? "default" : "outline"}
+                    onClick={() => setGranularity(g)}
+                  >
+                    {g === "day" ? "Jour" : g === "week" ? "Semaine" : "Mois"}
+                  </Button>
+                ))}
+              </div>
+            </div>
+            <div className="h-72 w-full">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={series}>
+                  <CartesianGrid strokeDasharray="3 3" className="opacity-20" />
+                  <XAxis dataKey="period" tick={{ fontSize: 11 }} />
+                  <YAxis tick={{ fontSize: 11 }} />
+                  <Tooltip formatter={(v: number) => formatXof(v)} />
+                  <Legend />
+                  <Bar dataKey="ca_xof" name="Chiffre d'affaires" fill="var(--chart-1, var(--primary))" radius={[4, 4, 0, 0]} />
+                  <Bar dataKey="commission_xof" name="Commission" fill="var(--chart-2, var(--accent))" radius={[4, 4, 0, 0]} />
+                  <Bar dataKey="bonus_xof" name="Bonus" fill="var(--chart-3, var(--warning))" radius={[4, 4, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap gap-2">
             <Button variant="outline" onClick={exportRows}><Download className="h-4 w-4 mr-2" />Détail (CSV)</Button>
             <Button variant="outline" onClick={exportSummary}><Download className="h-4 w-4 mr-2" />Synthèse (CSV)</Button>
+            <Button variant="outline" onClick={downloadFullHistory} disabled={historyLoading}>
+              <Download className="h-4 w-4 mr-2" />{historyLoading ? "Préparation…" : "Historique complet (CSV)"}
+            </Button>
+          </div>
+
+          <div className="rounded-2xl border border-border bg-card overflow-hidden">
+            <div className="bg-muted/40 px-4 py-2 text-xs font-medium uppercase">Détail des courses (montant, commission, bonus)</div>
+            <div className="max-h-96 overflow-y-auto">
+              <table className="w-full text-sm">
+                <thead className="text-xs text-muted-foreground"><tr>
+                  <th className="px-3 py-2 text-left">Date</th>
+                  <th className="px-3 py-2 text-left">Catégorie</th>
+                  <th className="px-3 py-2 text-left">Chauffeur</th>
+                  <th className="px-3 py-2 text-right">Montant</th>
+                  <th className="px-3 py-2 text-right">Commission</th>
+                  <th className="px-3 py-2 text-right">Bonus</th>
+                </tr></thead>
+                <tbody>
+                  {result.rows.map((r: any) => (
+                    <tr key={r.id} className="border-t border-border">
+                      <td className="px-3 py-2 whitespace-nowrap">{r.completed_at ? new Date(r.completed_at).toLocaleString("fr-FR") : "—"}</td>
+                      <td className="px-3 py-2">{CATEGORY_LABEL[r.category] ?? r.category}</td>
+                      <td className="px-3 py-2">{r.driver_name ?? r.driver_id?.slice(0, 8) ?? "—"}</td>
+                      <td className="px-3 py-2 text-right">{formatXof(r.price_xof ?? 0)}</td>
+                      <td className="px-3 py-2 text-right text-primary">{formatXof(r.commission_xof ?? 0)}</td>
+                      <td className="px-3 py-2 text-right text-warning">{formatXof(r.bonus_xof ?? 0)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </div>
 
           <div className="grid gap-4 lg:grid-cols-2">
@@ -2935,6 +3065,7 @@ function CommissionReportTab() {
                   <th className="px-3 py-2 text-right">Courses</th>
                   <th className="px-3 py-2 text-right">CA</th>
                   <th className="px-3 py-2 text-right">Commission</th>
+                  <th className="px-3 py-2 text-right">Bonus</th>
                 </tr></thead>
                 <tbody>
                   {result.byCategory.map((c: any) => (
@@ -2943,6 +3074,7 @@ function CommissionReportTab() {
                       <td className="px-3 py-2 text-right">{c.rides}</td>
                       <td className="px-3 py-2 text-right">{formatXof(c.revenue_xof)}</td>
                       <td className="px-3 py-2 text-right font-medium text-primary">{formatXof(c.commission_xof)}</td>
+                      <td className="px-3 py-2 text-right text-warning">{formatXof(c.bonus_xof ?? 0)}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -2957,6 +3089,7 @@ function CommissionReportTab() {
                     <th className="px-3 py-2 text-right">Courses</th>
                     <th className="px-3 py-2 text-right">CA</th>
                     <th className="px-3 py-2 text-right">Commission</th>
+                    <th className="px-3 py-2 text-right">Bonus</th>
                   </tr></thead>
                   <tbody>
                     {result.byDriver.map((d: any) => (
@@ -2965,6 +3098,7 @@ function CommissionReportTab() {
                         <td className="px-3 py-2 text-right">{d.rides}</td>
                         <td className="px-3 py-2 text-right">{formatXof(d.revenue_xof)}</td>
                         <td className="px-3 py-2 text-right font-medium text-primary">{formatXof(d.commission_xof)}</td>
+                        <td className="px-3 py-2 text-right text-warning">{formatXof(d.bonus_xof ?? 0)}</td>
                       </tr>
                     ))}
                   </tbody>
