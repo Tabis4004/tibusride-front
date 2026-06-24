@@ -20,6 +20,11 @@ const config: CapacitorConfig = {
     path: "android-driver",
     allowMixedContent: false,
   },
+  ios: {
+    // Suivi GPS en arrière-plan : nécessitera NSLocationAlwaysAndWhenInUseUsageDescription
+    // + le mode "Background Modes > Location updates" dans Xcode (Signing & Capabilities).
+    path: "ios-driver",
+  },
   plugins: {
     SplashScreen: {
       launchShowDuration: 1800,

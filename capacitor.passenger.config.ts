@@ -16,6 +16,9 @@ const config: CapacitorConfig = {
     path: "android-passenger",
     allowMixedContent: false,
   },
+  ios: {
+    path: "ios-passenger",
+  },
   plugins: {
     SplashScreen: {
       launchShowDuration: 1800,

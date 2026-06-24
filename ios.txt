@@ -1,0 +1,45 @@
+INSTALLATION iOS — à exécuter sur ton Mac (Xcode requis)
+==========================================================
+
+Pré-requis (une seule fois) :
+  - Xcode installé (App Store), + Command Line Tools : xcode-select --install
+  - CocoaPods : sudo gem install cocoapods
+  - Un compte Apple Developer (gratuit pour tester sur ton propre iPhone via câble ;
+    payant ~99 USD/an seulement si tu veux distribuer via TestFlight/App Store)
+
+Étape 1 — installer les dépendances (une seule fois, ou après chaque git pull) :
+  cd ~/Documents/tibusride-front
+  npm install
+
+Étape 2 — créer les projets iOS (une seule fois, génère ios-driver/ et ios-passenger/) :
+  npm run cap:ios:add:driver
+  npm run cap:ios:add:passenger
+
+Étape 3 — App Chauffeur (iPhone) :
+  npm run cap:ios:sync:driver
+  npm run cap:ios:open:driver
+  → Xcode s'ouvre sur ios-driver/App.xcworkspace
+  → Dans Xcode : sélectionner ton iPhone branché (ou un simulateur) comme cible,
+    onglet "Signing & Capabilities" → choisir ton compte Apple (Team), puis Cmd+R pour lancer.
+  → Pour le suivi GPS en continu : dans "Signing & Capabilities", ajouter la capability
+    "Background Modes" et cocher "Location updates". Vérifier aussi dans Info.plist la
+    présence de NSLocationAlwaysAndWhenInUseUsageDescription (texte affiché à l'utilisateur).
+
+Étape 4 — App Passager (iPhone) :
+  npm run cap:ios:sync:passenger
+  npm run cap:ios:open:passenger
+  → Même principe dans Xcode (App.xcworkspace dans ios-passenger/).
+
+Étape 5 — distribuer sans passer par l'App Store (le plus simple pour test interne) :
+  Xcode → Product > Archive → Distribute App > Ad Hoc (ou "TestFlight" pour un cercle de
+  testeurs plus large sans câble). Ad Hoc génère un .ipa installable via câble/AltStore/
+  Apple Configurator, limité aux appareils enregistrés dans ton compte développeur.
+
+Notes :
+  - "npx cap add ios" doit être lancé sur macOS avec Xcode (ce n'est pas faisable dans
+    le bac à sable Linux utilisé par Claude — exactement comme ./gradlew pour l'APK Android,
+    voir apk.txt).
+  - Après toute modification du code web (capacitor-shell), relancer l'étape "sync" avant
+    de rebuilder dans Xcode.
+
+git push origin main
