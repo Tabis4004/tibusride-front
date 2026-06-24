@@ -932,7 +932,7 @@ function UsersTab() {
   });
 
   const role = useMutation({
-    mutationFn: (v: { userId: string; role: "superadmin" | "admin" | "driver" | "passenger" | "support"; grant: boolean }) => roleFn({ data: v }),
+    mutationFn: (v: { userId: string; role: "superadmin" | "admin" | "driver" | "passenger" | "support" | "insurer"; grant: boolean }) => roleFn({ data: v }),
     onSuccess: () => {
       toast.success("Rôle mis à jour");
       qc.invalidateQueries({ queryKey: ["admin-users"] });
@@ -1028,6 +1028,7 @@ function UsersTab() {
               <SelectItem value="support">Support</SelectItem>
               <SelectItem value="driver">Chauffeur</SelectItem>
               <SelectItem value="passenger">Passager</SelectItem>
+              <SelectItem value="insurer">Assureur</SelectItem>
             </SelectContent>
           </Select>
         </div>
@@ -1086,6 +1087,7 @@ function UsersTab() {
                 const hasSupport = u.roles.includes("support");
                 const hasDriver = u.roles.includes("driver");
                 const hasPassenger = u.roles.includes("passenger");
+                const hasInsurer = u.roles.includes("insurer");
                 return (
                   <tr key={u.id} className="border-t border-border align-top">
                     <td className="px-4 py-3">
@@ -1153,6 +1155,10 @@ function UsersTab() {
                         {!isSuperadmin && (hasPassenger
                           ? <Button size="sm" variant="outline" onClick={() => role.mutate({ userId: u.id, role: "passenger", grant: false })}>Retirer passager</Button>
                           : <Button size="sm" variant="outline" onClick={() => role.mutate({ userId: u.id, role: "passenger", grant: true })}>Ajouter passager</Button>
+                        )}
+                        {!isSuperadmin && !isSelf && (hasInsurer
+                          ? <Button size="sm" variant="outline" onClick={() => role.mutate({ userId: u.id, role: "insurer", grant: false })}>Retirer assureur</Button>
+                          : <Button size="sm" variant="outline" onClick={() => role.mutate({ userId: u.id, role: "insurer", grant: true })}>Promouvoir assureur</Button>
                         )}
                         {!isSelf && (isBanned
                           ? <Button size="sm" onClick={() => ban.mutate({ userId: u.id, banned: false })}><Unlock className="h-3.5 w-3.5 mr-1" />Déverrouiller</Button>
