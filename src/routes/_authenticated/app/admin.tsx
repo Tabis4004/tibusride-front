@@ -753,16 +753,31 @@ function DriverManageDialog({ driver, onClose }: { driver: any; onClose: () => v
             )}
             <div className="mt-3 flex justify-end">
               <Button
-                onClick={() => {
+                onClick={async () => {
                   if (reasonRequired && !reason.trim()) {
                     toast.error("Un motif est requis.");
                     return;
                   }
+                  // Le contrôle physique/catégorie/notes cochés ci-dessus ne sont
+                  // que des brouillons locaux tant que "Enregistrer contrôle &
+                  // catégorie" n'a pas été cliqué séparément — le serveur valide
+                  // l'approbation sur les valeurs déjà persistées, pas sur ces
+                  // brouillons. On les enregistre donc automatiquement avant
+                  // d'appliquer un statut "approved", pour éviter une erreur
+                  // déroutante alors que la case est visiblement cochée à l'écran.
+                  if (nextStatus === "approved") {
+                    try {
+                      await saveEnrollment.mutateAsync();
+                    } catch (e) {
+                      toast.error((e as Error).message);
+                      return;
+                    }
+                  }
                   status.mutate({ status: nextStatus, reason: reasonRequired ? reason.trim() : undefined });
                 }}
-                disabled={status.isPending}
+                disabled={status.isPending || saveEnrollment.isPending}
               >
-                {status.isPending ? "Mise à jour…" : "Appliquer le statut"}
+                {status.isPending || saveEnrollment.isPending ? "Mise à jour…" : "Appliquer le statut"}
               </Button>
             </div>
           </div>
