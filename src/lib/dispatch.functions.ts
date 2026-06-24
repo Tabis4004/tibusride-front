@@ -1,6 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
+import { resolveServiceCity, countryForCity, countryForCoords } from "@/lib/pricing";
 
 /**
  * Couche serveur du moteur de dispatch (push-offer).
@@ -12,7 +13,19 @@ import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
  * dupliquer la logique métier.
  */
 
-/** Conducteur/livreur : signale sa position courante (tant qu'il est en ligne). */
+/**
+ * Conducteur/livreur : signale sa position courante (tant qu'il est en ligne).
+ *
+ * Auto-correction ville/pays : `driver_profiles.city` et `profiles.country`
+ * étaient figés depuis l'enrôlement et ne reflétaient plus la position réelle
+ * d'un chauffeur ayant changé de zone (ex. enrôlé à Dakar mais opérant
+ * désormais à Abidjan) — résultat : le filtre pays+ville de "Courses
+ * disponibles" ne matchait plus jamais aucune course. On recalcule donc ces
+ * deux champs à chaque report de position via `resolveServiceCity` (qui a une
+ * hystérésis : ne change de ville que si le GPS sort largement du rayon de la
+ * ville enregistrée, pour éviter le flapping près d'une frontière de zone) et
+ * on ne réécrit en base que si la valeur a réellement changé.
+ */
 export const reportMyLocation = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d) =>
@@ -23,11 +36,34 @@ export const reportMyLocation = createServerFn({ method: "POST" })
   )
   .handler(async ({ data, context }) => {
     const { supabase, userId } = context;
-    const { error } = await supabase
-      .from("driver_profiles")
-      .update({ current_lat: data.lat, current_lng: data.lng, updated_at: new Date().toISOString() })
-      .eq("user_id", userId);
+
+    const [{ data: dp }, { data: profile }] = await Promise.all([
+      supabase.from("driver_profiles").select("city").eq("user_id", userId).maybeSingle(),
+      supabase.from("profiles").select("country").eq("id", userId).maybeSingle(),
+    ]);
+
+    const gps = { lat: data.lat, lng: data.lng };
+    const resolvedCity = resolveServiceCity({ profileCity: dp?.city, profileCountry: profile?.country, gps });
+    const resolvedCountry = countryForCity(resolvedCity) ?? countryForCoords(gps);
+
+    const driverPatch: { current_lat: number; current_lng: number; updated_at: string; city?: string } = {
+      current_lat: data.lat,
+      current_lng: data.lng,
+      updated_at: new Date().toISOString(),
+    };
+    if (resolvedCity && resolvedCity !== dp?.city) driverPatch.city = resolvedCity;
+
+    const { error } = await supabase.from("driver_profiles").update(driverPatch).eq("user_id", userId);
     if (error) throw error;
+
+    if (resolvedCountry && resolvedCountry !== profile?.country) {
+      const { error: profileError } = await supabase
+        .from("profiles")
+        .update({ country: resolvedCountry })
+        .eq("id", userId);
+      if (profileError) throw profileError;
+    }
+
     return { ok: true as const };
   });
 
