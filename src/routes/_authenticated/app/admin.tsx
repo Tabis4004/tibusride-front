@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { supabase } from "@/integrations/supabase/client";
@@ -3168,6 +3168,14 @@ function CommissionReportTab() {
 
   const series = result ? buildPeriodSeries(result.rows, granularity) : [];
 
+  // Charge automatiquement le rapport du mois en cours à l'ouverture de
+  // l'onglet, pour ne pas obliger l'admin à cliquer "Générer" avant de voir
+  // les blocs (graphique, détail, totaux).
+  useEffect(() => {
+    run();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   return (
     <div className="space-y-4">
       <div className="rounded-2xl border border-border bg-card p-4 text-sm text-muted-foreground">
@@ -3203,6 +3211,16 @@ function CommissionReportTab() {
           <Button onClick={run} disabled={loading} className="w-full">{loading ? "Calcul…" : "Générer"}</Button>
         </div>
       </div>
+
+      {loading && !result && (
+        <p className="text-sm text-muted-foreground">Chargement du rapport…</p>
+      )}
+
+      {result && result.rows.length === 0 && (
+        <div className="rounded-2xl border border-border bg-card p-4 text-sm text-muted-foreground">
+          Aucune course terminée sur cette période. Élargissez la plage de dates ou retirez le filtre catégorie/chauffeur.
+        </div>
+      )}
 
       {result && (
         <>
