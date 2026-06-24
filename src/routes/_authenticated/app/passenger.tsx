@@ -402,8 +402,8 @@ function PassengerPage() {
   }
 
   return (
-    <div className={cn("grid gap-6", isNative ? "gap-4" : "lg:grid-cols-[1fr_340px]")}>
-      <div className="space-y-4">
+    <div className={cn("grid min-w-0 gap-6", isNative ? "gap-4" : "lg:grid-cols-[minmax(0,1fr)_340px]")}>
+      <div className="min-w-0 space-y-4">
         {/* En-tête type Yango */}
         <section className="rounded-3xl border border-border bg-card p-4 sm:p-5">
           <div className="flex items-start justify-between gap-3">
@@ -732,46 +732,46 @@ function PassengerPage() {
       </div>
 
       {!isNative && (
-      <aside className="space-y-4 lg:sticky lg:top-4 lg:self-start">
+      <aside className="min-w-0 space-y-4 lg:sticky lg:top-4 lg:self-start">
         <div className="rounded-3xl border border-border bg-card p-6">
           <h3 className="font-display text-lg font-semibold">{serviceMode === "delivery" ? "Tarif livraison" : "Tarif dynamique"}</h3>
           <p className="text-xs text-muted-foreground">Distance, trafic, durée et météo{serviceMode === "delivery" ? " + colis et options" : ""}.</p>
           <dl className="mt-4 space-y-2 text-sm">
             {serviceMode === "ride" ? (
-              <div className="flex justify-between"><dt className="text-muted-foreground">Véhicule</dt><dd>{CATEGORIES[category].label}</dd></div>
+              <div className="flex justify-between gap-2"><dt className="shrink-0 text-muted-foreground">Véhicule</dt><dd className="truncate text-right">{CATEGORIES[category].label}</dd></div>
             ) : deliveryBreakdown && (
               <>
-                <div className="flex justify-between"><dt className="text-muted-foreground">Livreur</dt><dd>{DELIVERY_VEHICLES[deliveryVehicle].label}</dd></div>
-                <div className="flex justify-between"><dt className="text-muted-foreground">Colis</dt><dd>{deliveryBreakdown.factors.packageLabel}</dd></div>
+                <div className="flex justify-between gap-2"><dt className="shrink-0 text-muted-foreground">Livreur</dt><dd className="truncate text-right">{DELIVERY_VEHICLES[deliveryVehicle].label}</dd></div>
+                <div className="flex justify-between gap-2"><dt className="shrink-0 text-muted-foreground">Colis</dt><dd className="truncate text-right">{deliveryBreakdown.factors.packageLabel}</dd></div>
               </>
             )}
-            <div className="flex justify-between"><dt className="text-muted-foreground">Distance</dt><dd>{breakdown ? `${km} km` : "—"}</dd></div>
-            <div className="flex justify-between"><dt className="text-muted-foreground">Durée</dt><dd>{breakdown ? `${min} min` : "—"}</dd></div>
-            <div className="flex justify-between"><dt className="text-muted-foreground">Trafic</dt><dd>{breakdown ? breakdown.factors.trafficLabel : "—"}</dd></div>
-            <div className="flex justify-between"><dt className="text-muted-foreground">Météo</dt><dd>{breakdown ? breakdown.factors.weatherLabel : "—"}</dd></div>
+            <div className="flex justify-between gap-2"><dt className="shrink-0 text-muted-foreground">Distance</dt><dd className="truncate text-right">{breakdown ? `${km} km` : "—"}</dd></div>
+            <div className="flex justify-between gap-2"><dt className="shrink-0 text-muted-foreground">Durée</dt><dd className="truncate text-right">{breakdown ? `${min} min` : "—"}</dd></div>
+            <div className="flex justify-between gap-2"><dt className="shrink-0 text-muted-foreground">Trafic</dt><dd className="truncate text-right">{breakdown ? breakdown.factors.trafficLabel : "—"}</dd></div>
+            <div className="flex justify-between gap-2"><dt className="shrink-0 text-muted-foreground">Météo</dt><dd className="truncate text-right">{breakdown ? breakdown.factors.weatherLabel : "—"}</dd></div>
             <div className="my-2 border-t border-border" />
-            <div className="flex justify-between"><dt className="text-muted-foreground">Base</dt><dd>{breakdown ? formatXof(breakdown.base) : "—"}</dd></div>
-            <div className="flex justify-between"><dt className="text-muted-foreground">Distance</dt><dd>{breakdown ? formatXof(breakdown.distance) : "—"}</dd></div>
-            <div className="flex justify-between"><dt className="text-muted-foreground">Durée</dt><dd>{breakdown ? formatXof(breakdown.duration) : "—"}</dd></div>
+            <div className="flex justify-between gap-2"><dt className="shrink-0 text-muted-foreground">Base</dt><dd className="truncate text-right">{breakdown ? formatXof(breakdown.base) : "—"}</dd></div>
+            <div className="flex justify-between gap-2"><dt className="shrink-0 text-muted-foreground">Distance</dt><dd className="truncate text-right">{breakdown ? formatXof(breakdown.distance) : "—"}</dd></div>
+            <div className="flex justify-between gap-2"><dt className="shrink-0 text-muted-foreground">Durée</dt><dd className="truncate text-right">{breakdown ? formatXof(breakdown.duration) : "—"}</dd></div>
             {deliveryBreakdown && deliveryBreakdown.packageSurcharge > 0 && (
-              <div className="flex justify-between"><dt className="text-muted-foreground">Colis (taille)</dt><dd>+{formatXof(deliveryBreakdown.packageSurcharge)}</dd></div>
+              <div className="flex justify-between gap-2"><dt className="shrink-0 text-muted-foreground">Colis (taille)</dt><dd className="truncate text-right">+{formatXof(deliveryBreakdown.packageSurcharge)}</dd></div>
             )}
             {deliveryBreakdown && deliveryBreakdown.urgentFee > 0 && (
-              <div className="flex justify-between"><dt className="text-muted-foreground">Urgent</dt><dd>+{formatXof(deliveryBreakdown.urgentFee)}</dd></div>
+              <div className="flex justify-between gap-2"><dt className="shrink-0 text-muted-foreground">Urgent</dt><dd className="truncate text-right">+{formatXof(deliveryBreakdown.urgentFee)}</dd></div>
             )}
             {deliveryBreakdown && deliveryBreakdown.insulatedBagFee > 0 && (
-              <div className="flex justify-between"><dt className="text-muted-foreground">Sac isotherme</dt><dd>+{formatXof(deliveryBreakdown.insulatedBagFee)}</dd></div>
+              <div className="flex justify-between gap-2"><dt className="shrink-0 text-muted-foreground">Sac isotherme</dt><dd className="truncate text-right">+{formatXof(deliveryBreakdown.insulatedBagFee)}</dd></div>
             )}
             {(rideBreakdown?.trafficSurcharge ?? deliveryBreakdown?.trafficSurcharge ?? 0) > 0 && (
-              <div className="flex justify-between"><dt className="text-muted-foreground">Suppl. trafic</dt><dd>+{formatXof((rideBreakdown ?? deliveryBreakdown)!.trafficSurcharge)}</dd></div>
+              <div className="flex justify-between gap-2"><dt className="shrink-0 text-muted-foreground">Suppl. trafic</dt><dd className="truncate text-right">+{formatXof((rideBreakdown ?? deliveryBreakdown)!.trafficSurcharge)}</dd></div>
             )}
             {(rideBreakdown?.weatherSurcharge ?? deliveryBreakdown?.weatherSurcharge ?? 0) > 0 && (
-              <div className="flex justify-between"><dt className="text-muted-foreground">Suppl. météo</dt><dd>+{formatXof((rideBreakdown ?? deliveryBreakdown)!.weatherSurcharge)}</dd></div>
+              <div className="flex justify-between gap-2"><dt className="shrink-0 text-muted-foreground">Suppl. météo</dt><dd className="truncate text-right">+{formatXof((rideBreakdown ?? deliveryBreakdown)!.weatherSurcharge)}</dd></div>
             )}
             <div className="my-2 border-t border-border" />
-            <div className="flex items-baseline justify-between">
-              <dt className="text-muted-foreground">Total</dt>
-              <dd className="font-display text-2xl font-bold text-primary">{price > 0 ? formatXof(price) : "—"}</dd>
+            <div className="flex items-baseline justify-between gap-2">
+              <dt className="shrink-0 text-muted-foreground">Total</dt>
+              <dd className="truncate text-right font-display text-2xl font-bold text-primary">{price > 0 ? formatXof(price) : "—"}</dd>
             </div>
           </dl>
           <Button

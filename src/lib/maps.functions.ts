@@ -140,9 +140,13 @@ export const placesAutocomplete = createServerFn({ method: "POST" })
       input: data.input,
       languageCode: "fr",
     };
-    if (data.regionCode) {
-      body.includedRegionCodes = [data.regionCode.toLowerCase()];
-    }
+    // Pas de restriction stricte par pays (`includedRegionCodes`) : le pays
+    // "actif" de l'utilisateur (zone résolue côté client, par défaut Dakar/SN
+    // tant que le GPS n'a pas répondu) ne doit jamais EXCLURE des résultats
+    // valides d'un autre pays — sinon Google rejette des adresses correctes
+    // dès que l'utilisateur réel est dans un pays différent de la zone par
+    // défaut. On se contente du `locationBias` (purement indicatif, n'exclut
+    // rien) calculé dynamiquement à partir de la position réelle.
     if (data.bias) {
       body.locationBias = {
         circle: {
