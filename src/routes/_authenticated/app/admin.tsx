@@ -71,6 +71,7 @@ import { listDriverWallets, adminWalletTopup, adminWalletAdjust } from "@/lib/wa
 import {
   ArrowLeft,
   BarChart3,
+  BookOpen,
   Car,
   Coins,
   Download,
@@ -125,6 +126,7 @@ type SectionDef = {
   roles: AdminRole[];
   countKey?: "pendingDrivers" | "openTickets" | "fraudAlerts" | "unpaidInvoices" | "auditToday";
   countLabel?: string;
+  externalHref?: string;
 };
 
 const PASTEL_PALETTE: { name: string; bg: string; iconBg: string }[] = [
@@ -202,6 +204,7 @@ function AdminPage() {
     { key: "insurance", title: "Assurance", description: "Validation des dossiers et renouvellements chauffeurs", keywords: ["assurance","insurance","assureur","renouvellement","validation"], icon: ShieldCheck, defaultPalette: 13, group: "Sécurité", roles: ["superadmin","admin"] },
     { key: "rewards", title: "Récompenses", description: "Programmes de fidélité et bonus", keywords: ["récompense","reward","bonus","fidélité"], icon: Gift, defaultPalette: 9, group: "Croissance", roles: ["superadmin","admin"] },
     { key: "metrics", title: "Métriques", description: "Indicateurs et KPIs", keywords: ["métrique","kpi","statistique","metric"], icon: Coins, defaultPalette: 10, group: "Croissance", roles: ["superadmin","admin"] },
+    { key: "manual", title: "Manuel administrateur", description: "Guide d'utilisation complet du panneau admin (PDF)", keywords: ["manuel","guide","aide","documentation","pdf","tutoriel"], icon: BookOpen, defaultPalette: 6, group: "Aide", roles: ["superadmin","admin"], externalHref: "/docs/Manuel_Administrateur_EcoTibus.pdf" },
   ];
 
   if (loading) return <div className="py-12 text-center text-muted-foreground">Chargement…</div>;
@@ -342,7 +345,13 @@ function AdminPage() {
               return (
                 <div key={s.key} className={`relative rounded-2xl border ${c.bg} p-5 transition-all hover:-translate-y-0.5 hover:shadow-md`}>
                   <button
-                    onClick={() => setSection(s.key)}
+                    onClick={() => {
+                      if (s.externalHref) {
+                        window.open(s.externalHref, "_blank", "noopener,noreferrer");
+                        return;
+                      }
+                      setSection(s.key);
+                    }}
                     className="w-full text-left focus:outline-none"
                   >
                     <div className="flex items-start justify-between gap-3">
