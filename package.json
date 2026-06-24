@@ -19,9 +19,14 @@
     "simulate:ride": "node scripts/simulate-ride.mjs",
     "simulate:ride:live": "node scripts/simulate-ride.mjs --live",
     "check:maps": "node scripts/check-maps-env.mjs",
-    "cap:sync": "npx cap sync android",
-    "cap:open:android": "npx cap open android",
-    "cap:run:android": "npx cap run android"
+    "cap:select:driver": "cp capacitor.driver.config.ts capacitor.config.ts",
+    "cap:select:passenger": "cp capacitor.passenger.config.ts capacitor.config.ts",
+    "cap:sync:driver": "npm run cap:select:driver && npx cap sync android",
+    "cap:sync:passenger": "npm run cap:select:passenger && npx cap sync android",
+    "cap:open:driver": "npm run cap:select:driver && npx cap open android",
+    "cap:open:passenger": "npm run cap:select:passenger && npx cap open android",
+    "cap:run:driver": "npm run cap:select:driver && npx cap run android",
+    "cap:run:passenger": "npm run cap:select:passenger && npx cap run android"
   },
   "dependencies": {
     "@capacitor/android": "^7.4.2",
