@@ -34,6 +34,11 @@ import {
   listAuditLogs,
   listPricingSettings,
   updatePricingSetting,
+  listDynamicPricingSettings,
+  updateDynamicPricingSetting,
+  createDynamicPricingSetting,
+  deleteDynamicPricingSetting,
+  listMarketPrograms,
   listCommissionSchedules,
   createCommissionSchedule,
   updateCommissionSchedule,
@@ -1538,9 +1543,12 @@ function PricingTab() {
   return (
     <div className="space-y-6">
       <div className="rounded-2xl border border-border bg-card p-4 text-sm text-muted-foreground">
-        Définissez les tarifs et la <strong>commission par défaut</strong> de chaque catégorie. Les valeurs ci-dessous
-        s'appliquent en l'absence de règle planifiée. La part chauffeur ={" "}
-        <code>prix − commission</code>. Toute mise à jour est appliquée immédiatement aux courses qui se terminent ensuite.
+        Définissez les tarifs de base (prise en charge, /km, /min) et la <strong>commission par défaut</strong> de
+        chaque catégorie. Ces valeurs sont la base du <strong>tarif dynamique</strong> (majoration trafic + météo,
+        réglée juste en dessous) — c'est le calcul effectivement appliqué au passager. La part chauffeur ={" "}
+        <code>prix − commission</code>. Toute mise à jour de tarif s'applique immédiatement aux nouvelles courses ;
+        toute mise à jour de commission s'applique aux courses qui se terminent ensuite (sauf si une commission
+        planifiée plus prioritaire est active pour la période).
       </div>
 
       <div className="overflow-x-auto rounded-2xl border border-border bg-card">
@@ -1655,7 +1663,189 @@ function PricingTab() {
         </table>
       </div>
 
+      <DynamicPricingSection />
       <CommissionSchedulesSection />
+    </div>
+  );
+}
+
+/* -------------------- Tarif dynamique (trafic + météo) -------------------- */
+function DynamicPricingSection() {
+  const qc = useQueryClient();
+  const listFn = useServerFn(listDynamicPricingSettings);
+  const updateFn = useServerFn(updateDynamicPricingSetting);
+  const createFn = useServerFn(createDynamicPricingSetting);
+  const deleteFn = useServerFn(deleteDynamicPricingSetting);
+  const listProgramsFn = useServerFn(listMarketPrograms);
+
+  const { data, isLoading } = useQuery({
+    queryKey: ["admin", "dynamic-pricing"],
+    queryFn: () => listFn({}),
+  });
+  // Réservé au superadmin côté serveur — un admin pays n'aura simplement pas
+  // d'options de programme pour ajouter une dérogation (il peut toujours
+  // éditer la ligne globale ci-dessous).
+  const programsQ = useQuery({
+    queryKey: ["admin", "market-programs", "for-dynamic-pricing"],
+    queryFn: () => listProgramsFn({}),
+    retry: false,
+  });
+
+  const [drafts, setDrafts] = useState<Record<string, any>>({});
+  const [newProgramId, setNewProgramId] = useState<string>("");
+
+  const invalidate = () => qc.invalidateQueries({ queryKey: ["admin", "dynamic-pricing"] });
+
+  const mutation = useMutation({
+    mutationFn: (payload: any) => updateFn({ data: payload }),
+    onSuccess: (_d, vars: any) => {
+      toast.success("Coefficients mis à jour");
+      setDrafts((d) => {
+        const { [vars.id]: _, ...rest } = d;
+        return rest;
+      });
+      invalidate();
+    },
+    onError: (e: any) => toast.error(e?.message ?? "Erreur de mise à jour"),
+  });
+  const createMut = useMutation({
+    mutationFn: (programId: string) => createFn({ data: { programId } }),
+    onSuccess: () => { toast.success("Dérogation programme ajoutée"); setNewProgramId(""); invalidate(); },
+    onError: (e: any) => toast.error(e?.message ?? "Erreur"),
+  });
+  const deleteMut = useMutation({
+    mutationFn: (id: string) => deleteFn({ data: { id } }),
+    onSuccess: () => { toast.success("Dérogation supprimée"); invalidate(); },
+    onError: (e: any) => toast.error(e?.message ?? "Erreur"),
+  });
+
+  if (isLoading) return <p className="text-sm text-muted-foreground">Chargement…</p>;
+
+  const rows = (data ?? []) as any[];
+  const programOptions = ((programsQ.data ?? []) as any[]).filter(
+    (p) => !rows.some((r) => r.program_id === p.program_id),
+  );
+
+  return (
+    <div className="space-y-3">
+      <div>
+        <h2 className="font-display text-lg font-bold">Tarif dynamique (trafic + météo)</h2>
+        <p className="text-xs text-muted-foreground">
+          Coefficients appliqués en plus du tarif de base ci-dessus selon le trafic live et la météo.
+          La ligne <strong>globale</strong> s'applique partout sauf si une dérogation existe pour le programme
+          du passager (white-label).
+        </p>
+      </div>
+
+      <div className="overflow-x-auto rounded-2xl border border-border bg-card">
+        <table className="w-full text-sm">
+          <thead className="bg-muted/40 text-xs uppercase text-muted-foreground">
+            <tr>
+              <th className="px-3 py-2 text-left">Programme</th>
+              <th className="px-3 py-2 text-right">Coef. trafic</th>
+              <th className="px-3 py-2 text-right">Plafond trafic</th>
+              <th className="px-3 py-2 text-right">Météo pluie ×</th>
+              <th className="px-3 py-2 text-right">Météo nuage ×</th>
+              <th className="px-3 py-2 text-right">Arrondi (XOF)</th>
+              <th className="px-3 py-2 text-center">Actif</th>
+              <th className="px-3 py-2 text-right">Action</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row) => {
+              const draft = drafts[row.id] ?? {};
+              const current = { ...row, ...draft };
+              const dirty = Object.keys(draft).length > 0;
+              const setField = (k: string, v: any) =>
+                setDrafts((d) => ({ ...d, [row.id]: { ...d[row.id], [k]: v } }));
+              const numInput = (k: string, step = 0.01) => (
+                <Input
+                  type="number"
+                  step={step}
+                  className="h-8 w-24 text-right"
+                  value={current[k] ?? 0}
+                  onChange={(e) => setField(k, Number(e.target.value))}
+                />
+              );
+              const label = row.program_id
+                ? row.market_programs?.display_name ?? row.program_id
+                : "Défaut global";
+              return (
+                <tr key={row.id} className="border-t border-border">
+                  <td className="px-3 py-2 font-medium">{label}</td>
+                  <td className="px-3 py-2 text-right">{numInput("traffic_coefficient")}</td>
+                  <td className="px-3 py-2 text-right">{numInput("traffic_ratio_cap")}</td>
+                  <td className="px-3 py-2 text-right">{numInput("weather_rainy_multiplier")}</td>
+                  <td className="px-3 py-2 text-right">{numInput("weather_cloudy_multiplier")}</td>
+                  <td className="px-3 py-2 text-right">{numInput("rounding_increment_xof", 10)}</td>
+                  <td className="px-3 py-2 text-center">
+                    <input
+                      type="checkbox"
+                      checked={!!current.active}
+                      onChange={(e) => setField("active", e.target.checked)}
+                    />
+                  </td>
+                  <td className="px-3 py-2 text-right space-x-2">
+                    <Button
+                      size="sm"
+                      disabled={!dirty || mutation.isPending}
+                      onClick={() =>
+                        mutation.mutate({
+                          id: row.id,
+                          traffic_coefficient: Number(current.traffic_coefficient),
+                          traffic_ratio_cap: Number(current.traffic_ratio_cap),
+                          weather_rainy_multiplier: Number(current.weather_rainy_multiplier),
+                          weather_cloudy_multiplier: Number(current.weather_cloudy_multiplier),
+                          weather_sunny_multiplier: Number(current.weather_sunny_multiplier ?? 1),
+                          rounding_increment_xof: Number(current.rounding_increment_xof),
+                          active: !!current.active,
+                        })
+                      }
+                    >
+                      Enregistrer
+                    </Button>
+                    {row.program_id && (
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        disabled={deleteMut.isPending}
+                        onClick={() => deleteMut.mutate(row.id)}
+                      >
+                        Supprimer
+                      </Button>
+                    )}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+
+      {programOptions.length > 0 && (
+        <div className="flex items-end gap-2 rounded-2xl border border-border bg-card p-3">
+          <div className="flex-1">
+            <Label className="text-xs">Ajouter une dérogation pour un programme</Label>
+            <Select value={newProgramId} onValueChange={setNewProgramId}>
+              <SelectTrigger><SelectValue placeholder="Choisir un programme" /></SelectTrigger>
+              <SelectContent>
+                {programOptions.map((p) => (
+                  <SelectItem key={p.program_id} value={p.program_id}>
+                    {p.display_name} ({p.country})
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <Button
+            size="sm"
+            disabled={!newProgramId || createMut.isPending}
+            onClick={() => createMut.mutate(newProgramId)}
+          >
+            Ajouter
+          </Button>
+        </div>
+      )}
     </div>
   );
 }

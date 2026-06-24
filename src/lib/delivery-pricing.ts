@@ -1,5 +1,5 @@
 import { formatXof } from "@/lib/pricing";
-import type { WeatherKind } from "@/lib/dynamic-pricing";
+import { DEFAULT_DYNAMIC_COEFFICIENTS, type DynamicCoefficients, type WeatherKind } from "@/lib/dynamic-pricing";
 
 /** Véhicules livraison — même logique base + km + min que les courses voiture. */
 export type DeliveryVehicle = "two_wheel" | "motorcycle" | "tricycle" | "car" | "van";
@@ -54,6 +54,8 @@ export type DeliveryPriceBreakdown = {
   };
 };
 
+export type DeliveryVehicleRates = { base: number; perKm: number; perMin: number };
+
 export type DeliveryPriceInput = {
   vehicle: DeliveryVehicle;
   packageType: PackageType;
@@ -63,6 +65,10 @@ export type DeliveryPriceInput = {
   weather?: WeatherKind;
   urgent?: boolean;
   insulatedBag?: boolean;
+  /** Tarifs de base (DB) ; défaut = DELIVERY_VEHICLES codées en dur si non fourni. */
+  rates?: DeliveryVehicleRates;
+  /** Coefficients trafic/météo (DB) ; défaut = anciennes constantes si non fourni. */
+  coefficients?: DynamicCoefficients;
 };
 
 /** Tarif livraison dynamique (distance + durée + trafic + météo + colis + options). */
@@ -78,7 +84,8 @@ export function computeDeliveryPrice(input: DeliveryPriceInput): DeliveryPriceBr
     insulatedBag = false,
   } = input;
 
-  const v = DELIVERY_VEHICLES[vehicle];
+  const v = input.rates ?? DELIVERY_VEHICLES[vehicle];
+  const coef = input.coefficients ?? DEFAULT_DYNAMIC_COEFFICIENTS;
   const pkg = PACKAGE_TYPES[packageType];
   const base = v.base;
   const distance = Math.round(km * v.perKm);
@@ -88,10 +95,13 @@ export function computeDeliveryPrice(input: DeliveryPriceInput): DeliveryPriceBr
 
   const staticMin = Math.max(1, staticDurationMin ?? durationMin);
   const trafficRatio = durationMin / staticMin;
-  const trafficIndex = Math.max(1, Math.min(1.65, trafficRatio));
-  const trafficSurcharge = Math.round((lineSubtotal + packageSurcharge) * (trafficIndex - 1) * 0.45);
+  const trafficIndex = Math.max(1, Math.min(coef.trafficRatioCap, trafficRatio));
+  const trafficSurcharge = Math.round((lineSubtotal + packageSurcharge) * (trafficIndex - 1) * coef.trafficCoefficient);
 
-  const weatherMultiplier = weather === "rainy" ? 1.12 : weather === "cloudy" ? 1.05 : 1;
+  const weatherMultiplier =
+    weather === "rainy" ? coef.weatherRainyMultiplier
+    : weather === "cloudy" ? coef.weatherCloudyMultiplier
+    : coef.weatherSunnyMultiplier;
   const weatherSurcharge = Math.round((lineSubtotal + packageSurcharge) * (weatherMultiplier - 1));
 
   let urgentFee = urgent ? DELIVERY_EXTRAS.urgent.fee : 0;
@@ -101,7 +111,7 @@ export function computeDeliveryPrice(input: DeliveryPriceInput): DeliveryPriceBr
 
   const subtotal = lineSubtotal + packageSurcharge + trafficSurcharge + weatherSurcharge;
   const raw = subtotal + urgentFee + insulatedBagFee;
-  const total = Math.round(raw / 50) * 50;
+  const total = Math.round(raw / coef.roundingIncrementXof) * coef.roundingIncrementXof;
 
   const trafficPct = Math.round((trafficIndex - 1) * 100);
   const trafficLabel =

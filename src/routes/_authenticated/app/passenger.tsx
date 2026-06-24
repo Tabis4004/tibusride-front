@@ -30,6 +30,7 @@ import { AddressAutocomplete } from "@/components/AddressAutocomplete";
 import { DeliveryPartnerAds } from "@/components/DeliveryPartnerAds";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { getNotificationPrefs } from "@/lib/tracking.functions";
+import { getEffectivePricingConfig } from "@/lib/pricing.functions";
 import { getCurrentPosition } from "@/lib/native-geolocation";
 import { useNativeApp } from "@/hooks/use-native-app";
 import { Link } from "@tanstack/react-router";
@@ -79,6 +80,16 @@ function PassengerPage() {
   const reverseFn = useServerFn(reverseGeocode);
   const weatherFn = useServerFn(getWeatherAtPoint);
   const [weather, setWeather] = useState<WeatherKind>("sunny");
+
+  // Tarif dynamique : base/km/min (pricing_settings) + coefficients trafic/météo
+  // (dynamic_pricing_settings, scoped programme) — résolus en base, plus de
+  // constantes codées en dur dans dynamic-pricing.ts/delivery-pricing.ts.
+  const pricingConfigFn = useServerFn(getEffectivePricingConfig);
+  const pricingConfigQ = useQuery({
+    queryKey: ["pricing-config", marketConfig?.programId ?? null],
+    queryFn: () => pricingConfigFn({ data: { programId: marketConfig?.programId ?? null } }),
+    staleTime: 60_000,
+  });
 
   // Évite d'effacer les coordonnées quand le texte est mis à jour programmatiquement (carte, GPS, liste).
   const programmaticPickupRef = useRef(false);
@@ -189,9 +200,18 @@ function PassengerPage() {
   const min = routeInfo ? Math.max(1, Math.round(routeInfo.seconds / 60)) : estimateDuration(km);
   const staticMin = routeInfo ? Math.max(1, Math.round(routeInfo.staticSeconds / 60)) : min;
   const hasTrip = !!(pickupLL && dropoffLL);
+  const pricingConfig = pricingConfigQ.data;
   const rideBreakdown: DynamicPriceBreakdown | null =
     serviceMode === "ride" && hasTrip
-      ? computeDynamicPrice({ category, km, durationMin: min, staticDurationMin: staticMin, weather })
+      ? computeDynamicPrice({
+          category,
+          km,
+          durationMin: min,
+          staticDurationMin: staticMin,
+          weather,
+          rates: pricingConfig?.categories[category],
+          coefficients: pricingConfig?.dynamic,
+        })
       : null;
   const deliveryBreakdown: DeliveryPriceBreakdown | null =
     serviceMode === "delivery" && hasTrip
@@ -204,6 +224,7 @@ function PassengerPage() {
           weather,
           urgent: deliveryUrgent,
           insulatedBag: deliveryInsulatedBag,
+          coefficients: pricingConfig?.dynamic,
         })
       : null;
   const breakdown = serviceMode === "delivery" ? deliveryBreakdown : rideBreakdown;

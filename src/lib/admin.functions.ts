@@ -614,6 +614,105 @@ export const updatePricingSetting = createServerFn({ method: "POST" })
     return updated;
   });
 
+/* ====================== Tarif dynamique (trafic + météo) ====================== */
+
+/**
+ * Coefficients de "tarif dynamique" (trafic + météo), scoped par programme
+ * avec fallback global — voir supabase/migrations/20260630000000_dynamic_pricing_settings.sql.
+ * Remplace les constantes codées en dur de dynamic-pricing.ts / delivery-pricing.ts.
+ */
+export const listDynamicPricingSettings = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    await assertAdmin(context.supabase, context.userId);
+    const { data, error } = await context.supabase
+      .from("dynamic_pricing_settings")
+      .select("*, market_programs:program_id(display_name, country)")
+      .order("program_id", { nullsFirst: true });
+    if (error) throw new Error(error.message);
+    return data ?? [];
+  });
+
+export const updateDynamicPricingSetting = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: unknown) =>
+    z
+      .object({
+        id: z.string().uuid(),
+        traffic_coefficient: z.number().min(0).max(2),
+        traffic_ratio_cap: z.number().min(1).max(3),
+        weather_rainy_multiplier: z.number().min(1).max(2),
+        weather_cloudy_multiplier: z.number().min(1).max(2),
+        weather_sunny_multiplier: z.number().min(1).max(2),
+        rounding_increment_xof: z.number().int().min(1).max(1000),
+        active: z.boolean(),
+      })
+      .parse(d),
+  )
+  .handler(async ({ data, context }) => {
+    await assertAdmin(context.supabase, context.userId);
+    const { id, ...patch } = data;
+    const { data: updated, error } = await context.supabase
+      .from("dynamic_pricing_settings")
+      .update({ ...patch, updated_by: context.userId })
+      .eq("id", id)
+      .select()
+      .single();
+    if (error) throw new Error(error.message);
+    await logAudit(await getActor(context), {
+      action: "dynamic_pricing.update",
+      target_type: "dynamic_pricing_settings",
+      target_id: id,
+      target_label: updated?.program_id ?? "global",
+      details: patch,
+    });
+    return updated;
+  });
+
+export const createDynamicPricingSetting = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: unknown) =>
+    z.object({ programId: z.string().min(1) }).parse(d),
+  )
+  .handler(async ({ data, context }) => {
+    await assertAdmin(context.supabase, context.userId);
+    const { data: created, error } = await context.supabase
+      .from("dynamic_pricing_settings")
+      .insert({ program_id: data.programId, updated_by: context.userId })
+      .select()
+      .single();
+    if (error) throw new Error(error.message);
+    await logAudit(await getActor(context), {
+      action: "dynamic_pricing.create",
+      target_type: "dynamic_pricing_settings",
+      target_id: created.id,
+      target_label: data.programId,
+      details: {},
+    });
+    return created;
+  });
+
+export const deleteDynamicPricingSetting = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: unknown) => z.object({ id: z.string().uuid() }).parse(d))
+  .handler(async ({ data, context }) => {
+    await assertAdmin(context.supabase, context.userId);
+    const { error } = await context.supabase
+      .from("dynamic_pricing_settings")
+      .delete()
+      .eq("id", data.id)
+      .not("program_id", "is", null); // jamais supprimer la ligne globale (program_id NULL)
+    if (error) throw new Error(error.message);
+    await logAudit(await getActor(context), {
+      action: "dynamic_pricing.delete",
+      target_type: "dynamic_pricing_settings",
+      target_id: data.id,
+      target_label: undefined,
+      details: {},
+    });
+    return { ok: true as const };
+  });
+
 /* ====================== Programmes de marché ====================== */
 
 /**

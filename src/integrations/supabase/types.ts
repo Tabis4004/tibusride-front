@@ -1126,6 +1126,62 @@ export type Database = {
           },
         ]
       }
+      dynamic_pricing_settings: {
+        Row: {
+          active: boolean
+          created_at: string
+          id: string
+          notes: string | null
+          program_id: string | null
+          rounding_increment_xof: number
+          traffic_coefficient: number
+          traffic_ratio_cap: number
+          updated_at: string
+          updated_by: string | null
+          weather_cloudy_multiplier: number
+          weather_rainy_multiplier: number
+          weather_sunny_multiplier: number
+        }
+        Insert: {
+          active?: boolean
+          created_at?: string
+          id?: string
+          notes?: string | null
+          program_id?: string | null
+          rounding_increment_xof?: number
+          traffic_coefficient?: number
+          traffic_ratio_cap?: number
+          updated_at?: string
+          updated_by?: string | null
+          weather_cloudy_multiplier?: number
+          weather_rainy_multiplier?: number
+          weather_sunny_multiplier?: number
+        }
+        Update: {
+          active?: boolean
+          created_at?: string
+          id?: string
+          notes?: string | null
+          program_id?: string | null
+          rounding_increment_xof?: number
+          traffic_coefficient?: number
+          traffic_ratio_cap?: number
+          updated_at?: string
+          updated_by?: string | null
+          weather_cloudy_multiplier?: number
+          weather_rainy_multiplier?: number
+          weather_sunny_multiplier?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "dynamic_pricing_settings_program_id_fkey"
+            columns: ["program_id"]
+            isOneToOne: false
+            referencedRelation: "market_programs"
+            referencedColumns: ["program_id"]
+          },
+        ]
+      }
       pricing_settings: {
         Row: {
           active: boolean
@@ -2416,6 +2472,26 @@ export type Database = {
           commission_rate: number
           commission_type: Database["public"]["Enums"]["commission_kind"]
         }[]
+      }
+      resolve_dynamic_pricing_settings: {
+        Args: {
+          _program_id: string | null
+        }
+        Returns: {
+          active: boolean
+          created_at: string
+          id: string
+          notes: string | null
+          program_id: string | null
+          rounding_increment_xof: number
+          traffic_coefficient: number
+          traffic_ratio_cap: number
+          updated_at: string
+          updated_by: string | null
+          weather_cloudy_multiplier: number
+          weather_rainy_multiplier: number
+          weather_sunny_multiplier: number
+        }
       }
       resolve_program_commission: {
         Args: {
