@@ -1,7 +1,9 @@
-import { Link, useRouterState } from "@tanstack/react-router";
-import { Car, Compass, LayoutDashboard, LifeBuoy, Settings, Sparkles } from "lucide-react";
+import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
+import { Car, Compass, LayoutDashboard, LifeBuoy, LogOut, Settings, Sparkles } from "lucide-react";
 import { Logo } from "@/components/Logo";
+import { Button } from "@/components/ui/button";
 import { useAuth } from "@/hooks/use-auth";
+import { supabase } from "@/integrations/supabase/client";
 import { cn } from "@/lib/utils";
 
 // Le tableau de bord conducteur (/app/driver) — qui contient le toggle
@@ -21,11 +23,17 @@ const TABS = [
 export function MobileShell({ children }: { children: React.ReactNode }) {
   const { roles } = useAuth();
   const pathname = useRouterState({ select: (s) => s.location.pathname });
+  const navigate = useNavigate();
 
   const visibleTabs = TABS.filter((t) => {
     if (!t.roles) return true;
     return t.roles.some((r) => roles.includes(r));
   });
+
+  const handleSignOut = async () => {
+    await supabase.auth.signOut();
+    navigate({ to: "/auth", replace: true });
+  };
 
   return (
     <div className="native-shell flex min-h-[100dvh] flex-col bg-background">
@@ -37,7 +45,12 @@ export function MobileShell({ children }: { children: React.ReactNode }) {
               empêchait un chauffeur de revenir à son tableau de bord via le
               logo. */}
           <Link to="/app"><Logo compact /></Link>
-          <span className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Tibus Ride</span>
+          <div className="flex items-center gap-2">
+            <span className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Tibus Ride</span>
+            <Button variant="ghost" size="icon" className="h-8 w-8" onClick={handleSignOut} title="Déconnexion">
+              <LogOut className="h-4 w-4" />
+            </Button>
+          </div>
         </div>
       </header>
 
