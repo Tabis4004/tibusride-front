@@ -1,7 +1,8 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
+import { useEffect, useState } from "react";
 import { Logo } from "@/components/Logo";
 import { Button } from "@/components/ui/button";
-import { CATEGORIES, CITIES, type Category } from "@/lib/pricing";
+import { CATEGORIES, CITIES, nearestServiceCity, type Category } from "@/lib/pricing";
 import { ArrowRight, Banknote, MapPin, ShieldCheck, Smartphone, Star, Wifi } from "lucide-react";
 import { CarIcon } from "@/components/CarIcon";
 
@@ -18,6 +19,27 @@ export const Route = createFileRoute("/")({
 });
 
 function Landing() {
+  // Détecte la ville la plus proche via la géolocalisation du navigateur, pour
+  // personnaliser la carte d'estimation (badge + adresses d'exemple) sans
+  // dépendre d'un compte connecté — fallback générique si refusé/indisponible.
+  const [city, setCity] = useState<(typeof CITIES)[number] | null>(null);
+
+  useEffect(() => {
+    if (typeof navigator === "undefined" || !navigator.geolocation) return;
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        const name = nearestServiceCity({ lat: pos.coords.latitude, lng: pos.coords.longitude });
+        const found = CITIES.find((c) => c.value === name);
+        if (found) setCity(found);
+      },
+      () => {},
+      { timeout: 5000, maximumAge: 10 * 60 * 1000 },
+    );
+  }, []);
+
+  const sampleAddr1 = city ? `${city.districts[0]}, ${city.value}` : "Centre-ville, près du marché";
+  const sampleAddr2 = city ? `${city.districts[1] ?? city.districts[0]}, ${city.value}` : "Aéroport international";
+
   return (
     <div className="min-h-screen bg-background">
       {/* HEADER */}
@@ -77,16 +99,16 @@ function Landing() {
             <div className="relative rounded-3xl border border-border bg-card p-6 shadow-[var(--shadow-glow)]">
               <div className="mb-4 flex items-center justify-between">
                 <h3 className="font-display text-lg font-semibold">Estimer ma course</h3>
-                <span className="rounded-full bg-secondary px-2.5 py-1 text-xs font-medium text-secondary-foreground">Dakar</span>
+                <span className="rounded-full bg-secondary px-2.5 py-1 text-xs font-medium text-secondary-foreground">{city?.value ?? "Ta Ville"}</span>
               </div>
               <div className="space-y-3">
                 <div className="flex items-center gap-3 rounded-xl border border-border bg-background p-3">
                   <div className="h-2.5 w-2.5 rounded-full bg-success" />
-                  <div className="flex-1 text-sm">Plateau, près du marché Sandaga</div>
+                  <div className="flex-1 text-sm">{sampleAddr1}</div>
                 </div>
                 <div className="flex items-center gap-3 rounded-xl border border-border bg-background p-3">
                   <div className="h-2.5 w-2.5 rounded-full bg-primary" />
-                  <div className="flex-1 text-sm">Aéroport AIBD, Diass</div>
+                  <div className="flex-1 text-sm">{sampleAddr2}</div>
                 </div>
               </div>
               <div className="mt-4 grid grid-cols-2 gap-2">
