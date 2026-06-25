@@ -50,12 +50,6 @@ import {
   createDynamicPricingSetting,
   deleteDynamicPricingSetting,
   listMarketPrograms,
-  listCommissionSchedules,
-  createCommissionSchedule,
-  updateCommissionSchedule,
-  deleteCommissionSchedule,
-  previewCommission,
-  detectScheduleConflicts,
   getRideCommissionDetail,
   commissionReport,
   listCorporates,
@@ -1609,12 +1603,11 @@ function PricingTab() {
   return (
     <div className="space-y-6">
       <div className="rounded-2xl border border-border bg-card p-4 text-sm text-muted-foreground">
-        Définissez les tarifs de base (prise en charge, /km, /min) et la <strong>commission par défaut</strong> de
-        chaque catégorie. Ces valeurs sont la base du <strong>tarif dynamique</strong> (majoration trafic + météo,
-        réglée juste en dessous) — c'est le calcul effectivement appliqué au passager. La part chauffeur ={" "}
-        <code>prix − commission</code>. Toute mise à jour de tarif s'applique immédiatement aux nouvelles courses ;
-        toute mise à jour de commission s'applique aux courses qui se terminent ensuite (sauf si une commission
-        planifiée plus prioritaire est active pour la période).
+        Définissez les tarifs de base (prise en charge, /km, /min) de chaque catégorie. Ces valeurs sont la base du{" "}
+        <strong>tarif dynamique</strong> (majoration trafic + météo, réglée juste en dessous) — c'est le calcul
+        effectivement appliqué au passager. La <strong>commission</strong> appliquée à chaque course n'est plus
+        définie ici ni par catégorie : elle est désormais entièrement pilotée par le programme de marché actif
+        (onglet « Programmes de marché »), qui a toujours priorité sur les anciens réglages par catégorie.
       </div>
 
       <div className="overflow-x-auto rounded-2xl border border-border bg-card">
@@ -1626,9 +1619,6 @@ function PricingTab() {
               <th className="px-3 py-2 text-right">Prix / km</th>
               <th className="px-3 py-2 text-right">Prix / min</th>
               <th className="px-3 py-2 text-right">Tarif min</th>
-              <th className="px-3 py-2 text-left">Type</th>
-              <th className="px-3 py-2 text-right">%</th>
-              <th className="px-3 py-2 text-right">Forfait (XOF)</th>
               <th className="px-3 py-2 text-center">Actif</th>
               <th className="px-3 py-2 text-right">Action</th>
             </tr>
@@ -1656,36 +1646,6 @@ function PricingTab() {
                   <td className="px-3 py-2 text-right">{numInput("per_km_xof", 10)}</td>
                   <td className="px-3 py-2 text-right">{numInput("per_min_xof", 5)}</td>
                   <td className="px-3 py-2 text-right">{numInput("min_fare_xof")}</td>
-                  <td className="px-3 py-2">
-                    <Select
-                      value={current.commission_type ?? "percent"}
-                      onValueChange={(v) => setField("commission_type", v)}
-                    >
-                      <SelectTrigger className="h-8 w-28"><SelectValue /></SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="percent">Pourcentage</SelectItem>
-                        <SelectItem value="flat">Forfait</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </td>
-                  <td className="px-3 py-2 text-right">
-                    <Input
-                      type="number" step={0.5} min={0} max={100}
-                      className="h-8 w-20 text-right"
-                      disabled={current.commission_type === "flat"}
-                      value={current.commission_rate ?? 0}
-                      onChange={(e) => setField("commission_rate", Number(e.target.value))}
-                    />
-                  </td>
-                  <td className="px-3 py-2 text-right">
-                    <Input
-                      type="number" step={50} min={0}
-                      className="h-8 w-24 text-right"
-                      disabled={current.commission_type === "percent"}
-                      value={current.commission_flat_xof ?? 0}
-                      onChange={(e) => setField("commission_flat_xof", Number(e.target.value))}
-                    />
-                  </td>
                   <td className="px-3 py-2 text-center">
                     <input
                       type="checkbox"
@@ -1705,9 +1665,9 @@ function PricingTab() {
                           per_km_xof: Number(current.per_km_xof),
                           per_min_xof: Number(current.per_min_xof),
                           min_fare_xof: Number(current.min_fare_xof),
-                          commission_type: current.commission_type ?? "percent",
-                          commission_rate: Number(current.commission_rate ?? 0),
-                          commission_flat_xof: Number(current.commission_flat_xof ?? 0),
+                          commission_type: row.commission_type ?? "percent",
+                          commission_rate: Number(row.commission_rate ?? 0),
+                          commission_flat_xof: Number(row.commission_flat_xof ?? 0),
                           active: !!current.active,
                         } as any)
                       }
@@ -1720,7 +1680,7 @@ function PricingTab() {
             })}
             {rows.length === 0 && (
               <tr>
-                <td colSpan={10} className="px-3 py-6 text-center text-muted-foreground">
+                <td colSpan={7} className="px-3 py-6 text-center text-muted-foreground">
                   Aucune catégorie configurée.
                 </td>
               </tr>
@@ -1733,7 +1693,6 @@ function PricingTab() {
       <DeliveryPackagePricingSection />
       <DeliveryExtrasPricingSection />
       <DynamicPricingSection />
-      <CommissionSchedulesSection />
     </div>
   );
 }
@@ -1783,9 +1742,6 @@ function DeliveryPricingSection() {
               <th className="px-3 py-2 text-right">Prix / km</th>
               <th className="px-3 py-2 text-right">Prix / min</th>
               <th className="px-3 py-2 text-right">Tarif min</th>
-              <th className="px-3 py-2 text-left">Type</th>
-              <th className="px-3 py-2 text-right">%</th>
-              <th className="px-3 py-2 text-right">Forfait (XOF)</th>
               <th className="px-3 py-2 text-center">Actif</th>
               <th className="px-3 py-2 text-right">Action</th>
             </tr>
@@ -1815,36 +1771,6 @@ function DeliveryPricingSection() {
                   <td className="px-3 py-2 text-right">{numInput("per_km_xof", 10)}</td>
                   <td className="px-3 py-2 text-right">{numInput("per_min_xof", 5)}</td>
                   <td className="px-3 py-2 text-right">{numInput("min_fare_xof")}</td>
-                  <td className="px-3 py-2">
-                    <Select
-                      value={current.commission_type ?? "percent"}
-                      onValueChange={(v) => setField("commission_type", v)}
-                    >
-                      <SelectTrigger className="h-8 w-28"><SelectValue /></SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="percent">Pourcentage</SelectItem>
-                        <SelectItem value="flat">Forfait</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </td>
-                  <td className="px-3 py-2 text-right">
-                    <Input
-                      type="number" step={0.5} min={0} max={100}
-                      className="h-8 w-20 text-right"
-                      disabled={current.commission_type === "flat"}
-                      value={current.commission_rate ?? 0}
-                      onChange={(e) => setField("commission_rate", Number(e.target.value))}
-                    />
-                  </td>
-                  <td className="px-3 py-2 text-right">
-                    <Input
-                      type="number" step={50} min={0}
-                      className="h-8 w-24 text-right"
-                      disabled={current.commission_type === "percent"}
-                      value={current.commission_flat_xof ?? 0}
-                      onChange={(e) => setField("commission_flat_xof", Number(e.target.value))}
-                    />
-                  </td>
                   <td className="px-3 py-2 text-center">
                     <input
                       type="checkbox"
@@ -1864,9 +1790,9 @@ function DeliveryPricingSection() {
                           per_km_xof: Number(current.per_km_xof),
                           per_min_xof: Number(current.per_min_xof),
                           min_fare_xof: Number(current.min_fare_xof),
-                          commission_type: current.commission_type ?? "percent",
-                          commission_rate: Number(current.commission_rate ?? 0),
-                          commission_flat_xof: Number(current.commission_flat_xof ?? 0),
+                          commission_type: row.commission_type ?? "percent",
+                          commission_rate: Number(row.commission_rate ?? 0),
+                          commission_flat_xof: Number(row.commission_flat_xof ?? 0),
                           active: !!current.active,
                         } as any)
                       }
@@ -1879,7 +1805,7 @@ function DeliveryPricingSection() {
             })}
             {rows.length === 0 && (
               <tr>
-                <td colSpan={10} className="px-3 py-6 text-center text-muted-foreground">
+                <td colSpan={7} className="px-3 py-6 text-center text-muted-foreground">
                   Aucun véhicule de livraison configuré.
                 </td>
               </tr>
@@ -2292,257 +2218,12 @@ function DynamicPricingSection() {
   );
 }
 
-/* -------------------- Commission schedules (period overrides) -------------------- */
-function CommissionSchedulesSection() {
-  const qc = useQueryClient();
-  const listFn = useServerFn(listCommissionSchedules);
-  const createFn = useServerFn(createCommissionSchedule);
-  const updateFn = useServerFn(updateCommissionSchedule);
-  const deleteFn = useServerFn(deleteCommissionSchedule);
-  const previewFn = useServerFn(previewCommission);
-  const conflictsFn = useServerFn(detectScheduleConflicts);
-
-  const { data, isLoading } = useQuery({
-    queryKey: ["admin", "commission-schedules"],
-    queryFn: () => listFn({}),
-  });
-  const { data: conflicts } = useQuery({
-    queryKey: ["admin", "commission-conflicts"],
-    queryFn: () => conflictsFn({}),
-  });
-
-  const [form, setForm] = useState<any>({
-    category: "taxi",
-    commission_type: "percent",
-    commission_rate: 20,
-    commission_flat_xof: 0,
-    starts_at: new Date().toISOString().slice(0, 16),
-    ends_at: "",
-    priority: 10,
-    active: true,
-    notes: "",
-    sample_price_xof: 5000,
-  });
-  const [preview, setPreview] = useState<any>(null);
-
-  const invalidate = () => {
-    qc.invalidateQueries({ queryKey: ["admin", "commission-schedules"] });
-    qc.invalidateQueries({ queryKey: ["admin", "commission-conflicts"] });
-  };
-
-  const createMut = useMutation({
-    mutationFn: (payload: any) => createFn({ data: payload }),
-    onSuccess: () => { toast.success("Règle ajoutée"); invalidate(); setPreview(null); },
-    onError: (e: any) => toast.error(e?.message ?? "Erreur"),
-  });
-  const updateMut = useMutation({
-    mutationFn: (payload: any) => updateFn({ data: payload }),
-    onSuccess: () => { toast.success("Règle mise à jour"); invalidate(); },
-    onError: (e: any) => toast.error(e?.message ?? "Erreur"),
-  });
-  const deleteMut = useMutation({
-    mutationFn: (id: string) => deleteFn({ data: { id } }),
-    onSuccess: () => { toast.success("Règle supprimée"); invalidate(); },
-    onError: (e: any) => toast.error(e?.message ?? "Erreur"),
-  });
-
-  const runPreview = async () => {
-    try {
-      const p = await previewFn({
-        data: {
-          category: form.category,
-          starts_at: new Date(form.starts_at).toISOString(),
-          ends_at: form.ends_at ? new Date(form.ends_at).toISOString() : null,
-          sample_price_xof: Number(form.sample_price_xof || 5000),
-        } as any,
-      });
-      setPreview(p);
-    } catch (e: any) {
-      toast.error(e?.message ?? "Erreur prévisualisation");
-    }
-  };
-
-  const submit = () => {
-    const payload = {
-      category: form.category,
-      commission_type: form.commission_type,
-      commission_rate: Number(form.commission_rate || 0),
-      commission_flat_xof: Number(form.commission_flat_xof || 0),
-      starts_at: new Date(form.starts_at).toISOString(),
-      ends_at: form.ends_at ? new Date(form.ends_at).toISOString() : null,
-      priority: Number(form.priority || 0),
-      active: !!form.active,
-      notes: form.notes || null,
-    };
-    createMut.mutate(payload);
-  };
-
-  const conflictList = (conflicts ?? []) as any[];
-
-
-  const rows = (data ?? []) as any[];
-
-  return (
-    <div className="space-y-3">
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="font-display text-lg font-bold">Commissions planifiées</h2>
-          <p className="text-xs text-muted-foreground">
-            Règles datées qui remplacent la commission par défaut (heures de pointe, promotions, week-end…).
-            La règle active avec la priorité la plus élevée s'applique.
-          </p>
-        </div>
-      </div>
-
-      <div className="grid gap-3 rounded-2xl border border-border bg-card p-4 md:grid-cols-4">
-        <div>
-          <Label className="text-xs">Catégorie</Label>
-          <Select value={form.category} onValueChange={(v) => setForm({ ...form, category: v })}>
-            <SelectTrigger><SelectValue /></SelectTrigger>
-            <SelectContent>
-              {Object.entries(CATEGORY_LABEL).map(([k, v]) => (
-                <SelectItem key={k} value={k}>{v}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-        <div>
-          <Label className="text-xs">Type</Label>
-          <Select value={form.commission_type} onValueChange={(v) => setForm({ ...form, commission_type: v })}>
-            <SelectTrigger><SelectValue /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value="percent">Pourcentage</SelectItem>
-              <SelectItem value="flat">Forfait</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-        <div>
-          <Label className="text-xs">Taux %</Label>
-          <Input type="number" step={0.5} min={0} max={100}
-            disabled={form.commission_type === "flat"}
-            value={form.commission_rate}
-            onChange={(e) => setForm({ ...form, commission_rate: e.target.value })} />
-        </div>
-        <div>
-          <Label className="text-xs">Forfait (XOF)</Label>
-          <Input type="number" step={50} min={0}
-            disabled={form.commission_type === "percent"}
-            value={form.commission_flat_xof}
-            onChange={(e) => setForm({ ...form, commission_flat_xof: e.target.value })} />
-        </div>
-        <div>
-          <Label className="text-xs">Début</Label>
-          <Input type="datetime-local" value={form.starts_at}
-            onChange={(e) => setForm({ ...form, starts_at: e.target.value })} />
-        </div>
-        <div>
-          <Label className="text-xs">Fin (optionnel)</Label>
-          <Input type="datetime-local" value={form.ends_at}
-            onChange={(e) => setForm({ ...form, ends_at: e.target.value })} />
-        </div>
-        <div>
-          <Label className="text-xs">Priorité</Label>
-          <Input type="number" min={0} value={form.priority}
-            onChange={(e) => setForm({ ...form, priority: e.target.value })} />
-        </div>
-        <div className="flex items-end gap-2">
-          <Button variant="outline" onClick={runPreview} className="flex-1">Prévisualiser</Button>
-          <Button onClick={submit} disabled={createMut.isPending} className="flex-1">Enregistrer</Button>
-        </div>
-        <div className="md:col-span-3">
-          <Label className="text-xs">Notes</Label>
-          <Input value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })}
-            placeholder="ex. Heures de pointe matin" />
-        </div>
-        <div>
-          <Label className="text-xs">Prix exemple (XOF)</Label>
-          <Input type="number" step={500} min={0} value={form.sample_price_xof}
-            onChange={(e) => setForm({ ...form, sample_price_xof: e.target.value })} />
-        </div>
-      </div>
-
-      {preview && (
-        <div className="rounded-2xl border border-primary/30 bg-primary/5 p-4 text-sm space-y-2">
-          <div className="font-medium">Prévisualisation commission</div>
-          <PreviewBlock label="À la date de début" data={preview.at_start} samplePrice={preview.sample_price_xof} />
-          {preview.at_end && <PreviewBlock label="À la date de fin" data={preview.at_end} samplePrice={preview.sample_price_xof} />}
-          <p className="text-xs text-muted-foreground">
-            La règle source indique laquelle s'appliquerait <em>avant</em> l'enregistrement. Vérifiez qu'elle correspond à votre intention.
-          </p>
-        </div>
-      )}
-
-      {conflictList.length > 0 && (
-        <div className="rounded-2xl border border-warning/40 bg-warning/10 p-4 text-sm">
-          <div className="font-medium mb-2">⚠️ {conflictList.length} chevauchement{conflictList.length > 1 ? "s" : ""} détecté{conflictList.length > 1 ? "s" : ""}</div>
-          <ul className="space-y-2 text-xs">
-            {conflictList.map((c: any, i: number) => (
-              <li key={i} className="rounded-xl border border-warning/30 bg-card p-2">
-                <div className="font-medium">{CATEGORY_LABEL[c.category] ?? c.category}</div>
-                <div>Règle A : prio {c.a.priority} · {new Date(c.a.starts_at).toLocaleString("fr-FR")} → {c.a.ends_at ? new Date(c.a.ends_at).toLocaleString("fr-FR") : "∞"}</div>
-                <div>Règle B : prio {c.b.priority} · {new Date(c.b.starts_at).toLocaleString("fr-FR")} → {c.b.ends_at ? new Date(c.b.ends_at).toLocaleString("fr-FR") : "∞"}</div>
-                {c.same_priority
-                  ? <div className="text-destructive mt-1">Priorité identique : résultat ambigu. Ajustez la priorité de l'une des règles.</div>
-                  : <div className="text-muted-foreground mt-1">→ La règle prioritaire (id {c.winner_id?.slice(0, 8)}…) s'applique.</div>}
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
-
-
-      <div className="overflow-x-auto rounded-2xl border border-border bg-card">
-        <table className="w-full text-sm">
-          <thead className="bg-muted/40 text-xs uppercase text-muted-foreground">
-            <tr>
-              <th className="px-3 py-2 text-left">Catégorie</th>
-              <th className="px-3 py-2 text-left">Type</th>
-              <th className="px-3 py-2 text-right">Valeur</th>
-              <th className="px-3 py-2 text-left">Période</th>
-              <th className="px-3 py-2 text-right">Priorité</th>
-              <th className="px-3 py-2 text-center">Actif</th>
-              <th className="px-3 py-2 text-left">Notes</th>
-              <th className="px-3 py-2 text-right">Action</th>
-            </tr>
-          </thead>
-          <tbody>
-            {isLoading && (
-              <tr><td colSpan={8} className="px-3 py-6 text-center text-muted-foreground">Chargement…</td></tr>
-            )}
-            {!isLoading && rows.length === 0 && (
-              <tr><td colSpan={8} className="px-3 py-6 text-center text-muted-foreground">Aucune règle planifiée.</td></tr>
-            )}
-            {rows.map((r) => (
-              <tr key={r.id} className="border-t border-border">
-                <td className="px-3 py-2">{CATEGORY_LABEL[r.category] ?? r.category}</td>
-                <td className="px-3 py-2">{r.commission_type === "flat" ? "Forfait" : "Pourcentage"}</td>
-                <td className="px-3 py-2 text-right">
-                  {r.commission_type === "flat" ? formatXof(r.commission_flat_xof) : `${r.commission_rate} %`}
-                </td>
-                <td className="px-3 py-2 text-xs">
-                  {new Date(r.starts_at).toLocaleString("fr-FR")}
-                  <br />→ {r.ends_at ? new Date(r.ends_at).toLocaleString("fr-FR") : "—"}
-                </td>
-                <td className="px-3 py-2 text-right">{r.priority}</td>
-                <td className="px-3 py-2 text-center">
-                  <input type="checkbox" checked={!!r.active}
-                    onChange={(e) => updateMut.mutate({ id: r.id, active: e.target.checked })} />
-                </td>
-                <td className="px-3 py-2 text-xs text-muted-foreground">{r.notes ?? "—"}</td>
-                <td className="px-3 py-2 text-right">
-                  <Button size="sm" variant="ghost"
-                    onClick={() => { if (confirm("Supprimer cette règle ?")) deleteMut.mutate(r.id); }}>
-                    Supprimer
-                  </Button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  );
-}
+/* -------------------- Commission schedules (period overrides) — RÉVOQUÉ --------------------
+ * Ancien panneau "Commissions planifiées" : règles de commission par catégorie (sans program_id),
+ * jamais réellement appliquées car la commission effective est désormais entièrement pilotée par
+ * le programme de marché actif (commission_default + resolve_program_commission). Conservé en
+ * commentaire de référence ; supprimer plus tard si inutile.
+ */
 
 
 /* ----------------------------- Billing tab ----------------------------- */
