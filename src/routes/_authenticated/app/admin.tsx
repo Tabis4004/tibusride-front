@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { supabase } from "@/integrations/supabase/client";
@@ -1573,6 +1573,256 @@ const CATEGORY_LABEL: Record<string, string> = {
   vip: "VIP",
 };
 
+const PRICING_DIFF_FIELDS: { key: string; label: string }[] = [
+  { key: "base_fare_xof", label: "Prise en charge" },
+  { key: "per_km_xof", label: "Prix / km" },
+  { key: "per_min_xof", label: "Prix / min" },
+  { key: "min_fare_xof", label: "Tarif minimum" },
+  { key: "commission_type", label: "Type de commission" },
+  { key: "commission_rate", label: "Commission (%)" },
+  { key: "commission_flat_xof", label: "Commission forfait (XOF)" },
+  { key: "active", label: "Actif" },
+];
+
+const DYNAMIC_DIFF_FIELDS: { key: string; label: string }[] = [
+  { key: "traffic_coefficient", label: "Coefficient trafic" },
+  { key: "traffic_ratio_cap", label: "Plafond trafic" },
+  { key: "weather_rainy_multiplier", label: "Météo pluie (×)" },
+  { key: "weather_cloudy_multiplier", label: "Météo nuage (×)" },
+  { key: "weather_sunny_multiplier", label: "Météo soleil (×)" },
+  { key: "rounding_increment_xof", label: "Arrondi (XOF)" },
+  { key: "active", label: "Actif" },
+];
+
+function formatDiffValue(field: string, v: any): string {
+  if (v === null || v === undefined) return "—";
+  if (field === "commission_type") return v === "flat" ? "Forfait" : "Pourcentage";
+  if (field === "active") return v ? "Actif" : "Inactif";
+  if (typeof v === "number") return v.toLocaleString("fr-FR");
+  return String(v);
+}
+
+function diffRows(
+  globalRow: any,
+  countryRow: any,
+  fields: { key: string; label: string }[],
+): { label: string; from: string; to: string }[] {
+  const out: { label: string; from: string; to: string }[] = [];
+  for (const f of fields) {
+    const gv = globalRow?.[f.key];
+    const cv = countryRow?.[f.key];
+    if (gv !== cv) out.push({ label: f.label, from: formatDiffValue(f.key, gv), to: formatDiffValue(f.key, cv) });
+  }
+  return out;
+}
+
+/**
+ * Vue d'ensemble : pour chaque pays ayant au moins une dérogation (tarifs,
+ * livraison, ou tarif dynamique), montre précisément ce qui diffère du
+ * défaut global — pour pouvoir rendre compte facilement aux associés.
+ */
+function CountryPricingOverview() {
+  const listPricing = useServerFn(listPricingSettings);
+  const listDelivery = useServerFn(listDeliveryPricingSettings);
+  const listDynamic = useServerFn(listDynamicPricingSettings);
+
+  const pricingQ = useQuery({ queryKey: ["admin", "pricing"], queryFn: () => listPricing({}) });
+  const deliveryQ = useQuery({ queryKey: ["admin", "delivery-pricing"], queryFn: () => listDelivery({}) });
+  const dynamicQ = useQuery({ queryKey: ["admin", "dynamic-pricing"], queryFn: () => listDynamic({}) });
+
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+
+  if (pricingQ.isLoading || deliveryQ.isLoading || dynamicQ.isLoading) {
+    return <p className="text-sm text-muted-foreground">Chargement de la vue d&apos;ensemble…</p>;
+  }
+
+  const pricingRows = (pricingQ.data ?? []) as any[];
+  const deliveryRows = (deliveryQ.data ?? []) as any[];
+  const dynamicRows = (dynamicQ.data ?? []) as any[];
+
+  const countries = Array.from(
+    new Set([
+      ...pricingRows.filter((r) => r.country).map((r) => r.country as string),
+      ...deliveryRows.filter((r) => r.country).map((r) => r.country as string),
+      ...dynamicRows.filter((r) => r.country).map((r) => r.country as string),
+    ]),
+  ).sort();
+
+  const reports = countries.map((country) => {
+    const pricing = pricingRows
+      .filter((r) => r.country === country)
+      .map((r) => {
+        const globalRow = pricingRows.find((g) => g.category === r.category && !g.country);
+        return { label: CATEGORY_LABEL[r.category] ?? r.category, diffs: diffRows(globalRow, r, PRICING_DIFF_FIELDS) };
+      });
+    const delivery = deliveryRows
+      .filter((r) => r.country === country)
+      .map((r) => {
+        const globalRow = deliveryRows.find((g) => g.vehicle === r.vehicle && !g.country);
+        const label = DELIVERY_VEHICLES[r.vehicle as DeliveryVehicle]?.label ?? r.vehicle;
+        return { label, diffs: diffRows(globalRow, r, PRICING_DIFF_FIELDS) };
+      });
+    const dynamicRow = dynamicRows.find((r) => r.country === country);
+    const dynamicGlobal = dynamicRows.find((g) => !g.country);
+    const dynamic = dynamicRow ? diffRows(dynamicGlobal, dynamicRow, DYNAMIC_DIFF_FIELDS) : [];
+
+    const totalDiffs =
+      pricing.reduce((n, p) => n + p.diffs.length, 0) +
+      delivery.reduce((n, d) => n + d.diffs.length, 0) +
+      dynamic.length;
+
+    return { country, pricing, delivery, dynamic, totalDiffs };
+  });
+
+  const toggle = (country: string) =>
+    setExpanded((s) => {
+      const next = new Set(s);
+      if (next.has(country)) next.delete(country);
+      else next.add(country);
+      return next;
+    });
+
+  const copySummary = () => {
+    const lines: string[] = [];
+    for (const r of reports) {
+      lines.push(
+        `${r.country} — ${r.totalDiffs === 0 ? "aucune différence avec le défaut global" : `${r.totalDiffs} différence(s)`}`,
+      );
+      for (const p of r.pricing) {
+        if (p.diffs.length === 0) continue;
+        lines.push(`  Catégorie ${p.label} :`);
+        for (const d of p.diffs) lines.push(`    - ${d.label} : ${d.from} → ${d.to}`);
+      }
+      for (const d2 of r.delivery) {
+        if (d2.diffs.length === 0) continue;
+        lines.push(`  Livraison ${d2.label} :`);
+        for (const d of d2.diffs) lines.push(`    - ${d.label} : ${d.from} → ${d.to}`);
+      }
+      if (r.dynamic.length > 0) {
+        lines.push(`  Tarif dynamique :`);
+        for (const d of r.dynamic) lines.push(`    - ${d.label} : ${d.from} → ${d.to}`);
+      }
+    }
+    const text = lines.length > 0 ? lines.join("\n") : "Aucun pays n'a de dérogation tarifaire.";
+    navigator.clipboard?.writeText(text).then(
+      () => toast.success("Résumé copié dans le presse-papiers"),
+      () => toast.error("Impossible de copier le résumé"),
+    );
+  };
+
+  if (reports.length === 0) {
+    return (
+      <div className="rounded-2xl border border-border bg-card p-4 text-sm text-muted-foreground">
+        Aucun pays n&apos;a de dérogation tarifaire pour le moment — tous appliquent le défaut global.
+      </div>
+    );
+  }
+
+  return (
+    <div className="overflow-x-auto rounded-2xl border border-border bg-card">
+      <div className="flex items-center justify-between border-b border-border px-4 py-3">
+        <div>
+          <h2 className="font-display text-base font-bold">Vue d&apos;ensemble par pays</h2>
+          <p className="text-xs text-muted-foreground">
+            Pays ayant une dérogation, et ce qui diffère réellement du défaut global (tarifs, commission, tarif
+            dynamique).
+          </p>
+        </div>
+        <Button size="sm" variant="outline" onClick={copySummary}>
+          Copier le résumé
+        </Button>
+      </div>
+      <table className="w-full text-sm">
+        <thead className="bg-muted/40 text-xs uppercase text-muted-foreground">
+          <tr>
+            <th className="px-3 py-2 text-left">Pays</th>
+            <th className="px-3 py-2 text-left">Statut</th>
+            <th className="px-3 py-2 text-right">Détail</th>
+          </tr>
+        </thead>
+        <tbody>
+          {reports.map((r) => (
+            <Fragment key={r.country}>
+              <tr className="border-t border-border">
+                <td className="px-3 py-2 font-medium">{r.country}</td>
+                <td className="px-3 py-2">
+                  {r.totalDiffs === 0 ? (
+                    <span className="text-xs text-muted-foreground">Identique au défaut global</span>
+                  ) : (
+                    <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800">
+                      {r.totalDiffs} différence{r.totalDiffs > 1 ? "s" : ""}
+                    </span>
+                  )}
+                </td>
+                <td className="px-3 py-2 text-right">
+                  <Button size="sm" variant="ghost" onClick={() => toggle(r.country)}>
+                    {expanded.has(r.country) ? "Masquer" : "Voir"}
+                  </Button>
+                </td>
+              </tr>
+              {expanded.has(r.country) && (
+                <tr className="border-t border-border bg-muted/20">
+                  <td colSpan={3} className="px-4 py-3">
+                    {r.totalDiffs === 0 ? (
+                      <p className="text-xs text-muted-foreground">
+                        Une ou plusieurs lignes existent pour ce pays mais aucune valeur n&apos;a encore été
+                        modifiée par rapport au défaut global.
+                      </p>
+                    ) : (
+                      <div className="space-y-2">
+                        {r.pricing
+                          .filter((p) => p.diffs.length > 0)
+                          .map((p) => (
+                            <div key={`pricing-${p.label}`}>
+                              <p className="text-xs font-semibold">Catégorie {p.label}</p>
+                              <ul className="ml-4 list-disc text-xs text-muted-foreground">
+                                {p.diffs.map((d) => (
+                                  <li key={d.label}>
+                                    {d.label} : {d.from} → {d.to}
+                                  </li>
+                                ))}
+                              </ul>
+                            </div>
+                          ))}
+                        {r.delivery
+                          .filter((d) => d.diffs.length > 0)
+                          .map((d2) => (
+                            <div key={`delivery-${d2.label}`}>
+                              <p className="text-xs font-semibold">Livraison {d2.label}</p>
+                              <ul className="ml-4 list-disc text-xs text-muted-foreground">
+                                {d2.diffs.map((d) => (
+                                  <li key={d.label}>
+                                    {d.label} : {d.from} → {d.to}
+                                  </li>
+                                ))}
+                              </ul>
+                            </div>
+                          ))}
+                        {r.dynamic.length > 0 && (
+                          <div>
+                            <p className="text-xs font-semibold">Tarif dynamique</p>
+                            <ul className="ml-4 list-disc text-xs text-muted-foreground">
+                              {r.dynamic.map((d) => (
+                                <li key={d.label}>
+                                  {d.label} : {d.from} → {d.to}
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </td>
+                </tr>
+              )}
+            </Fragment>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 function PricingTab() {
   const qc = useQueryClient();
   const listFn = useServerFn(listPricingSettings);
@@ -1628,6 +1878,8 @@ function PricingTab() {
 
   return (
     <div className="space-y-6">
+      <CountryPricingOverview />
+
       <div className="rounded-2xl border border-border bg-card p-4 text-sm text-muted-foreground">
         Définissez les tarifs de base (prise en charge, /km, /min) et la <strong>commission</strong> de chaque
         catégorie — c'est la seule source de vérité pour la commission appliquée à chaque course (plus de programme
