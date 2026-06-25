@@ -53,8 +53,10 @@ export function enrollmentProgress(profile: {
   license_number?: string | null;
   vehicle_type?: string | null;
   partner_type?: string | null;
+  avatar_url?: string | null;
 }): { done: number; total: number; complete: boolean } {
   const checks = [
+    !!profile.avatar_url,
     !!profile.partner_type,
     !!profile.vehicle_type,
     !!profile.city?.trim(),

@@ -55,6 +55,48 @@ export const uploadMyDriverDocument = createServerFn({ method: "POST" })
     return { ok: true as const, path };
   });
 
+const AVATAR_ALLOWED_TYPES = ["image/jpeg", "image/png", "image/webp"];
+
+/**
+ * Chauffeur / livreur : enregistre sa photo de profil, prise via la caméra
+ * de son téléphone pendant l'enrôlement (aucun upload depuis la galerie —
+ * mesure de sécurité pour garantir que le voyageur puisse identifier
+ * visuellement son chauffeur à l'arrivée). Stockée dans le bucket public
+ * `avatars` ; l'URL publique est écrite sur `profiles.avatar_url`.
+ */
+export const uploadMyAvatar = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d) =>
+    z.object({
+      contentType: z.enum(["image/jpeg", "image/png", "image/webp"]),
+      base64: z.string().max(8_000_000),
+    }).parse(d),
+  )
+  .handler(async ({ data, context }) => {
+    if (!AVATAR_ALLOWED_TYPES.includes(data.contentType)) {
+      throw new Error("Format non supporté (JPG, PNG ou WEBP).");
+    }
+    const { userId } = context;
+    const buf = Buffer.from(data.base64, "base64");
+    if (buf.byteLength > 4 * 1024 * 1024) throw new Error("Photo trop volumineuse (max 4 Mo).");
+
+    const ext = data.contentType === "image/png" ? "png" : data.contentType === "image/webp" ? "webp" : "jpg";
+    const path = `${userId}/avatar-${Date.now()}.${ext}`;
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { error: upErr } = await supabaseAdmin.storage
+      .from("avatars")
+      .upload(path, buf, { contentType: data.contentType, upsert: true });
+    if (upErr) throw new Error(upErr.message);
+
+    const { data: pub } = supabaseAdmin.storage.from("avatars").getPublicUrl(path);
+    const { error: updErr } = await supabaseAdmin
+      .from("profiles")
+      .update({ avatar_url: pub.publicUrl, updated_at: new Date().toISOString() } as never)
+      .eq("id", userId);
+    if (updErr) throw new Error(updErr.message);
+    return { ok: true as const, url: pub.publicUrl };
+  });
+
 /** URL signée pour consulter son propre document. */
 export const getMyDocumentSignedUrl = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
@@ -132,7 +174,15 @@ export const submitEnrollmentForReview = createServerFn({ method: "POST" })
     if (fetchErr) throw fetchErr;
     if (!prof) throw new Error("Profil partenaire introuvable.");
 
+    const { data: selfProfile, error: selfErr } = await supabase
+      .from("profiles")
+      .select("avatar_url")
+      .eq("id", userId)
+      .maybeSingle();
+    if (selfErr) throw selfErr;
+
     const missing: string[] = [];
+    if (!selfProfile?.avatar_url) missing.push("photo de profil (caméra)");
     if (!prof.partner_type) missing.push("type de partenaire");
     if (!prof.vehicle_type) missing.push("type de véhicule");
     if (!prof.city?.trim()) missing.push("ville");

@@ -61,9 +61,9 @@ function DriverPage() {
     queryKey: ["self-profile", user?.id],
     enabled: !!user,
     queryFn: async () => {
-      const { data, error } = await supabase.from("profiles").select("country").eq("id", user!.id).maybeSingle();
+      const { data, error } = await supabase.from("profiles").select("country, avatar_url").eq("id", user!.id).maybeSingle();
       if (error) throw error;
-      return data as { country: string | null } | null;
+      return data as { country: string | null; avatar_url: string | null } | null;
     },
   });
   const myCountry = profileQ.data?.country ?? null;
@@ -380,7 +380,11 @@ function DriverPage() {
       <EnrollmentWizard
         profile={driverProfile}
         country={myCountry}
-        onRefresh={() => qc.invalidateQueries({ queryKey: ["driver-profile"] })}
+        avatarUrl={profileQ.data?.avatar_url ?? null}
+        onRefresh={() => {
+          qc.invalidateQueries({ queryKey: ["driver-profile"] });
+          qc.invalidateQueries({ queryKey: ["self-profile"] });
+        }}
       />
     );
   }

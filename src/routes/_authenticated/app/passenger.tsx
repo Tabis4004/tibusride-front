@@ -11,6 +11,7 @@ import { Label } from "@/components/ui/label";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { CATEGORIES, countryForCoords, estimateDistance, estimateDuration, formatXof, getServiceZone, isInServiceZone, nearestServiceCity, resolveServiceCity, type Category } from "@/lib/pricing";
 import { Switch } from "@/components/ui/switch";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { computeDynamicPrice, estimateDriverWaitMin, type DynamicPriceBreakdown, type WeatherKind } from "@/lib/dynamic-pricing";
 import {
   computeDeliveryPrice,
@@ -23,7 +24,7 @@ import {
   type PackageType,
 } from "@/lib/delivery-pricing";
 import { toast } from "sonner";
-import { Banknote, Car, ChevronRight, CreditCard, MapPin, Phone, Smartphone, MessageCircle, ExternalLink, AlertTriangle, History, RotateCcw, Navigation2, UtensilsCrossed, Package } from "lucide-react";
+import { Banknote, Car, ChevronRight, CreditCard, MapPin, Phone, Smartphone, MessageCircle, ExternalLink, AlertTriangle, History, RotateCcw, Navigation2, UtensilsCrossed, Package, UserRound } from "lucide-react";
 import { RideTrackingMap, type LatLng } from "@/components/RideTrackingMap";
 import { computeRoute, reverseGeocode, getWeatherAtPoint, geocodeAddress } from "@/lib/maps.functions";
 import { AddressAutocomplete } from "@/components/AddressAutocomplete";
@@ -1134,7 +1135,7 @@ function CurrentRideBanner({ ride: initialRide, onCancel }: { ride: any; onCance
   });
 
   const etaText = etaSec != null ? (etaSec < 60 ? `${etaSec}s` : `${Math.round(etaSec / 60)} min`) : "—";
-  const driverInfo = driverQ.data as (DriverVehiclePublic & { full_name?: string; phone?: string; rating_avg?: number }) | null | undefined;
+  const driverInfo = driverQ.data as (DriverVehiclePublic & { full_name?: string; phone?: string; rating_avg?: number; avatar_url?: string | null }) | null | undefined;
   const driverPhone = driverInfo?.phone;
   const driverName = driverInfo?.full_name;
   const driverVehicleLine = formatDriverVehicleDescription(driverInfo);
@@ -1284,17 +1285,23 @@ function CurrentRideBanner({ ride: initialRide, onCancel }: { ride: any; onCance
       {activeRide.driver_id && driverQ.data && (
         <div className="rounded-2xl border border-border bg-card p-4">
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <div className="text-xs text-muted-foreground">Votre chauffeur</div>
-              <div className="font-semibold">{driverInfo?.full_name ?? "Chauffeur"}</div>
-              {driverVehicleLine ? (
-                <div className="mt-1 text-xs text-muted-foreground">{driverVehicleLine}</div>
-              ) : (
-                <div className="mt-1 text-xs text-muted-foreground">Informations véhicule non renseignées</div>
-              )}
-              {driverInfo?.rating_avg ? (
-                <div className="text-xs text-muted-foreground">★ {Number(driverInfo.rating_avg).toFixed(1)}</div>
-              ) : null}
+            <div className="flex items-center gap-3">
+              <Avatar className="h-12 w-12 border border-border">
+                <AvatarImage src={driverInfo?.avatar_url ?? undefined} alt={driverName ?? "Chauffeur"} />
+                <AvatarFallback><UserRound className="h-5 w-5 text-muted-foreground" /></AvatarFallback>
+              </Avatar>
+              <div>
+                <div className="text-xs text-muted-foreground">Votre chauffeur</div>
+                <div className="font-semibold">{driverInfo?.full_name ?? "Chauffeur"}</div>
+                {driverVehicleLine ? (
+                  <div className="mt-1 text-xs text-muted-foreground">{driverVehicleLine}</div>
+                ) : (
+                  <div className="mt-1 text-xs text-muted-foreground">Informations véhicule non renseignées</div>
+                )}
+                {driverInfo?.rating_avg ? (
+                  <div className="text-xs text-muted-foreground">★ {Number(driverInfo.rating_avg).toFixed(1)}</div>
+                ) : null}
+              </div>
             </div>
             {driverPhone ? (
               <div className="flex gap-2">

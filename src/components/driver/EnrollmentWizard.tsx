@@ -4,6 +4,8 @@ import { useServerFn } from "@tanstack/react-start";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { CameraCapture } from "@/components/CameraCapture";
 import { defaultCityForCountry } from "@/lib/pricing";
 import {
   DOC_COLUMN,
@@ -19,10 +21,11 @@ import {
   getMyDocumentSignedUrl,
   submitEnrollmentForReview,
   updateMyEnrollment,
+  uploadMyAvatar,
   uploadMyDriverDocument,
 } from "@/lib/driver-enrollment.functions";
 import { toast } from "sonner";
-import { CheckCircle2, ChevronRight, FileUp, Loader2, ShieldCheck, Upload } from "lucide-react";
+import { Camera, CheckCircle2, ChevronRight, FileUp, Loader2, ShieldCheck, Upload, UserRound } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 type Profile = {
@@ -52,14 +55,18 @@ function docPath(profile: Profile, kind: EnrollmentDocKind): string | null | und
 export function EnrollmentWizard({
   profile,
   country,
+  avatarUrl,
   onRefresh,
 }: {
   profile: Profile;
   /** Pays choisi par le chauffeur/livreur à l'inscription — seule donnée requise ici. */
   country?: string | null;
+  /** Photo de profil actuelle (profiles.avatar_url), prise à la caméra. */
+  avatarUrl?: string | null;
   onRefresh: () => void;
 }) {
   const [step, setStep] = useState(0);
+  const [cameraOpen, setCameraOpen] = useState(false);
   const [partnerType, setPartnerType] = useState<PartnerType>((profile.partner_type as PartnerType) ?? "ride");
   const [vehicleType, setVehicleType] = useState<VehicleType>((profile.vehicle_type as VehicleType) ?? "car");
   // La ville n'est plus choisie manuellement : elle découle uniquement du
@@ -79,12 +86,24 @@ export function EnrollmentWizard({
     city,
     license_number: license,
     insurance_expires_at: insuranceExpiresAt,
+    avatar_url: avatarUrl,
   });
   const isUnderReview = profile.status === "under_review";
   const isRejected = profile.status === "rejected";
 
   const updateFn = useServerFn(updateMyEnrollment);
   const submitFn = useServerFn(submitEnrollmentForReview);
+  const avatarFn = useServerFn(uploadMyAvatar);
+
+  const saveAvatar = useMutation({
+    mutationFn: (photo: { base64: string; contentType: "image/jpeg" }) => avatarFn({ data: photo }),
+    onSuccess: () => {
+      toast.success("Photo de profil enregistrée");
+      setCameraOpen(false);
+      onRefresh();
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
 
   const saveStep1 = useMutation({
     mutationFn: () => updateFn({
@@ -176,6 +195,26 @@ export function EnrollmentWizard({
 
       {step === 0 && (
         <section className="space-y-4 rounded-3xl border border-border bg-card p-6">
+          <div>
+            <Label className="text-sm font-medium">Photo de profil</Label>
+            <div className="mt-2 flex items-center gap-3 rounded-2xl border border-border p-3">
+              <Avatar className="h-14 w-14 border border-border">
+                <AvatarImage src={avatarUrl ?? undefined} alt="Photo de profil" />
+                <AvatarFallback><UserRound className="h-6 w-6 text-muted-foreground" /></AvatarFallback>
+              </Avatar>
+              <div className="flex-1">
+                <p className="text-xs text-muted-foreground">
+                  Cette photo sera visible par les voyageurs pour vous identifier à l'arrivée.
+                  Elle doit être prise en direct avec la caméra — aucun import depuis la galerie.
+                </p>
+              </div>
+              <Button type="button" size="sm" variant="outline" onClick={() => setCameraOpen(true)} disabled={saveAvatar.isPending}>
+                {saveAvatar.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Camera className="h-3.5 w-3.5" />}
+                <span className="ml-1">{avatarUrl ? "Reprendre" : "Prendre la photo"}</span>
+              </Button>
+            </div>
+          </div>
+
           <div>
             <Label className="text-sm font-medium">Je m'inscris comme</Label>
             <div className="mt-2 grid gap-2 sm:grid-cols-2">
@@ -274,13 +313,26 @@ export function EnrollmentWizard({
 
           <Button
             className="w-full"
-            disabled={!city || !license.trim() || !insuranceExpiresAt || saveStep1.isPending}
+            disabled={!avatarUrl || !city || !license.trim() || !insuranceExpiresAt || saveStep1.isPending}
             onClick={() => saveStep1.mutate()}
           >
             {saveStep1.isPending ? "Enregistrement…" : "Continuer vers les documents"}
             <ChevronRight className="ml-2 h-4 w-4" />
           </Button>
+          {!avatarUrl && (
+            <p className="text-center text-xs text-destructive">Prenez votre photo de profil pour continuer.</p>
+          )}
         </section>
+      )}
+
+      {cameraOpen && (
+        <CameraCapture
+          title="Photo de profil"
+          hint="Cadrez votre visage, bien éclairé. Cette photo sera montrée aux voyageurs."
+          facingMode="user"
+          onClose={() => setCameraOpen(false)}
+          onCapture={async (photo) => { await saveAvatar.mutateAsync(photo); }}
+        />
       )}
 
       {step === 1 && (
