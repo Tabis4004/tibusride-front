@@ -405,6 +405,80 @@ function DriverPage() {
         </DialogContent>
       </Dialog>
 
+      {/* Course(s) en cours — bloc le plus prioritaire de toute la page :
+          si le chauffeur a une course active, c'est ce qu'il veut voir et
+          piloter (statut, position, contact passager) avant tout le reste,
+          y compris avant le bloc "courses disponibles" et la carte. */}
+      {myRidesQ.data && myRidesQ.data.length > 0 && (
+        <section>
+          <h2 className="mb-3 font-display text-lg font-semibold">Courses en cours</h2>
+          <div className="space-y-3">
+            {myRidesQ.data.map((r) => (
+              <div key={r.id} className="space-y-2">
+                <RideCard ride={r} />
+                {(r.status === "accepted" || r.status === "arriving" || r.status === "in_progress") && (
+                  <div className="flex gap-2">
+                    {r.status === "accepted" && (
+                      <Button className="flex-1" size="lg" onClick={() => updateStatus.mutate({ rideId: r.id, status: "arriving" })}>
+                        J'arrive
+                      </Button>
+                    )}
+                    {r.status === "arriving" && (
+                      <Button className="flex-1" size="lg" onClick={() => updateStatus.mutate({ rideId: r.id, status: "in_progress" })}>
+                        Démarrer
+                      </Button>
+                    )}
+                    {r.status === "in_progress" && (
+                      <Button className="flex-1" size="lg" onClick={() => updateStatus.mutate({ rideId: r.id, status: "completed" })}>
+                        Terminer
+                      </Button>
+                    )}
+                  </div>
+                )}
+                <DriverLocationSharer
+                  rideId={r.id}
+                  pickup={r.pickup_lat && r.pickup_lng ? { lat: r.pickup_lat, lng: r.pickup_lng } : null}
+                  dropoff={r.dropoff_lat && r.dropoff_lng ? { lat: r.dropoff_lat, lng: r.dropoff_lng } : null}
+                />
+                {r.passenger_phone ? (
+                  <div className="rounded-xl border border-border bg-card px-4 py-2 text-xs">
+                    Passager : <a className="font-semibold text-primary" href={`tel:${r.passenger_phone}`}>{r.passenger_phone}</a>
+                    {" · "}
+                    <a className="text-primary hover:underline" href={`https://wa.me/${r.passenger_phone.replace(/[^0-9]/g, "")}`} target="_blank" rel="noreferrer">WhatsApp</a>
+                  </div>
+                ) : (
+                  <div className="rounded-xl border border-border bg-card px-4 py-2 text-xs text-muted-foreground">
+                    Numéro passager non renseigné.
+                  </div>
+                )}
+                {(r.status === "arriving" || r.status === "in_progress") && (
+                  <div className="flex items-center justify-between gap-2 rounded-xl border border-border bg-card px-4 py-2 text-xs">
+                    <span className="text-muted-foreground">
+                      {r.waiting_started_at
+                        ? "Attente en cours…"
+                        : Number(r.waiting_fee_xof ?? 0) > 0
+                          ? `Frais d'attente déjà ajoutés : ${formatXof(r.waiting_fee_xof)}`
+                          : "Passager en retard ou arrêt demandé ?"}
+                    </span>
+                    <Button
+                      size="sm"
+                      variant={r.waiting_started_at ? "default" : "outline"}
+                      disabled={toggleWaiting.isPending}
+                      onClick={() => toggleWaiting.mutate(r)}
+                    >
+                      {r.waiting_started_at ? "Terminer l'attente" : "Signaler une attente"}
+                    </Button>
+                  </div>
+                )}
+                <a href={`/app/ride/${r.id}`} className="ml-1 text-xs font-medium text-primary hover:underline">
+                  Voir détails →
+                </a>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+
       {/* Bloc d'acceptation des courses/livraisons — remonté tout en haut,
           avant la carte et le tableau de bord, pour que le chauffeur le voie
           sans avoir à faire défiler la page dès qu'il passe en ligne. */}
@@ -502,76 +576,6 @@ function DriverPage() {
       <WalletSection range={statsRange} />
 
       <MyEarningsReportSection />
-
-      {myRidesQ.data && myRidesQ.data.length > 0 && (
-        <section>
-          <h2 className="mb-3 font-display text-lg font-semibold">Courses en cours</h2>
-          <div className="space-y-3">
-            {myRidesQ.data.map((r) => (
-              <div key={r.id} className="space-y-2">
-                <RideCard ride={r} />
-                {(r.status === "accepted" || r.status === "arriving" || r.status === "in_progress") && (
-                  <div className="flex gap-2">
-                    {r.status === "accepted" && (
-                      <Button className="flex-1" size="lg" onClick={() => updateStatus.mutate({ rideId: r.id, status: "arriving" })}>
-                        J'arrive
-                      </Button>
-                    )}
-                    {r.status === "arriving" && (
-                      <Button className="flex-1" size="lg" onClick={() => updateStatus.mutate({ rideId: r.id, status: "in_progress" })}>
-                        Démarrer
-                      </Button>
-                    )}
-                    {r.status === "in_progress" && (
-                      <Button className="flex-1" size="lg" onClick={() => updateStatus.mutate({ rideId: r.id, status: "completed" })}>
-                        Terminer
-                      </Button>
-                    )}
-                  </div>
-                )}
-                <DriverLocationSharer
-                  rideId={r.id}
-                  pickup={r.pickup_lat && r.pickup_lng ? { lat: r.pickup_lat, lng: r.pickup_lng } : null}
-                  dropoff={r.dropoff_lat && r.dropoff_lng ? { lat: r.dropoff_lat, lng: r.dropoff_lng } : null}
-                />
-                {r.passenger_phone ? (
-                  <div className="rounded-xl border border-border bg-card px-4 py-2 text-xs">
-                    Passager : <a className="font-semibold text-primary" href={`tel:${r.passenger_phone}`}>{r.passenger_phone}</a>
-                    {" · "}
-                    <a className="text-primary hover:underline" href={`https://wa.me/${r.passenger_phone.replace(/[^0-9]/g, "")}`} target="_blank" rel="noreferrer">WhatsApp</a>
-                  </div>
-                ) : (
-                  <div className="rounded-xl border border-border bg-card px-4 py-2 text-xs text-muted-foreground">
-                    Numéro passager non renseigné.
-                  </div>
-                )}
-                {(r.status === "arriving" || r.status === "in_progress") && (
-                  <div className="flex items-center justify-between gap-2 rounded-xl border border-border bg-card px-4 py-2 text-xs">
-                    <span className="text-muted-foreground">
-                      {r.waiting_started_at
-                        ? "Attente en cours…"
-                        : Number(r.waiting_fee_xof ?? 0) > 0
-                          ? `Frais d'attente déjà ajoutés : ${formatXof(r.waiting_fee_xof)}`
-                          : "Passager en retard ou arrêt demandé ?"}
-                    </span>
-                    <Button
-                      size="sm"
-                      variant={r.waiting_started_at ? "default" : "outline"}
-                      disabled={toggleWaiting.isPending}
-                      onClick={() => toggleWaiting.mutate(r)}
-                    >
-                      {r.waiting_started_at ? "Terminer l'attente" : "Signaler une attente"}
-                    </Button>
-                  </div>
-                )}
-                <a href={`/app/ride/${r.id}`} className="ml-1 text-xs font-medium text-primary hover:underline">
-                  Voir détails →
-                </a>
-              </div>
-            ))}
-          </div>
-        </section>
-      )}
 
       <button
         type="button"
