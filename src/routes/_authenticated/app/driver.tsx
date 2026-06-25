@@ -15,7 +15,8 @@ import { CarIcon } from "@/components/CarIcon";
 import { useServerFn } from "@tanstack/react-start";
 import { getMyWallet } from "@/lib/wallet.functions";
 import { getNotificationPrefs } from "@/lib/tracking.functions";
-import { getNotifyPermission, requestNotifyPermission, showLocalNotification, speakAnnouncement, primeSpeechSynthesis } from "@/lib/notify";
+import { getNotifyPermission, requestNotifyPermission, showLocalNotification, speakAnnouncement, speakAnnouncementCloud, primeSpeechSynthesis } from "@/lib/notify";
+import { getAnnouncementAudioUrl, ANNOUNCEMENT_TEXT } from "@/lib/tts.functions";
 
 /** Durée (s) d'affichage du popup d'alerte "nouvelle course" en mode liste
  * ouverte (self_assign) — en mode 'proximity', c'est `ride_offers.expires_at`
@@ -99,6 +100,7 @@ function DriverPage() {
   // 20260630000000_wallet_balance_gating.sql — ceci n'est qu'un confort UX
   // pour éviter de lui présenter des courses qu'il ne pourrait pas accepter).
   const getWalletFn = useServerFn(getMyWallet);
+  const getAnnouncementAudioUrlFn = useServerFn(getAnnouncementAudioUrl);
   const walletQ = useQuery({
     queryKey: ["my-wallet"],
     queryFn: () => getWalletFn(),
@@ -106,25 +108,46 @@ function DriverPage() {
   });
   const walletEmpty = walletQ.data !== undefined && Number(walletQ.data.balance_xof ?? 0) <= 0;
 
+  // Filtre période pour le bloc "Gains totaux / Courses effectuées / Note
+  // moyenne" et pour les "Derniers mouvements" du wallet — un seul sélecteur
+  // partagé pour que les chiffres restent cohérents entre eux.
+  const [statsRange, setStatsRange] = useState<StatsRange>("all");
+  const statsRangeStart = rangeStartIso(statsRange);
+
   // `driver_profiles.total_earnings`/`rides_count` ne sont mis à jour par
   // aucun trigger — toujours à 0. Les vrais gains nets sont déjà journalisés
   // par course dans `ride_payouts` (déclenché à la complétion), donc on les
   // agrège directement depuis cette table plutôt que de se fier aux colonnes
-  // dénormalisées jamais alimentées.
+  // dénormalisées jamais alimentées. La note moyenne est recalculée depuis
+  // `ratings` (au lieu du `rating_avg` dénormalisé, all-time) pour pouvoir
+  // suivre le même filtre de période.
   const driverStatsQ = useQuery({
-    queryKey: ["driver-stats", user?.id],
+    queryKey: ["driver-stats", user?.id, statsRange],
     enabled: !!user,
     queryFn: async () => {
-      const { data, error } = await supabase
+      let payoutsQ = supabase
         .from("ride_payouts")
         .select("net_xof")
         .eq("driver_id", user!.id)
         .eq("status", "paid");
-      if (error) throw error;
-      const rows = data ?? [];
+      if (statsRangeStart) payoutsQ = payoutsQ.gte("processed_at", statsRangeStart);
+      const { data: payouts, error: payoutsErr } = await payoutsQ;
+      if (payoutsErr) throw payoutsErr;
+
+      let ratingsQ = supabase
+        .from("ratings")
+        .select("score")
+        .eq("ratee_id", user!.id);
+      if (statsRangeStart) ratingsQ = ratingsQ.gte("created_at", statsRangeStart);
+      const { data: ratings, error: ratingsErr } = await ratingsQ;
+      if (ratingsErr) throw ratingsErr;
+
+      const rows = payouts ?? [];
+      const ratingRows = ratings ?? [];
       return {
         totalEarnings: rows.reduce((sum, r) => sum + (r.net_xof ?? 0), 0),
         ridesCount: rows.length,
+        ratingAvg: ratingRows.length > 0 ? ratingRows.reduce((sum, r) => sum + (r.score ?? 0), 0) / ratingRows.length : null,
       };
     },
   });
@@ -235,7 +258,7 @@ function DriverPage() {
             o.frequency.value = 1040; g.gain.value = 0.18;
             o.start(); setTimeout(() => { o.stop(); ctx.close(); }, 380);
           }
-          speakAnnouncement("Vous avez une commande");
+          speakAnnouncementCloud("new_ride_alert", ANNOUNCEMENT_TEXT.new_ride_alert, getAnnouncementAudioUrlFn);
         } catch {}
         setNewRidePopup({ id: r.id, title, description });
         qc.invalidateQueries({ queryKey: ["open-rides"] });
@@ -265,9 +288,15 @@ function DriverPage() {
       }).eq("id", rideId).eq("status", "requested");
       if (error) throw error;
     },
-    onSuccess: () => { toast.success("Course acceptée !"); qc.invalidateQueries(); setNewRidePopup(null); },
+    onSuccess: () => { toast.success("Course acceptée !"); speakAnnouncementCloud("ride_accepted", ANNOUNCEMENT_TEXT.ride_accepted, getAnnouncementAudioUrlFn); qc.invalidateQueries(); setNewRidePopup(null); },
     onError: (e: Error) => toast.error(e.message),
   });
+
+  const STATUS_ANNOUNCEMENTS = {
+    arriving: "driver_arriving",
+    in_progress: "ride_started",
+    completed: "ride_completed",
+  } as const;
 
   const updateStatus = useMutation({
     mutationFn: async ({ rideId, status }: { rideId: string; status: string }) => {
@@ -277,7 +306,11 @@ function DriverPage() {
       const { error } = await supabase.from("rides").update(patch).eq("id", rideId);
       if (error) throw error;
     },
-    onSuccess: () => qc.invalidateQueries(),
+    onSuccess: (_data, variables) => {
+      const key = (STATUS_ANNOUNCEMENTS as Record<string, keyof typeof ANNOUNCEMENT_TEXT>)[variables.status];
+      if (key) speakAnnouncementCloud(key, ANNOUNCEMENT_TEXT[key], getAnnouncementAudioUrlFn);
+      qc.invalidateQueries();
+    },
   });
 
   // Frais d'attente/retard : le chauffeur signale le début et la fin d'une
@@ -397,17 +430,40 @@ function DriverPage() {
         </div>
       </div>
 
+      <div className="flex items-center gap-2 overflow-x-auto pb-1">
+        {(Object.keys(STATS_RANGE_LABEL) as StatsRange[]).map((r) => (
+          <Button
+            key={r}
+            size="sm"
+            variant={statsRange === r ? "default" : "outline"}
+            onClick={() => setStatsRange(r)}
+          >
+            {STATS_RANGE_LABEL[r]}
+          </Button>
+        ))}
+      </div>
+
       <div className="grid gap-4 sm:grid-cols-3">
         <Stat icon={Wallet} label="Gains totaux" value={formatXof(driverStatsQ.data?.totalEarnings ?? 0)} />
         <Stat icon={Car} label="Courses effectuées" value={String(driverStatsQ.data?.ridesCount ?? 0)} />
-        <Stat icon={Clock} label="Note moyenne" value={`${Number(driverQ.data.rating_avg ?? 5).toFixed(1)} / 5`} />
+        <Stat
+          icon={Clock}
+          label="Note moyenne"
+          value={
+            driverStatsQ.data?.ratingAvg != null
+              ? `${driverStatsQ.data.ratingAvg.toFixed(1)} / 5`
+              : statsRange === "all"
+                ? `${Number(driverQ.data.rating_avg ?? 5).toFixed(1)} / 5`
+                : "— / 5"
+          }
+        />
       </div>
 
       <DriverZoneSettings />
 
       <InsuranceStatusCard profile={driverQ.data} />
 
-      <WalletSection />
+      <WalletSection range={statsRange} />
 
       <MyEarningsReportSection />
 
@@ -417,18 +473,31 @@ function DriverPage() {
           <div className="space-y-3">
             {myRidesQ.data.map((r) => (
               <div key={r.id} className="space-y-2">
-                <RideCard ride={r} actions={
-                  <div className="flex gap-2">
-                    {r.status === "accepted" && <Button size="sm" onClick={() => updateStatus.mutate({ rideId: r.id, status: "arriving" })}>J'arrive</Button>}
-                    {r.status === "arriving" && <Button size="sm" onClick={() => updateStatus.mutate({ rideId: r.id, status: "in_progress" })}>Démarrer</Button>}
-                    {r.status === "in_progress" && <Button size="sm" onClick={() => updateStatus.mutate({ rideId: r.id, status: "completed" })}>Terminer</Button>}
-                  </div>
-                } />
+                <RideCard ride={r} />
                 <DriverLocationSharer
                   rideId={r.id}
                   pickup={r.pickup_lat && r.pickup_lng ? { lat: r.pickup_lat, lng: r.pickup_lng } : null}
                   dropoff={r.dropoff_lat && r.dropoff_lng ? { lat: r.dropoff_lat, lng: r.dropoff_lng } : null}
                 />
+                {(r.status === "accepted" || r.status === "arriving" || r.status === "in_progress") && (
+                  <div className="flex gap-2">
+                    {r.status === "accepted" && (
+                      <Button className="flex-1" size="lg" onClick={() => updateStatus.mutate({ rideId: r.id, status: "arriving" })}>
+                        J'arrive
+                      </Button>
+                    )}
+                    {r.status === "arriving" && (
+                      <Button className="flex-1" size="lg" onClick={() => updateStatus.mutate({ rideId: r.id, status: "in_progress" })}>
+                        Démarrer
+                      </Button>
+                    )}
+                    {r.status === "in_progress" && (
+                      <Button className="flex-1" size="lg" onClick={() => updateStatus.mutate({ rideId: r.id, status: "completed" })}>
+                        Terminer
+                      </Button>
+                    )}
+                  </div>
+                )}
                 {r.passenger_phone ? (
                   <div className="rounded-xl border border-border bg-card px-4 py-2 text-xs">
                     Passager : <a className="font-semibold text-primary" href={`tel:${r.passenger_phone}`}>{r.passenger_phone}</a>
@@ -530,7 +599,7 @@ function Stat({ icon: Icon, label, value }: { icon: any; label: string; value: s
   );
 }
 
-function RideCard({ ride, actions }: { ride: any; actions: React.ReactNode }) {
+function RideCard({ ride, actions }: { ride: any; actions?: React.ReactNode }) {
   const isDelivery = ride.service_type === "delivery";
   const deliveryVehicle = ride.delivery_vehicle as keyof typeof DELIVERY_VEHICLES | undefined;
   const packageType = ride.package_type as keyof typeof PACKAGE_TYPES | undefined;
@@ -606,7 +675,7 @@ const TX_LABEL: Record<string, string> = {
   refund: "Remboursement",
 };
 
-function WalletSection() {
+function WalletSection({ range = "all" }: { range?: StatsRange }) {
   const getWalletFn = useServerFn(getMyWallet);
   const { config: marketConfig } = useCountryMarket();
   const commissionPct = marketConfig?.commissionDefault ?? 20;
@@ -615,6 +684,14 @@ function WalletSection() {
     queryFn: () => getWalletFn(),
     refetchInterval: 15000,
   });
+
+  // `getMyWallet` renvoie déjà les 50 derniers mouvements (côté serveur, sans
+  // filtre de date) ; on applique le filtre de période choisi côté client
+  // sur cette même liste pour rester cohérent avec les autres blocs filtrés.
+  const rangeStart = rangeStartIso(range);
+  const filteredTransactions = (data?.transactions ?? []).filter((t: any) =>
+    rangeStart ? new Date(t.created_at).toISOString() >= rangeStart : true,
+  );
 
   return (
     <section className="rounded-3xl border border-border bg-card p-5">
@@ -636,10 +713,10 @@ function WalletSection() {
 
       <h3 className="mb-2 text-sm font-semibold">Derniers mouvements</h3>
       <div className="space-y-1 text-xs">
-        {(data?.transactions ?? []).length === 0 ? (
-          <p className="text-muted-foreground">Aucun mouvement pour le moment.</p>
+        {filteredTransactions.length === 0 ? (
+          <p className="text-muted-foreground">Aucun mouvement sur cette période.</p>
         ) : (
-          (data?.transactions ?? []).slice(0, 10).map((t: any) => (
+          filteredTransactions.slice(0, 10).map((t: any) => (
             <div key={t.id} className="flex justify-between rounded border border-border px-2 py-1">
               <span className="truncate">
                 {new Date(t.created_at).toLocaleString("fr-FR")} · {TX_LABEL[t.type] ?? t.type}
@@ -660,6 +737,25 @@ const DRIVER_CATEGORY_LABEL: Record<string, string> = {
   taxi: "Taxi", eco: "Éco", confort: "Confort", confort_plus: "Confort +", vip: "VIP",
   moto: "Moto", car: "Voiture", van: "Van", truck: "Camion",
 };
+
+type StatsRange = "today" | "7d" | "30d" | "all";
+
+const STATS_RANGE_LABEL: Record<StatsRange, string> = {
+  today: "Aujourd'hui",
+  "7d": "7 jours",
+  "30d": "30 jours",
+  all: "Tout",
+};
+
+function rangeStartIso(range: StatsRange): string | null {
+  const now = new Date();
+  if (range === "today") {
+    return new Date(now.getFullYear(), now.getMonth(), now.getDate()).toISOString();
+  }
+  if (range === "7d") return new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString();
+  if (range === "30d") return new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000).toISOString();
+  return null;
+}
 
 function isoMonthStart(d = new Date()) {
   return new Date(d.getFullYear(), d.getMonth(), 1).toISOString();
@@ -894,6 +990,7 @@ function PendingOfferBanner() {
   const getOfferFn = useServerFn(getMyPendingOffer);
   const acceptFn = useServerFn(acceptRideOffer);
   const declineFn = useServerFn(declineRideOffer);
+  const getAnnouncementAudioUrlFn = useServerFn(getAnnouncementAudioUrl);
 
   const offerQ = useQuery({
     queryKey: ["my-pending-offer"],
@@ -915,13 +1012,13 @@ function PendingOfferBanner() {
         isDelivery ? "Nouvelle livraison à proximité" : "Nouvelle course à proximité",
         "Vous avez une nouvelle offre — répondez avant expiration.",
       );
-      speakAnnouncement("Vous avez une commande");
+      speakAnnouncementCloud("new_ride_alert", ANNOUNCEMENT_TEXT.new_ride_alert, getAnnouncementAudioUrlFn);
     } catch {}
   }, [offerQ.data]);
 
   const accept = useMutation({
     mutationFn: (rideId: string) => acceptFn({ data: { rideId } }),
-    onSuccess: () => { toast.success("Course acceptée !"); qc.invalidateQueries(); },
+    onSuccess: () => { toast.success("Course acceptée !"); speakAnnouncementCloud("ride_accepted", ANNOUNCEMENT_TEXT.ride_accepted, getAnnouncementAudioUrlFn); qc.invalidateQueries(); },
     onError: (e: Error) => { toast.error(e.message); qc.invalidateQueries({ queryKey: ["my-pending-offer"] }); },
   });
   const decline = useMutation({

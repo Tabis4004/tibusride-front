@@ -31,7 +31,8 @@ import { DeliveryPartnerAds } from "@/components/DeliveryPartnerAds";
 import { CarIcon } from "@/components/CarIcon";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { getNotificationPrefs } from "@/lib/tracking.functions";
-import { getNotifyPermission, requestNotifyPermission, showLocalNotification } from "@/lib/notify";
+import { getNotifyPermission, requestNotifyPermission, showLocalNotification, speakAnnouncementCloud } from "@/lib/notify";
+import { getAnnouncementAudioUrl, ANNOUNCEMENT_TEXT } from "@/lib/tts.functions";
 import { getEffectivePricingConfig } from "@/lib/pricing.functions";
 import { getCurrentPosition } from "@/lib/native-geolocation";
 import { useNativeApp } from "@/hooks/use-native-app";
@@ -934,6 +935,7 @@ function CurrentRideBanner({ ride: initialRide, onCancel }: { ride: any; onCance
   const geocodeFn = useServerFn(geocodeAddress);
   const routeFn = useServerFn(computeRoute);
   const getPrefsFn = useServerFn(getNotificationPrefs);
+  const getAnnouncementAudioUrlFn = useServerFn(getAnnouncementAudioUrl);
   const { data: prefs } = useQuery({ queryKey: ["notif-prefs"], queryFn: () => getPrefsFn() });
 
   // Driver contact — via security-definer RPC (only safe vehicle / contact fields)
@@ -997,6 +999,10 @@ function CurrentRideBanner({ ride: initialRide, onCancel }: { ride: any; onCance
             const label = STATUS_LABEL[next.status] ?? next.status;
             notify("Mise à jour de la course", label, "status");
           }
+        }
+        if (next.status === "completed") {
+          toast.success("Merci d'avoir utilisé Tibus Ride", { description: "Heureux de vous revoir bientôt !", duration: 7000 });
+          speakAnnouncementCloud("ride_completed_thanks", ANNOUNCEMENT_TEXT.ride_completed_thanks, getAnnouncementAudioUrlFn);
         }
         if (next.status === "completed" || next.status === "cancelled") {
           qc.invalidateQueries({ queryKey: ["current-ride"] });

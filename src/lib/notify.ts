@@ -192,3 +192,48 @@ export function speakAnnouncement(text: string): void {
     // Non bloquant : une voix manquée ne doit jamais casser le reste de l'UI.
   }
 }
+
+/**
+ * Variante "cloud-first" pour les annonces fixes du workflow chauffeur
+ * (voir `tts.functions.ts`) : joue un MP3 pré-généré par Google Cloud TTS
+ * (mis en cache côté serveur dans le bucket Storage `tts-announcements`),
+ * ce qui contourne entièrement la dépendance au moteur TTS du téléphone —
+ * le point faible identifié sur certains Android (notamment Huawei sans
+ * Google Play Services). Retombe sur `speakAnnouncement` (plugin natif puis
+ * Web Speech API) si l'appel cloud échoue (offline, clé API absente, etc.).
+ *
+ * `fetchAudioUrl` est le server fn `getAnnouncementAudioUrl` lié via
+ * `useServerFn` dans le composant appelant (cette fonction vit hors React,
+ * donc on ne peut pas y appeler le hook directement).
+ */
+const cloudAudioUrlCache = new Map<string, string>();
+
+export function speakAnnouncementCloud(
+  key: string,
+  text: string,
+  fetchAudioUrl: (args: { data: { key: string } }) => Promise<{ ok: boolean; url?: string; error?: string }>,
+): void {
+  const cached = cloudAudioUrlCache.get(key);
+  const playUrl = (url: string) => {
+    try {
+      const audio = new Audio(url);
+      audio.play().catch(() => speakAnnouncement(text));
+    } catch {
+      speakAnnouncement(text);
+    }
+  };
+  if (cached) {
+    playUrl(cached);
+    return;
+  }
+  fetchAudioUrl({ data: { key } })
+    .then((res) => {
+      if (res.ok && res.url) {
+        cloudAudioUrlCache.set(key, res.url);
+        playUrl(res.url);
+      } else {
+        speakAnnouncement(text);
+      }
+    })
+    .catch(() => speakAnnouncement(text));
+}

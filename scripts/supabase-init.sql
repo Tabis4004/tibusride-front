@@ -961,6 +961,30 @@ CREATE POLICY "Drivers update own documents" ON storage.objects
   WITH CHECK (bucket_id = 'driver-documents' AND owner = auth.uid());
 
 -- ---------------------------------------------------------------------------
+-- Supabase Storage : annonces vocales pré-générées (cache TTS cloud)
+-- ---------------------------------------------------------------------------
+INSERT INTO storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+VALUES (
+  'tts-announcements',
+  'tts-announcements',
+  true,
+  2097152,
+  ARRAY['audio/mpeg']
+)
+ON CONFLICT (id) DO NOTHING;
+
+DROP POLICY IF EXISTS "Public read tts-announcements" ON storage.objects;
+CREATE POLICY "Public read tts-announcements" ON storage.objects
+  FOR SELECT TO public
+  USING (bucket_id = 'tts-announcements');
+
+DROP POLICY IF EXISTS "Service role manages tts-announcements" ON storage.objects;
+CREATE POLICY "Service role manages tts-announcements" ON storage.objects
+  FOR ALL TO service_role
+  USING (bucket_id = 'tts-announcements')
+  WITH CHECK (bucket_id = 'tts-announcements');
+
+-- ---------------------------------------------------------------------------
 -- Supabase Realtime : suivi des courses en direct
 -- ---------------------------------------------------------------------------
 DO $$ BEGIN
