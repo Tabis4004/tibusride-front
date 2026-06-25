@@ -47,7 +47,16 @@ export const getAnnouncementAudioUrl = createServerFn({ method: "POST" })
   .inputValidator((d) => z.object({ key: z.enum(ANNOUNCEMENT_KEYS as [AnnouncementKey, ...AnnouncementKey[]]) }).parse(d))
   .handler(async ({ data }) => {
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    const path = `${data.key}.mp3`;
+    // Suffixe de version dans le chemin de cache : à incrémenter chaque fois
+    // que la config de voix change (ex. ci-dessous : passage à la voix
+    // masculine fr-FR-Neural2-D), sinon les MP3 déjà en cache avec l'ancienne
+    // voix continueraient d'être servis indéfiniment — le bucket Storage ne
+    // permet pas de DELETE direct (trigger Supabase), et un HEAD réussi sur
+    // l'ancien fichier empêche toute régénération. Les anciens fichiers
+    // ("xxx.mp3") restent orphelins dans le bucket, sans impact (coût de
+    // stockage négligeable, jamais plus référencés).
+    const VOICE_VERSION = "v2";
+    const path = `${data.key}.${VOICE_VERSION}.mp3`;
 
     const { data: pub } = supabaseAdmin.storage.from("tts-announcements").getPublicUrl(path);
     const existsRes = await fetch(pub.publicUrl, { method: "HEAD" }).catch(() => null);
@@ -63,7 +72,11 @@ export const getAnnouncementAudioUrl = createServerFn({ method: "POST" })
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           input: { text },
-          voice: { languageCode: "fr-FR", ssmlGender: "FEMALE" },
+          // Voix unique pour toutes les annonces (chauffeur + passager) :
+          // fr-FR-Neural2-D, voix masculine de synthèse neuronale Google —
+          // plus naturelle que les voix "Standard", au même tarif (le coût
+          // par génération ne compte qu'une fois par phrase grâce au cache).
+          voice: { languageCode: "fr-FR", name: "fr-FR-Neural2-D", ssmlGender: "MALE" },
           audioConfig: { audioEncoding: "MP3" },
         }),
       });
