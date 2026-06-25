@@ -1250,15 +1250,24 @@ export const commissionReport = createServerFn({ method: "POST" })
         to: z.string(),
         category: z.enum(VEHICLE_CATEGORIES).nullable().optional(),
         driver_id: z.string().uuid().nullable().optional(),
+        // Filtres KPI par pays/programme — un admin pays reste de toute façon
+        // cantonné à son propre pays côté serveur (voir scope ci-dessous),
+        // `country` ici ne sert qu'au superadmin pour cibler un pays précis.
+        country: z.string().trim().max(80).nullable().optional(),
+        program_id: z.string().nullable().optional(),
       })
       .parse(d),
   )
   .handler(async ({ data, context }) => {
-    await assertAdmin(context.supabase, context.userId);
+    const scope = await requireAdminScope(context.supabase, context.userId);
+    // Un admin pays ne doit voir que les courses de son pays, quel que soit
+    // ce qu'il envoie ; seul le superadmin peut choisir/croiser un pays.
+    const effectiveCountry = scope.isSuper ? (data.country?.trim() || null) : scope.country;
+
     let q = context.supabase
       .from("rides")
       .select(
-        "id, completed_at, category, driver_id, passenger_id, price_xof, commission_xof, commission_rate, driver_earnings_xof, city, pickup_address, dropoff_address",
+        "id, completed_at, category, driver_id, passenger_id, price_xof, commission_xof, commission_rate, driver_earnings_xof, city, country, program_id, pickup_address, dropoff_address",
       )
       .eq("status", "completed")
       .gte("completed_at", data.from)
@@ -1267,6 +1276,8 @@ export const commissionReport = createServerFn({ method: "POST" })
       .limit(5000);
     if (data.category) q = q.eq("category", data.category);
     if (data.driver_id) q = q.eq("driver_id", data.driver_id);
+    if (effectiveCountry) q = q.eq("country", effectiveCountry);
+    if (data.program_id) q = q.eq("program_id", data.program_id);
     const { data: rides, error } = await q;
     if (error) throw new Error(error.message);
 
@@ -1343,7 +1354,15 @@ export const commissionReport = createServerFn({ method: "POST" })
         d.bonus_xof += r.bonus_xof ?? 0;
       }
     });
-    return { rows, totals, byCategory: Object.values(byCategory), byDriver: Object.values(byDriver) };
+    return {
+      rows,
+      totals,
+      byCategory: Object.values(byCategory),
+      byDriver: Object.values(byDriver),
+      // Permet au front de savoir si le pays est verrouillé (admin pays) ou
+      // librement sélectionnable (superadmin), sans appel séparé.
+      scope: { isSuper: scope.isSuper, country: scope.country },
+    };
   });
 
 

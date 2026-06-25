@@ -21,6 +21,7 @@ import { formatXof } from "@/lib/pricing";
 import { DELIVERY_VEHICLES, PACKAGE_TYPES, DELIVERY_EXTRAS, type DeliveryVehicle, type PackageType } from "@/lib/delivery-pricing";
 import { type ReportGranularity, buildPeriodSeries } from "@/lib/reporting";
 import { countriesMatch } from "@/lib/countries";
+import { fetchMarketPrograms, type MarketProgramConfig } from "@/lib/country-market";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Switch } from "@/components/ui/switch";
 import { toast } from "sonner";
@@ -3074,18 +3075,28 @@ function WalletsTab() {
 
 function CommissionReportTab() {
   const reportFn = useServerFn(commissionReport);
+  const { hasRole: hasAuthRole } = useAuth();
+  const isSuperadmin = hasAuthRole("superadmin");
   const today = new Date();
   const monthStart = new Date(today.getFullYear(), today.getMonth(), 1);
   const [from, setFrom] = useState(monthStart.toISOString().slice(0, 10));
   const [to, setTo] = useState(today.toISOString().slice(0, 10));
   const [category, setCategory] = useState<string>("all");
   const [driverId, setDriverId] = useState("");
+  // Filtres KPI par pays/programme. Un admin pays reste cantonné à son pays
+  // côté serveur de toute façon (voir scope renvoyé par commissionReport) —
+  // ces sélecteurs ne lui servent qu'à filtrer par programme.
+  const [country, setCountry] = useState<string>("all");
+  const [programId, setProgramId] = useState<string>("all");
+  const [programs, setPrograms] = useState<MarketProgramConfig[]>([]);
   const [result, setResult] = useState<any>(null);
   const [loading, setLoading] = useState(false);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [granularity, setGranularity] = useState<ReportGranularity>("day");
 
-  const run = async () => {
+  const run = async (overrides?: { country?: string; programId?: string }) => {
+    const effCountry = overrides?.country ?? country;
+    const effProgramId = overrides?.programId ?? programId;
     setLoading(true);
     try {
       const r = await reportFn({
@@ -3094,9 +3105,17 @@ function CommissionReportTab() {
           to: new Date(to + "T23:59:59").toISOString(),
           category: category === "all" ? null : (category as any),
           driver_id: driverId.trim() || null,
+          country: effCountry === "all" ? null : effCountry,
+          program_id: effProgramId === "all" ? null : effProgramId,
         } as any,
       });
       setResult(r);
+      // Admin pays : le serveur impose son propre pays quel que soit ce qui a
+      // été envoyé — on aligne le sélecteur dessus pour ne pas afficher un
+      // pays différent de celui dont les données sont réellement affichées.
+      if (r?.scope && !r.scope.isSuper && r.scope.country) {
+        setCountry(r.scope.country);
+      }
     } catch (e: any) {
       toast.error(e?.message ?? "Erreur");
     } finally {
@@ -3104,12 +3123,28 @@ function CommissionReportTab() {
     }
   };
 
+  // Recharge la liste des programmes disponibles quand le pays change (le
+  // filtre programme dépend du pays — RPC list_market_programs le requiert).
+  useEffect(() => {
+    if (country === "all") {
+      setPrograms([]);
+      return;
+    }
+    let cancelled = false;
+    fetchMarketPrograms(country).then((list) => {
+      if (!cancelled) setPrograms(list);
+    });
+    return () => { cancelled = true; };
+  }, [country]);
+
   const buildDetailRows = (rows: any[]) =>
     rows.map((r: any) => ({
       date: r.completed_at,
       categorie: CATEGORY_LABEL[r.category] ?? r.category,
       chauffeur: r.driver_name ?? r.driver_id ?? "",
+      pays: r.country ?? "",
       ville: r.city,
+      programme: r.program_id ?? "",
       depart: r.pickup_address,
       arrivee: r.dropoff_address,
       montant_xof: r.price_xof ?? 0,
@@ -3154,6 +3189,8 @@ function CommissionReportTab() {
           to: new Date().toISOString(),
           category: null,
           driver_id: null,
+          country: country === "all" ? null : country,
+          program_id: programId === "all" ? null : programId,
         } as any,
       });
       if (!r.rows.length) {
@@ -3184,7 +3221,7 @@ function CommissionReportTab() {
         Suivi financier KPI de la plateforme : revenus par période avec graphique, détail de chaque
         course (montant, commission, bonus) et historique complet téléchargeable.
       </div>
-      <div className="grid gap-3 rounded-2xl border border-border bg-card p-4 md:grid-cols-5">
+      <div className="grid gap-3 rounded-2xl border border-border bg-card p-4 md:grid-cols-4 lg:grid-cols-7">
         <div>
           <Label className="text-xs">Du</Label>
           <Input type="date" value={from} onChange={(e) => setFrom(e.target.value)} />
@@ -3192,6 +3229,34 @@ function CommissionReportTab() {
         <div>
           <Label className="text-xs">Au</Label>
           <Input type="date" value={to} onChange={(e) => setTo(e.target.value)} />
+        </div>
+        <div>
+          <Label className="text-xs">Pays</Label>
+          <Select
+            value={country}
+            onValueChange={(v) => { setCountry(v); setProgramId("all"); }}
+            disabled={!isSuperadmin}
+          >
+            <SelectTrigger><SelectValue /></SelectTrigger>
+            <SelectContent>
+              {isSuperadmin && <SelectItem value="all">Tous</SelectItem>}
+              {ADMIN_COUNTRIES.map((c) => (
+                <SelectItem key={c} value={c}>{c}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        <div>
+          <Label className="text-xs">Programme</Label>
+          <Select value={programId} onValueChange={setProgramId} disabled={country === "all"}>
+            <SelectTrigger><SelectValue placeholder={country === "all" ? "Choisir un pays" : undefined} /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Tous</SelectItem>
+              {programs.map((p) => (
+                <SelectItem key={p.programId} value={p.programId}>{p.displayName}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
         <div>
           <Label className="text-xs">Catégorie</Label>
@@ -3210,7 +3275,7 @@ function CommissionReportTab() {
           <Input value={driverId} onChange={(e) => setDriverId(e.target.value)} placeholder="uuid…" />
         </div>
         <div className="flex items-end">
-          <Button onClick={run} disabled={loading} className="w-full">{loading ? "Calcul…" : "Générer"}</Button>
+          <Button onClick={() => run()} disabled={loading} className="w-full">{loading ? "Calcul…" : "Générer"}</Button>
         </div>
       </div>
 
