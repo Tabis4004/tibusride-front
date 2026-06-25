@@ -405,6 +405,42 @@ function DriverPage() {
         </DialogContent>
       </Dialog>
 
+      {/* Bloc d'acceptation des courses/livraisons — remonté tout en haut,
+          avant la carte et le tableau de bord, pour que le chauffeur le voie
+          sans avoir à faire défiler la page dès qu'il passe en ligne. */}
+      <section>
+        <h2 className="mb-3 font-display text-lg font-semibold">
+          {driverQ.data.is_online
+            ? driverQ.data.partner_type === "delivery"
+              ? `Livraisons disponibles${driverQ.data.city ? ` à ${driverQ.data.city}` : ""}`
+              : `Courses disponibles${driverQ.data.city ? ` à ${driverQ.data.city}` : ""}`
+            : driverQ.data.partner_type === "delivery"
+              ? "Activez-vous pour voir les livraisons"
+              : "Activez-vous pour voir les courses"}
+        </h2>
+        {!driverQ.data.is_online ? (
+          <div className="rounded-2xl border border-dashed border-border p-8 text-center text-sm text-muted-foreground">
+            Passez en ligne pour recevoir des demandes.
+          </div>
+        ) : walletEmpty ? (
+          <div className="rounded-2xl border border-dashed border-destructive/50 bg-destructive/5 p-8 text-center text-sm text-destructive">
+            Solde wallet insuffisant. Contactez l'administration pour recharger votre wallet afin de recevoir et d'accepter des courses.
+          </div>
+        ) : openRidesQ.data && openRidesQ.data.length > 0 ? (
+          <div className="space-y-3">
+            {openRidesQ.data.map((r) => (
+              <RideCard key={r.id} ride={r} actions={
+                <Button size="sm" onClick={() => accept.mutate(r.id)} disabled={accept.isPending}>Accepter</Button>
+              } />
+            ))}
+          </div>
+        ) : (
+          <div className="rounded-2xl border border-dashed border-border p-8 text-center text-sm text-muted-foreground">
+            Aucune course en attente. Restez prêt !
+          </div>
+        )}
+      </section>
+
       {driverQ.data.is_online && (!myRidesQ.data || myRidesQ.data.length === 0) && (
         <DriverIdleMap />
       )}
@@ -536,39 +572,6 @@ function DriverPage() {
           </div>
         </section>
       )}
-
-      <section>
-        <h2 className="mb-3 font-display text-lg font-semibold">
-          {driverQ.data.is_online
-            ? driverQ.data.partner_type === "delivery"
-              ? `Livraisons disponibles${driverQ.data.city ? ` à ${driverQ.data.city}` : ""}`
-              : `Courses disponibles${driverQ.data.city ? ` à ${driverQ.data.city}` : ""}`
-            : driverQ.data.partner_type === "delivery"
-              ? "Activez-vous pour voir les livraisons"
-              : "Activez-vous pour voir les courses"}
-        </h2>
-        {!driverQ.data.is_online ? (
-          <div className="rounded-2xl border border-dashed border-border p-8 text-center text-sm text-muted-foreground">
-            Passez en ligne pour recevoir des demandes.
-          </div>
-        ) : walletEmpty ? (
-          <div className="rounded-2xl border border-dashed border-destructive/50 bg-destructive/5 p-8 text-center text-sm text-destructive">
-            Solde wallet insuffisant. Contactez l'administration pour recharger votre wallet afin de recevoir et d'accepter des courses.
-          </div>
-        ) : openRidesQ.data && openRidesQ.data.length > 0 ? (
-          <div className="space-y-3">
-            {openRidesQ.data.map((r) => (
-              <RideCard key={r.id} ride={r} actions={
-                <Button size="sm" onClick={() => accept.mutate(r.id)} disabled={accept.isPending}>Accepter</Button>
-              } />
-            ))}
-          </div>
-        ) : (
-          <div className="rounded-2xl border border-dashed border-border p-8 text-center text-sm text-muted-foreground">
-            Aucune course en attente. Restez prêt !
-          </div>
-        )}
-      </section>
 
       <button
         type="button"
