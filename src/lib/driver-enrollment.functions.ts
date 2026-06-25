@@ -29,7 +29,7 @@ async function uploadDriverDoc(
   const col = DOC_COLUMN[kind];
   const { error: updErr } = await supabaseAdmin
     .from("driver_profiles")
-    .update({ [col]: path, updated_at: new Date().toISOString() } as Record<string, string>)
+    .update({ [col]: path, updated_at: new Date().toISOString() } as never)
     .eq("user_id", userId);
   if (updErr) throw new Error(updErr.message);
   return path;

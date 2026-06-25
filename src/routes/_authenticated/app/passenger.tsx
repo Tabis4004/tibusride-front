@@ -221,7 +221,7 @@ function PassengerPage() {
   useEffect(() => {
     if (!pickupLL || !dropoffLL) { setRouteInfo(null); return; }
     routeFn({ data: { origin: pickupLL, destination: dropoffLL } })
-      .then((r) => {
+      .then((r: any) => {
         if (r.ok) {
           setRouteInfo({
             seconds: r.seconds,

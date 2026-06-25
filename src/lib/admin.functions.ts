@@ -421,7 +421,7 @@ export const updateDriverStatus = createServerFn({ method: "POST" })
         throw new Error("Validation impossible : assignez une catégorie (taxi, éco, livraison…).");
       }
     }
-    const { error } = await supabaseAdmin.from("driver_profiles").update(update).eq("user_id", data.userId);
+    const { error } = await supabaseAdmin.from("driver_profiles").update(update as never).eq("user_id", data.userId);
     if (error) throw new Error(error.message);
 
     const { data: target } = await supabaseAdmin.auth.admin.getUserById(data.userId);
@@ -513,7 +513,7 @@ export const assignDriverEnrollment = createServerFn({ method: "POST" })
       update.physical_verified_at = null;
       update.physical_verified_by = null;
     }
-    const { error } = await supabaseAdmin.from("driver_profiles").update(update).eq("user_id", data.userId);
+    const { error } = await supabaseAdmin.from("driver_profiles").update(update as never).eq("user_id", data.userId);
     if (error) throw new Error(error.message);
 
     const { data: target } = await supabaseAdmin.auth.admin.getUserById(data.userId);
@@ -605,7 +605,7 @@ export const listPricingSettings = createServerFn({ method: "GET" })
 export const createPricingSettingOverride = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: unknown) =>
-    z.object({ category: z.string().min(1), country: z.string().min(1) }).parse(d),
+    z.object({ category: z.enum(VEHICLE_CATEGORIES), country: z.string().min(1) }).parse(d),
   )
   .handler(async ({ data, context }) => {
     await assertAdmin(context.supabase, context.userId);

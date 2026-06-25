@@ -185,7 +185,7 @@ function DriverPage() {
         if (vehicle) q = q.eq("delivery_vehicle", vehicle);
       } else {
         q = q.eq("service_type", "ride");
-        if (dp.assigned_category) q = q.eq("category", dp.assigned_category);
+        if (dp.assigned_category) q = q.eq("category", dp.assigned_category as never);
       }
       const { data, error } = await q;
       if (error) throw error;
@@ -373,26 +373,28 @@ function DriverPage() {
     );
   }
 
-  if (driverQ.data.status !== "approved") {
+  const driverProfile = driverQ.data;
+
+  if (driverProfile.status !== "approved") {
     return (
       <EnrollmentWizard
-        profile={driverQ.data}
+        profile={driverProfile}
         country={myCountry}
         onRefresh={() => qc.invalidateQueries({ queryKey: ["driver-profile"] })}
       />
     );
   }
 
-  const partnerLabel = PARTNER_TYPES.find((p) => p.value === driverQ.data.partner_type)?.label ?? "Partenaire";
-  const vehicleLabel = VEHICLE_TYPES.find((v) => v.value === driverQ.data.vehicle_type)?.label;
+  const partnerLabel = PARTNER_TYPES.find((p) => p.value === driverProfile.partner_type)?.label ?? "Partenaire";
+  const vehicleLabel = VEHICLE_TYPES.find((v) => v.value === driverProfile.vehicle_type)?.label;
   const categoryLabel =
-    driverQ.data.partner_type === "delivery"
-      ? DELIVERY_CATEGORIES.find((c) => c.value === driverQ.data.assigned_category)?.label
-      : RIDE_CATEGORIES.find((c) => c.value === driverQ.data.assigned_category)?.label;
+    driverProfile.partner_type === "delivery"
+      ? DELIVERY_CATEGORIES.find((c) => c.value === driverProfile.assigned_category)?.label
+      : RIDE_CATEGORIES.find((c) => c.value === driverProfile.assigned_category)?.label;
 
   return (
     <div className="space-y-6">
-      {driverQ.data.is_online && <IdleLocationReporter />}
+      {driverProfile.is_online && <IdleLocationReporter />}
       <InsuranceAlertsBanner />
       <PendingOfferBanner />
 
