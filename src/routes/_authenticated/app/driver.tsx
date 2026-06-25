@@ -10,7 +10,7 @@ import { CATEGORIES, formatXof, type Category } from "@/lib/pricing";
 import { toast } from "sonner";
 import { Bar, BarChart, CartesianGrid, Legend, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { type ReportGranularity, buildPeriodSeries, downloadCsv } from "@/lib/reporting";
-import { Car, Clock, MapPin, Wallet } from "lucide-react";
+import { BookOpen, Car, Clock, MapPin, Wallet } from "lucide-react";
 import { CarIcon } from "@/components/CarIcon";
 import { useServerFn } from "@tanstack/react-start";
 import { getMyWallet } from "@/lib/wallet.functions";
@@ -402,6 +402,22 @@ function DriverPage() {
         <Stat icon={Car} label="Courses effectuées" value={String(driverStatsQ.data?.ridesCount ?? 0)} />
         <Stat icon={Clock} label="Note moyenne" value={`${Number(driverQ.data.rating_avg ?? 5).toFixed(1)} / 5`} />
       </div>
+
+      <button
+        type="button"
+        onClick={() => window.open("/docs/Manuel_Chauffeur_TibusRide.pdf", "_blank")}
+        className="flex w-full items-center gap-3 rounded-3xl border border-border bg-card p-5 text-left transition-colors hover:border-primary"
+      >
+        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+          <BookOpen className="h-5 w-5" />
+        </div>
+        <div>
+          <div className="font-display text-base font-semibold">Manuel chauffeur</div>
+          <p className="text-xs text-muted-foreground">
+            Guide d'utilisation complet de l'application chauffeur (PDF)
+          </p>
+        </div>
+      </button>
 
       <DriverZoneSettings />
 
