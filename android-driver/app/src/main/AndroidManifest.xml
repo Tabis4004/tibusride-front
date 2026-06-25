@@ -39,6 +39,14 @@
 
     <uses-permission android:name="android.permission.INTERNET" />
 
+    <!-- Photo de profil chauffeur (enrôlement) : capture caméra obligatoire,
+         sans import galerie (exigence de sécurité). getUserMedia() dans le
+         WebView est routé par Capacitor (BridgeWebChromeClient) vers cette
+         permission native runtime. -->
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-feature android:name="android.hardware.camera" android:required="false" />
+    <uses-feature android:name="android.hardware.camera.autofocus" android:required="false" />
+
     <!-- Suivi de position du chauffeur : premier plan (toujours requis) +
          arrière-plan (nécessaire pour rester localisable hors de l'app, ex.
          écran éteint pendant une course). ACCESS_BACKGROUND_LOCATION exige une
