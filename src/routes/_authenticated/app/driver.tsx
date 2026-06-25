@@ -6,7 +6,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
-import { CATEGORIES, formatXof, type Category } from "@/lib/pricing";
+import { CATEGORIES, countryForCoords, formatXof, type Category } from "@/lib/pricing";
 import { toast } from "sonner";
 import { Bar, BarChart, CartesianGrid, Legend, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { type ReportGranularity, buildPeriodSeries, downloadCsv } from "@/lib/reporting";
@@ -56,6 +56,7 @@ export const Route = createFileRoute("/_authenticated/app/driver")({
 function DriverPage() {
   const { user } = useAuth();
   const qc = useQueryClient();
+  const { setCountryOverride } = useCountryMarket();
 
   const profileQ = useQuery({
     queryKey: ["self-profile", user?.id],
@@ -77,6 +78,24 @@ function DriverPage() {
       return data;
     },
   });
+
+  // Le pays qui détermine les programmes affichés (sélecteur Eco Tibus /
+  // Tibus Ride) doit refléter où le chauffeur opère réellement, pas
+  // uniquement `profiles.country` — ce champ est souvent vide (ex. comptes
+  // de test, admins), et un pays par défaut arbitraire (Sénégal) ferait
+  // apparaître/sélectionner des programmes qui n'existent pas, ou pire,
+  // qui sont désactivés, dans le pays réel du chauffeur. On préfère la
+  // position GPS connue (driver_profiles.current_lat/lng) quand elle est
+  // disponible, sinon le pays du profil, sinon le défaut.
+  useEffect(() => {
+    const lat = driverQ.data?.current_lat;
+    const lng = driverQ.data?.current_lng;
+    if (typeof lat === "number" && typeof lng === "number") {
+      setCountryOverride(countryForCoords({ lat, lng }));
+    } else {
+      setCountryOverride(myCountry);
+    }
+  }, [driverQ.data?.current_lat, driverQ.data?.current_lng, myCountry, setCountryOverride]);
 
   const myRidesQ = useQuery({
     queryKey: ["driver-rides", user?.id],

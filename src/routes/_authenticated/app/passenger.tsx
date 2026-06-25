@@ -50,7 +50,7 @@ export const Route = createFileRoute("/_authenticated/app/passenger")({
 
 function PassengerPage() {
   const { user } = useAuth();
-  const { payments: countryPayments, config: marketConfig } = useCountryMarket();
+  const { payments: countryPayments, config: marketConfig, setCountryOverride } = useCountryMarket();
   const qc = useQueryClient();
   const isNative = useNativeApp();
   const [city, setCity] = useState("");
@@ -90,6 +90,15 @@ function PassengerPage() {
   // peut commander depuis n'importe quelle adresse, son pays de profil ne
   // joue aucun rôle dans le calcul.
   const pickupCountry = useMemo(() => (pickupLL ? countryForCoords(pickupLL) : null), [pickupLL]);
+  // Le sélecteur Eco Tibus / Tibus Ride (MarketProgramSwitcher) lit le pays
+  // depuis le contexte global useCountryMarket(), qui par défaut retombe sur
+  // le pays du profil (souvent vide) puis un pays arbitraire — totalement
+  // déconnecté du point de départ réel. On force ce contexte sur le pays GPS
+  // dès qu'il est connu, pour que le sélecteur n'affiche/active jamais un
+  // programme indisponible (ou désactivé) là où la course est commandée.
+  useEffect(() => {
+    setCountryOverride(pickupCountry);
+  }, [pickupCountry, setCountryOverride]);
   const pickupProgramQ = useQuery({
     queryKey: ["pickup-market-program", pickupCountry],
     queryFn: () => fetchDefaultMarketProgram(pickupCountry!),
