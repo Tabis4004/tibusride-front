@@ -15,7 +15,7 @@ import {
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
-import { LifeBuoy, MessageSquare, Plus } from "lucide-react";
+import { BookOpen, LifeBuoy, MessageSquare, Plus } from "lucide-react";
 
 export const Route = createFileRoute("/_authenticated/app/support")({
   head: () => ({ meta: [{ title: "Aide & Support — Tibus Ride" }] }),
@@ -46,7 +46,7 @@ const schema = z.object({
 });
 
 function SupportPage() {
-  const { user } = useAuth();
+  const { user, hasRole } = useAuth();
   const qc = useQueryClient();
   const [open, setOpen] = useState(false);
   const [subject, setSubject] = useState("");
@@ -111,6 +111,23 @@ function SupportPage() {
           <Plus className="h-4 w-4" /> Nouveau ticket
         </Button>
       </div>
+
+      {hasRole("driver") && (
+        <Card
+          className="cursor-pointer hover:border-primary transition-colors"
+          onClick={() => window.open("/docs/Manuel_Chauffeur_TibusRide.pdf", "_blank")}
+        >
+          <CardContent className="py-4 flex items-center gap-3">
+            <BookOpen className="h-6 w-6 text-primary shrink-0" />
+            <div>
+              <div className="font-medium">Manuel chauffeur</div>
+              <div className="text-xs text-muted-foreground">
+                Guide d'utilisation complet de l'application chauffeur (PDF)
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {open && (
         <Card>
