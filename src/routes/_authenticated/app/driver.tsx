@@ -44,7 +44,6 @@ import { cn } from "@/lib/utils";
 import { DELIVERY_VEHICLES, PACKAGE_TYPES, vehicleFromAssignedCategory } from "@/lib/delivery-pricing";
 import { useCountryMarket } from "@/hooks/use-country-market";
 import { isEcoTibus, marketAppName } from "@/lib/country-market";
-import { MarketProgramSwitcher } from "@/components/MarketProgramSwitcher";
 import { getCurrentPosition } from "@/lib/native-geolocation";
 import { RideTrackingMap, type LatLng } from "@/components/RideTrackingMap";
 
@@ -550,7 +549,6 @@ function DriverPage() {
           </p>
         </div>
         <div className="flex items-center gap-3">
-          <MarketProgramSwitcher />
           <span className="text-sm font-medium">{driverQ.data.is_online ? "En ligne" : "Hors ligne"}</span>
           <Switch
             checked={driverQ.data.is_online}

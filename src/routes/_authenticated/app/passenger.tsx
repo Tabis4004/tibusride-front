@@ -41,7 +41,6 @@ import { cn } from "@/lib/utils";
 import { formatDriverArrivalMessage, formatDriverVehicleDescription, type DriverVehiclePublic } from "@/lib/driver-vehicle";
 import { useCountryMarket } from "@/hooks/use-country-market";
 import { fetchDefaultMarketProgram, isEcoTibus, marketAppName, type PaymentMethodValue } from "@/lib/country-market";
-import { MarketProgramSwitcher } from "@/components/MarketProgramSwitcher";
 
 export const Route = createFileRoute("/_authenticated/app/passenger")({
   head: () => ({ meta: [{ title: "Commander une course — Tibus Ride" }] }),
@@ -440,7 +439,6 @@ function PassengerPage() {
               <p className="text-xs text-muted-foreground">{zone ? `${zone.value} — ${zone.country}` : "Détection de votre zone…"}</p>
               <h1 className="font-display text-xl font-bold">{marketAppName(marketConfig)}</h1>
             </div>
-            <MarketProgramSwitcher className="shrink-0" />
           </div>
 
           {/* Services rapides */}
