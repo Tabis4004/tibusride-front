@@ -20,7 +20,7 @@ import { Bar, BarChart, CartesianGrid, Legend, Line, LineChart, ResponsiveContai
 import { formatXof } from "@/lib/pricing";
 import { DELIVERY_VEHICLES, PACKAGE_TYPES, DELIVERY_EXTRAS, type DeliveryVehicle, type PackageType } from "@/lib/delivery-pricing";
 import { type ReportGranularity, buildPeriodSeries } from "@/lib/reporting";
-import { countriesMatch } from "@/lib/countries";
+import { countriesMatch, SERVICE_COUNTRIES } from "@/lib/countries";
 import { fetchMarketPrograms, type MarketProgramConfig } from "@/lib/country-market";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Switch } from "@/components/ui/switch";
@@ -39,8 +39,12 @@ import {
   listAuditLogs,
   listPricingSettings,
   updatePricingSetting,
+  createPricingSettingOverride,
+  deletePricingSettingOverride,
   listDeliveryPricingSettings,
   updateDeliveryPricingSetting,
+  createDeliveryPricingSettingOverride,
+  deleteDeliveryPricingSettingOverride,
   listDeliveryPackagePricing,
   updateDeliveryPackagePricing,
   listDeliveryExtrasPricing,
@@ -1573,11 +1577,15 @@ function PricingTab() {
   const qc = useQueryClient();
   const listFn = useServerFn(listPricingSettings);
   const updateFn = useServerFn(updatePricingSetting);
+  const createOverrideFn = useServerFn(createPricingSettingOverride);
+  const deleteOverrideFn = useServerFn(deletePricingSettingOverride);
   const { data, isLoading } = useQuery({
     queryKey: ["admin", "pricing"],
     queryFn: () => listFn({}),
   });
   const [drafts, setDrafts] = useState<Record<string, any>>({});
+  const [newOverrideCategory, setNewOverrideCategory] = useState<string>("");
+  const [newOverrideCountry, setNewOverrideCountry] = useState<string>("");
 
   const mutation = useMutation({
     mutationFn: (payload: any) => updateFn({ data: payload }),
@@ -1592,18 +1600,41 @@ function PricingTab() {
     onError: (e: any) => toast.error(e?.message ?? "Erreur de mise à jour"),
   });
 
+  const createOverride = useMutation({
+    mutationFn: (payload: { category: string; country: string }) => createOverrideFn({ data: payload }),
+    onSuccess: () => {
+      toast.success("Dérogation pays créée");
+      setNewOverrideCategory("");
+      setNewOverrideCountry("");
+      qc.invalidateQueries({ queryKey: ["admin", "pricing"] });
+    },
+    onError: (e: any) => toast.error(e?.message ?? "Erreur de création"),
+  });
+
+  const deleteOverride = useMutation({
+    mutationFn: (id: string) => deleteOverrideFn({ data: { id } }),
+    onSuccess: () => {
+      toast.success("Dérogation pays supprimée");
+      qc.invalidateQueries({ queryKey: ["admin", "pricing"] });
+    },
+    onError: (e: any) => toast.error(e?.message ?? "Erreur de suppression"),
+  });
+
   if (isLoading) return <p className="text-sm text-muted-foreground">Chargement…</p>;
 
   const rows = (data ?? []) as any[];
+  const categories = Object.keys(CATEGORY_LABEL);
+  const existingPairs = new Set(rows.map((r) => `${r.category}::${r.country ?? ""}`));
 
   return (
     <div className="space-y-6">
       <div className="rounded-2xl border border-border bg-card p-4 text-sm text-muted-foreground">
-        Définissez les tarifs de base (prise en charge, /km, /min) de chaque catégorie. Ces valeurs sont la base du{" "}
-        <strong>tarif dynamique</strong> (majoration trafic + météo, réglée juste en dessous) — c'est le calcul
-        effectivement appliqué au passager. La <strong>commission</strong> appliquée à chaque course n'est plus
-        définie ici ni par catégorie : elle est désormais entièrement pilotée par le programme de marché actif
-        (onglet « Programmes de marché »), qui a toujours priorité sur les anciens réglages par catégorie.
+        Définissez les tarifs de base (prise en charge, /km, /min) et la <strong>commission</strong> de chaque
+        catégorie — c'est la seule source de vérité pour la commission appliquée à chaque course (plus de programme
+        de marché). Ces tarifs de base sont aussi celle du <strong>tarif dynamique</strong> (majoration
+        trafic + météo, réglée juste en dessous). La ligne « Défaut global » s'applique à tous les pays ; ajoutez
+        une dérogation pour un pays donné si ses tarifs/commission doivent différer — sinon le défaut global
+        s'applique automatiquement.
       </div>
 
       <div className="overflow-x-auto rounded-2xl border border-border bg-card">
@@ -1611,10 +1642,14 @@ function PricingTab() {
           <thead className="bg-muted/40 text-xs uppercase text-muted-foreground">
             <tr>
               <th className="px-3 py-2 text-left">Catégorie</th>
+              <th className="px-3 py-2 text-left">Pays</th>
               <th className="px-3 py-2 text-right">Prise en charge</th>
               <th className="px-3 py-2 text-right">Prix / km</th>
               <th className="px-3 py-2 text-right">Prix / min</th>
               <th className="px-3 py-2 text-right">Tarif min</th>
+              <th className="px-3 py-2 text-left">Type</th>
+              <th className="px-3 py-2 text-right">%</th>
+              <th className="px-3 py-2 text-right">Forfait (XOF)</th>
               <th className="px-3 py-2 text-center">Actif</th>
               <th className="px-3 py-2 text-right">Action</th>
             </tr>
@@ -1638,10 +1673,31 @@ function PricingTab() {
               return (
                 <tr key={row.id} className="border-t border-border">
                   <td className="px-3 py-2 font-medium">{CATEGORY_LABEL[row.category] ?? row.category}</td>
+                  <td className="px-3 py-2">
+                    {row.country ? (
+                      <span className="rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary">
+                        {row.country}
+                      </span>
+                    ) : (
+                      <span className="text-xs text-muted-foreground">Défaut global</span>
+                    )}
+                  </td>
                   <td className="px-3 py-2 text-right">{numInput("base_fare_xof")}</td>
                   <td className="px-3 py-2 text-right">{numInput("per_km_xof", 10)}</td>
                   <td className="px-3 py-2 text-right">{numInput("per_min_xof", 5)}</td>
                   <td className="px-3 py-2 text-right">{numInput("min_fare_xof")}</td>
+                  <td className="px-3 py-2">
+                    <select
+                      className="h-8 rounded-md border border-input bg-background px-2 text-sm"
+                      value={current.commission_type ?? "percent"}
+                      onChange={(e) => setField("commission_type", e.target.value)}
+                    >
+                      <option value="percent">Pourcentage</option>
+                      <option value="flat">Forfait</option>
+                    </select>
+                  </td>
+                  <td className="px-3 py-2 text-right">{numInput("commission_rate", 1)}</td>
+                  <td className="px-3 py-2 text-right">{numInput("commission_flat_xof")}</td>
                   <td className="px-3 py-2 text-center">
                     <input
                       type="checkbox"
@@ -1650,39 +1706,92 @@ function PricingTab() {
                     />
                   </td>
                   <td className="px-3 py-2 text-right">
-                    <Button
-                      size="sm"
-                      disabled={!dirty || mutation.isPending}
-                      onClick={() =>
-                        mutation.mutate({
-                          _cat: row.category,
-                          id: row.id,
-                          base_fare_xof: Number(current.base_fare_xof),
-                          per_km_xof: Number(current.per_km_xof),
-                          per_min_xof: Number(current.per_min_xof),
-                          min_fare_xof: Number(current.min_fare_xof),
-                          commission_type: row.commission_type ?? "percent",
-                          commission_rate: Number(row.commission_rate ?? 0),
-                          commission_flat_xof: Number(row.commission_flat_xof ?? 0),
-                          active: !!current.active,
-                        } as any)
-                      }
-                    >
-                      Enregistrer
-                    </Button>
+                    <div className="flex items-center justify-end gap-2">
+                      <Button
+                        size="sm"
+                        disabled={!dirty || mutation.isPending}
+                        onClick={() =>
+                          mutation.mutate({
+                            _cat: row.category,
+                            id: row.id,
+                            base_fare_xof: Number(current.base_fare_xof),
+                            per_km_xof: Number(current.per_km_xof),
+                            per_min_xof: Number(current.per_min_xof),
+                            min_fare_xof: Number(current.min_fare_xof),
+                            commission_type: current.commission_type ?? "percent",
+                            commission_rate: Number(current.commission_rate ?? 0),
+                            commission_flat_xof: Number(current.commission_flat_xof ?? 0),
+                            active: !!current.active,
+                          } as any)
+                        }
+                      >
+                        Enregistrer
+                      </Button>
+                      {row.country && (
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="text-destructive"
+                          disabled={deleteOverride.isPending}
+                          onClick={() => deleteOverride.mutate(row.id)}
+                        >
+                          Supprimer
+                        </Button>
+                      )}
+                    </div>
                   </td>
                 </tr>
               );
             })}
             {rows.length === 0 && (
               <tr>
-                <td colSpan={7} className="px-3 py-6 text-center text-muted-foreground">
+                <td colSpan={11} className="px-3 py-6 text-center text-muted-foreground">
                   Aucune catégorie configurée.
                 </td>
               </tr>
             )}
           </tbody>
         </table>
+      </div>
+
+      <div className="flex flex-wrap items-end gap-2 rounded-2xl border border-border bg-card p-4">
+        <div className="flex flex-col gap-1">
+          <span className="text-xs text-muted-foreground">Catégorie</span>
+          <select
+            className="h-9 rounded-md border border-input bg-background px-2 text-sm"
+            value={newOverrideCategory}
+            onChange={(e) => setNewOverrideCategory(e.target.value)}
+          >
+            <option value="">Choisir…</option>
+            {categories.map((c) => (
+              <option key={c} value={c}>
+                {CATEGORY_LABEL[c]}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="flex flex-col gap-1">
+          <span className="text-xs text-muted-foreground">Pays</span>
+          <select
+            className="h-9 rounded-md border border-input bg-background px-2 text-sm"
+            value={newOverrideCountry}
+            onChange={(e) => setNewOverrideCountry(e.target.value)}
+          >
+            <option value="">Choisir…</option>
+            {SERVICE_COUNTRIES.map((c) => (
+              <option key={c} value={c} disabled={existingPairs.has(`${newOverrideCategory}::${c}`)}>
+                {c}
+              </option>
+            ))}
+          </select>
+        </div>
+        <Button
+          size="sm"
+          disabled={!newOverrideCategory || !newOverrideCountry || createOverride.isPending}
+          onClick={() => createOverride.mutate({ category: newOverrideCategory, country: newOverrideCountry })}
+        >
+          Ajouter une dérogation pour un pays
+        </Button>
       </div>
 
       <DeliveryPricingSection />
@@ -1699,11 +1808,15 @@ function DeliveryPricingSection() {
   const qc = useQueryClient();
   const listFn = useServerFn(listDeliveryPricingSettings);
   const updateFn = useServerFn(updateDeliveryPricingSetting);
+  const createOverrideFn = useServerFn(createDeliveryPricingSettingOverride);
+  const deleteOverrideFn = useServerFn(deleteDeliveryPricingSettingOverride);
   const { data, isLoading } = useQuery({
     queryKey: ["admin", "delivery-pricing"],
     queryFn: () => listFn({}),
   });
   const [drafts, setDrafts] = useState<Record<string, any>>({});
+  const [newOverrideVehicle, setNewOverrideVehicle] = useState<string>("");
+  const [newOverrideCountry, setNewOverrideCountry] = useState<string>("");
 
   const mutation = useMutation({
     mutationFn: (payload: any) => updateFn({ data: payload }),
@@ -1718,15 +1831,38 @@ function DeliveryPricingSection() {
     onError: (e: any) => toast.error(e?.message ?? "Erreur de mise à jour"),
   });
 
+  const createOverride = useMutation({
+    mutationFn: (payload: { vehicle: string; country: string }) => createOverrideFn({ data: payload }),
+    onSuccess: () => {
+      toast.success("Dérogation pays créée");
+      setNewOverrideVehicle("");
+      setNewOverrideCountry("");
+      qc.invalidateQueries({ queryKey: ["admin", "delivery-pricing"] });
+    },
+    onError: (e: any) => toast.error(e?.message ?? "Erreur de création"),
+  });
+
+  const deleteOverride = useMutation({
+    mutationFn: (id: string) => deleteOverrideFn({ data: { id } }),
+    onSuccess: () => {
+      toast.success("Dérogation pays supprimée");
+      qc.invalidateQueries({ queryKey: ["admin", "delivery-pricing"] });
+    },
+    onError: (e: any) => toast.error(e?.message ?? "Erreur de suppression"),
+  });
+
   if (isLoading) return <p className="text-sm text-muted-foreground">Chargement…</p>;
 
   const rows = (data ?? []) as any[];
+  const vehicles = Object.keys(DELIVERY_VEHICLES);
+  const existingPairs = new Set(rows.map((r) => `${r.vehicle}::${r.country ?? ""}`));
 
   return (
     <div className="space-y-3">
       <div className="rounded-2xl border border-border bg-card p-4 text-sm text-muted-foreground">
-        Tarifs des <strong>livraisons</strong> (deux-roues, moto, tricycle, voiture, fourgon). Même logique que les
-        courses : prise en charge + /km + /min + tarif minimum, et commission par défaut.
+        Tarifs et commission des <strong>livraisons</strong> (deux-roues, moto, tricycle, voiture, fourgon). Même
+        logique que les courses : prise en charge + /km + /min + tarif minimum + commission, avec une ligne « Défaut
+        global » et des dérogations par pays optionnelles.
       </div>
 
       <div className="overflow-x-auto rounded-2xl border border-border bg-card">
@@ -1734,10 +1870,14 @@ function DeliveryPricingSection() {
           <thead className="bg-muted/40 text-xs uppercase text-muted-foreground">
             <tr>
               <th className="px-3 py-2 text-left">Véhicule</th>
+              <th className="px-3 py-2 text-left">Pays</th>
               <th className="px-3 py-2 text-right">Prise en charge</th>
               <th className="px-3 py-2 text-right">Prix / km</th>
               <th className="px-3 py-2 text-right">Prix / min</th>
               <th className="px-3 py-2 text-right">Tarif min</th>
+              <th className="px-3 py-2 text-left">Type</th>
+              <th className="px-3 py-2 text-right">%</th>
+              <th className="px-3 py-2 text-right">Forfait (XOF)</th>
               <th className="px-3 py-2 text-center">Actif</th>
               <th className="px-3 py-2 text-right">Action</th>
             </tr>
@@ -1763,10 +1903,31 @@ function DeliveryPricingSection() {
               return (
                 <tr key={row.id} className="border-t border-border">
                   <td className="px-3 py-2 font-medium">{emoji} {label}</td>
+                  <td className="px-3 py-2">
+                    {row.country ? (
+                      <span className="rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary">
+                        {row.country}
+                      </span>
+                    ) : (
+                      <span className="text-xs text-muted-foreground">Défaut global</span>
+                    )}
+                  </td>
                   <td className="px-3 py-2 text-right">{numInput("base_fare_xof")}</td>
                   <td className="px-3 py-2 text-right">{numInput("per_km_xof", 10)}</td>
                   <td className="px-3 py-2 text-right">{numInput("per_min_xof", 5)}</td>
                   <td className="px-3 py-2 text-right">{numInput("min_fare_xof")}</td>
+                  <td className="px-3 py-2">
+                    <select
+                      className="h-8 rounded-md border border-input bg-background px-2 text-sm"
+                      value={current.commission_type ?? "percent"}
+                      onChange={(e) => setField("commission_type", e.target.value)}
+                    >
+                      <option value="percent">Pourcentage</option>
+                      <option value="flat">Forfait</option>
+                    </select>
+                  </td>
+                  <td className="px-3 py-2 text-right">{numInput("commission_rate", 1)}</td>
+                  <td className="px-3 py-2 text-right">{numInput("commission_flat_xof")}</td>
                   <td className="px-3 py-2 text-center">
                     <input
                       type="checkbox"
@@ -1775,39 +1936,92 @@ function DeliveryPricingSection() {
                     />
                   </td>
                   <td className="px-3 py-2 text-right">
-                    <Button
-                      size="sm"
-                      disabled={!dirty || mutation.isPending}
-                      onClick={() =>
-                        mutation.mutate({
-                          _vehicle: row.vehicle,
-                          id: row.id,
-                          base_fare_xof: Number(current.base_fare_xof),
-                          per_km_xof: Number(current.per_km_xof),
-                          per_min_xof: Number(current.per_min_xof),
-                          min_fare_xof: Number(current.min_fare_xof),
-                          commission_type: row.commission_type ?? "percent",
-                          commission_rate: Number(row.commission_rate ?? 0),
-                          commission_flat_xof: Number(row.commission_flat_xof ?? 0),
-                          active: !!current.active,
-                        } as any)
-                      }
-                    >
-                      Enregistrer
-                    </Button>
+                    <div className="flex items-center justify-end gap-2">
+                      <Button
+                        size="sm"
+                        disabled={!dirty || mutation.isPending}
+                        onClick={() =>
+                          mutation.mutate({
+                            _vehicle: row.vehicle,
+                            id: row.id,
+                            base_fare_xof: Number(current.base_fare_xof),
+                            per_km_xof: Number(current.per_km_xof),
+                            per_min_xof: Number(current.per_min_xof),
+                            min_fare_xof: Number(current.min_fare_xof),
+                            commission_type: current.commission_type ?? "percent",
+                            commission_rate: Number(current.commission_rate ?? 0),
+                            commission_flat_xof: Number(current.commission_flat_xof ?? 0),
+                            active: !!current.active,
+                          } as any)
+                        }
+                      >
+                        Enregistrer
+                      </Button>
+                      {row.country && (
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="text-destructive"
+                          disabled={deleteOverride.isPending}
+                          onClick={() => deleteOverride.mutate(row.id)}
+                        >
+                          Supprimer
+                        </Button>
+                      )}
+                    </div>
                   </td>
                 </tr>
               );
             })}
             {rows.length === 0 && (
               <tr>
-                <td colSpan={7} className="px-3 py-6 text-center text-muted-foreground">
+                <td colSpan={11} className="px-3 py-6 text-center text-muted-foreground">
                   Aucun véhicule de livraison configuré.
                 </td>
               </tr>
             )}
           </tbody>
         </table>
+      </div>
+
+      <div className="flex flex-wrap items-end gap-2 rounded-2xl border border-border bg-card p-4">
+        <div className="flex flex-col gap-1">
+          <span className="text-xs text-muted-foreground">Véhicule</span>
+          <select
+            className="h-9 rounded-md border border-input bg-background px-2 text-sm"
+            value={newOverrideVehicle}
+            onChange={(e) => setNewOverrideVehicle(e.target.value)}
+          >
+            <option value="">Choisir…</option>
+            {vehicles.map((v) => (
+              <option key={v} value={v}>
+                {DELIVERY_VEHICLES[v as DeliveryVehicle]?.label ?? v}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="flex flex-col gap-1">
+          <span className="text-xs text-muted-foreground">Pays</span>
+          <select
+            className="h-9 rounded-md border border-input bg-background px-2 text-sm"
+            value={newOverrideCountry}
+            onChange={(e) => setNewOverrideCountry(e.target.value)}
+          >
+            <option value="">Choisir…</option>
+            {SERVICE_COUNTRIES.map((c) => (
+              <option key={c} value={c} disabled={existingPairs.has(`${newOverrideVehicle}::${c}`)}>
+                {c}
+              </option>
+            ))}
+          </select>
+        </div>
+        <Button
+          size="sm"
+          disabled={!newOverrideVehicle || !newOverrideCountry || createOverride.isPending}
+          onClick={() => createOverride.mutate({ vehicle: newOverrideVehicle, country: newOverrideCountry })}
+        >
+          Ajouter une dérogation pour un pays
+        </Button>
       </div>
     </div>
   );
@@ -2040,23 +2254,14 @@ function DynamicPricingSection() {
   const updateFn = useServerFn(updateDynamicPricingSetting);
   const createFn = useServerFn(createDynamicPricingSetting);
   const deleteFn = useServerFn(deleteDynamicPricingSetting);
-  const listProgramsFn = useServerFn(listMarketPrograms);
 
   const { data, isLoading } = useQuery({
     queryKey: ["admin", "dynamic-pricing"],
     queryFn: () => listFn({}),
   });
-  // Réservé au superadmin côté serveur — un admin pays n'aura simplement pas
-  // d'options de programme pour ajouter une dérogation (il peut toujours
-  // éditer la ligne globale ci-dessous).
-  const programsQ = useQuery({
-    queryKey: ["admin", "market-programs", "for-dynamic-pricing"],
-    queryFn: () => listProgramsFn({}),
-    retry: false,
-  });
 
   const [drafts, setDrafts] = useState<Record<string, any>>({});
-  const [newProgramId, setNewProgramId] = useState<string>("");
+  const [newCountry, setNewCountry] = useState<string>("");
 
   const invalidate = () => qc.invalidateQueries({ queryKey: ["admin", "dynamic-pricing"] });
 
@@ -2073,8 +2278,8 @@ function DynamicPricingSection() {
     onError: (e: any) => toast.error(e?.message ?? "Erreur de mise à jour"),
   });
   const createMut = useMutation({
-    mutationFn: (programId: string) => createFn({ data: { programId } }),
-    onSuccess: () => { toast.success("Dérogation programme ajoutée"); setNewProgramId(""); invalidate(); },
+    mutationFn: (country: string) => createFn({ data: { country } }),
+    onSuccess: () => { toast.success("Dérogation pays ajoutée"); setNewCountry(""); invalidate(); },
     onError: (e: any) => toast.error(e?.message ?? "Erreur"),
   });
   const deleteMut = useMutation({
@@ -2086,9 +2291,7 @@ function DynamicPricingSection() {
   if (isLoading) return <p className="text-sm text-muted-foreground">Chargement…</p>;
 
   const rows = (data ?? []) as any[];
-  const programOptions = ((programsQ.data ?? []) as any[]).filter(
-    (p) => !rows.some((r) => r.program_id === p.program_id),
-  );
+  const countryOptions = SERVICE_COUNTRIES.filter((c) => !rows.some((r) => r.country === c));
 
   return (
     <div className="space-y-3">
@@ -2096,8 +2299,8 @@ function DynamicPricingSection() {
         <h2 className="font-display text-lg font-bold">Tarif dynamique (trafic + météo)</h2>
         <p className="text-xs text-muted-foreground">
           Coefficients appliqués en plus du tarif de base ci-dessus selon le trafic live et la météo.
-          La ligne <strong>globale</strong> s'applique partout sauf si une dérogation existe pour le programme
-          du passager (white-label).
+          La ligne <strong>globale</strong> s'applique partout sauf si une dérogation existe pour le pays
+          du passager.
         </p>
       </div>
 
@@ -2105,7 +2308,7 @@ function DynamicPricingSection() {
         <table className="w-full text-sm">
           <thead className="bg-muted/40 text-xs uppercase text-muted-foreground">
             <tr>
-              <th className="px-3 py-2 text-left">Programme</th>
+              <th className="px-3 py-2 text-left">Pays</th>
               <th className="px-3 py-2 text-right">Coef. trafic</th>
               <th className="px-3 py-2 text-right">Plafond trafic</th>
               <th className="px-3 py-2 text-right">Météo pluie ×</th>
@@ -2131,9 +2334,7 @@ function DynamicPricingSection() {
                   onChange={(e) => setField(k, Number(e.target.value))}
                 />
               );
-              const label = row.program_id
-                ? row.market_programs?.display_name ?? row.program_id
-                : "Défaut global";
+              const label = row.country ?? "Défaut global";
               return (
                 <tr key={row.id} className="border-t border-border">
                   <td className="px-3 py-2 font-medium">{label}</td>
@@ -2168,7 +2369,7 @@ function DynamicPricingSection() {
                     >
                       Enregistrer
                     </Button>
-                    {row.program_id && (
+                    {row.country && (
                       <Button
                         size="sm"
                         variant="ghost"
@@ -2186,16 +2387,16 @@ function DynamicPricingSection() {
         </table>
       </div>
 
-      {programOptions.length > 0 && (
+      {countryOptions.length > 0 && (
         <div className="flex items-end gap-2 rounded-2xl border border-border bg-card p-3">
           <div className="flex-1">
-            <Label className="text-xs">Ajouter une dérogation pour un programme</Label>
-            <Select value={newProgramId} onValueChange={setNewProgramId}>
-              <SelectTrigger><SelectValue placeholder="Choisir un programme" /></SelectTrigger>
+            <Label className="text-xs">Ajouter une dérogation pour un pays</Label>
+            <Select value={newCountry} onValueChange={setNewCountry}>
+              <SelectTrigger><SelectValue placeholder="Choisir un pays" /></SelectTrigger>
               <SelectContent>
-                {programOptions.map((p) => (
-                  <SelectItem key={p.program_id} value={p.program_id}>
-                    {p.display_name} ({p.country})
+                {countryOptions.map((c) => (
+                  <SelectItem key={c} value={c}>
+                    {c}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -2203,8 +2404,8 @@ function DynamicPricingSection() {
           </div>
           <Button
             size="sm"
-            disabled={!newProgramId || createMut.isPending}
-            onClick={() => createMut.mutate(newProgramId)}
+            disabled={!newCountry || createMut.isPending}
+            onClick={() => createMut.mutate(newCountry)}
           >
             Ajouter
           </Button>

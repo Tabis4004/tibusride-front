@@ -108,6 +108,9 @@ function PassengerPage() {
   // programme du profil (affichage initial uniquement) — dès que pickupLL
   // est connu, c'est lui qui décide.
   const pricingProgramId = pickupProgramQ.data?.programId ?? marketConfig?.programId ?? null;
+  // Tarifs/commission sont désormais résolus par pays uniquement (plus de
+  // notion de programme) — même règle de priorité que ci-dessus.
+  const pricingCountry = pickupCountry ?? marketConfig?.country ?? null;
 
   // Même règle pour la zone de service : dès que le point de départ est connu
   // (GPS, carte ou adresse tapée/sélectionnée), c'est lui qui détermine la
@@ -124,8 +127,8 @@ function PassengerPage() {
   // constantes codées en dur dans dynamic-pricing.ts/delivery-pricing.ts.
   const pricingConfigFn = useServerFn(getEffectivePricingConfig);
   const pricingConfigQ = useQuery({
-    queryKey: ["pricing-config", pricingProgramId],
-    queryFn: () => pricingConfigFn({ data: { programId: pricingProgramId } }),
+    queryKey: ["pricing-config", pricingCountry],
+    queryFn: () => pricingConfigFn({ data: { country: pricingCountry } }),
     staleTime: 60_000,
   });
 
@@ -1082,8 +1085,8 @@ function CurrentRideBanner({ ride: initialRide, onCancel }: { ride: any; onCance
   const [stopAddr, setStopAddr] = useState("");
   const stopPricingConfigFn = useServerFn(getEffectivePricingConfig);
   const stopPricingConfigQ = useQuery({
-    queryKey: ["pricing-config-stop", activeRide.program_id],
-    queryFn: () => stopPricingConfigFn({ data: { programId: activeRide.program_id ?? undefined } }),
+    queryKey: ["pricing-config-stop", activeRide.country],
+    queryFn: () => stopPricingConfigFn({ data: { country: activeRide.country ?? undefined } }),
   });
   const addStop = useMutation({
     mutationFn: async (point: { lat: number; lng: number; formatted: string }) => {

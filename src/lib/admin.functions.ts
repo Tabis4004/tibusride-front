@@ -590,9 +590,67 @@ export const listPricingSettings = createServerFn({ method: "GET" })
     const { data, error } = await context.supabase
       .from("pricing_settings")
       .select("*")
-      .order("category");
+      .order("category")
+      .order("country", { nullsFirst: true });
     if (error) throw new Error(error.message);
     return data ?? [];
+  });
+
+/**
+ * Crée une dérogation pays pour une catégorie : copie les valeurs de la
+ * ligne globale (country IS NULL) de cette catégorie comme point de départ,
+ * éditable ensuite comme n'importe quelle ligne. Si aucun pays dédié n'est
+ * créé, la ligne globale s'applique automatiquement à tous les pays.
+ */
+export const createPricingSettingOverride = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: unknown) =>
+    z.object({ category: z.string().min(1), country: z.string().min(1) }).parse(d),
+  )
+  .handler(async ({ data, context }) => {
+    await assertAdmin(context.supabase, context.userId);
+    const { data: base, error: baseError } = await context.supabase
+      .from("pricing_settings")
+      .select("base_fare_xof, per_km_xof, per_min_xof, min_fare_xof, commission_type, commission_rate, commission_flat_xof")
+      .eq("category", data.category)
+      .is("country", null)
+      .single();
+    if (baseError) throw new Error(baseError.message);
+    const { data: created, error } = await context.supabase
+      .from("pricing_settings")
+      .insert({ ...base, category: data.category, country: data.country, updated_by: context.userId })
+      .select()
+      .single();
+    if (error) throw new Error(error.message);
+    await logAudit(await getActor(context), {
+      action: "pricing.create_country_override",
+      target_type: "pricing_settings",
+      target_id: created.id,
+      target_label: `${data.category} (${data.country})`,
+      details: { category: data.category, country: data.country },
+    });
+    return created;
+  });
+
+export const deletePricingSettingOverride = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: unknown) => z.object({ id: z.string().uuid() }).parse(d))
+  .handler(async ({ data, context }) => {
+    await assertAdmin(context.supabase, context.userId);
+    const { error } = await context.supabase
+      .from("pricing_settings")
+      .delete()
+      .eq("id", data.id)
+      .not("country", "is", null); // jamais supprimer la ligne globale (country NULL)
+    if (error) throw new Error(error.message);
+    await logAudit(await getActor(context), {
+      action: "pricing.delete_country_override",
+      target_type: "pricing_settings",
+      target_id: data.id,
+      target_label: undefined,
+      details: {},
+    });
+    return { ok: true as const };
   });
 
 export const updatePricingSetting = createServerFn({ method: "POST" })
@@ -645,9 +703,62 @@ export const listDeliveryPricingSettings = createServerFn({ method: "GET" })
     const { data, error } = await context.supabase
       .from("delivery_pricing_settings")
       .select("*")
-      .order("vehicle");
+      .order("vehicle")
+      .order("country", { nullsFirst: true });
     if (error) throw new Error(error.message);
     return data ?? [];
+  });
+
+/** Équivalent livraison de createPricingSettingOverride / deletePricingSettingOverride. */
+export const createDeliveryPricingSettingOverride = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: unknown) =>
+    z.object({ vehicle: z.string().min(1), country: z.string().min(1) }).parse(d),
+  )
+  .handler(async ({ data, context }) => {
+    await assertAdmin(context.supabase, context.userId);
+    const { data: base, error: baseError } = await context.supabase
+      .from("delivery_pricing_settings")
+      .select("base_fare_xof, per_km_xof, per_min_xof, min_fare_xof, commission_type, commission_rate, commission_flat_xof")
+      .eq("vehicle", data.vehicle)
+      .is("country", null)
+      .single();
+    if (baseError) throw new Error(baseError.message);
+    const { data: created, error } = await context.supabase
+      .from("delivery_pricing_settings")
+      .insert({ ...base, vehicle: data.vehicle, country: data.country, updated_by: context.userId })
+      .select()
+      .single();
+    if (error) throw new Error(error.message);
+    await logAudit(await getActor(context), {
+      action: "delivery_pricing.create_country_override",
+      target_type: "delivery_pricing_settings",
+      target_id: created.id,
+      target_label: `${data.vehicle} (${data.country})`,
+      details: { vehicle: data.vehicle, country: data.country },
+    });
+    return created;
+  });
+
+export const deleteDeliveryPricingSettingOverride = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: unknown) => z.object({ id: z.string().uuid() }).parse(d))
+  .handler(async ({ data, context }) => {
+    await assertAdmin(context.supabase, context.userId);
+    const { error } = await context.supabase
+      .from("delivery_pricing_settings")
+      .delete()
+      .eq("id", data.id)
+      .not("country", "is", null);
+    if (error) throw new Error(error.message);
+    await logAudit(await getActor(context), {
+      action: "delivery_pricing.delete_country_override",
+      target_type: "delivery_pricing_settings",
+      target_id: data.id,
+      target_label: undefined,
+      details: {},
+    });
+    return { ok: true as const };
   });
 
 export const updateDeliveryPricingSetting = createServerFn({ method: "POST" })
@@ -787,8 +898,8 @@ export const updateDeliveryExtrasPricing = createServerFn({ method: "POST" })
 /* ====================== Tarif dynamique (trafic + météo) ====================== */
 
 /**
- * Coefficients de "tarif dynamique" (trafic + météo), scoped par programme
- * avec fallback global — voir supabase/migrations/20260630000000_dynamic_pricing_settings.sql.
+ * Coefficients de "tarif dynamique" (trafic + météo), scoped par pays avec
+ * fallback global — voir supabase/migrations/20260702000000_country_scoped_pricing.sql.
  * Remplace les constantes codées en dur de dynamic-pricing.ts / delivery-pricing.ts.
  */
 export const listDynamicPricingSettings = createServerFn({ method: "GET" })
@@ -797,8 +908,8 @@ export const listDynamicPricingSettings = createServerFn({ method: "GET" })
     await assertAdmin(context.supabase, context.userId);
     const { data, error } = await context.supabase
       .from("dynamic_pricing_settings")
-      .select("*, market_programs:program_id(display_name, country)")
-      .order("program_id", { nullsFirst: true });
+      .select("*")
+      .order("country", { nullsFirst: true });
     if (error) throw new Error(error.message);
     return data ?? [];
   });
@@ -842,13 +953,13 @@ export const updateDynamicPricingSetting = createServerFn({ method: "POST" })
 export const createDynamicPricingSetting = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: unknown) =>
-    z.object({ programId: z.string().min(1) }).parse(d),
+    z.object({ country: z.string().min(1) }).parse(d),
   )
   .handler(async ({ data, context }) => {
     await assertAdmin(context.supabase, context.userId);
     const { data: created, error } = await context.supabase
       .from("dynamic_pricing_settings")
-      .insert({ program_id: data.programId, updated_by: context.userId })
+      .insert({ country: data.country, updated_by: context.userId })
       .select()
       .single();
     if (error) throw new Error(error.message);
@@ -856,7 +967,7 @@ export const createDynamicPricingSetting = createServerFn({ method: "POST" })
       action: "dynamic_pricing.create",
       target_type: "dynamic_pricing_settings",
       target_id: created.id,
-      target_label: data.programId,
+      target_label: data.country,
       details: {},
     });
     return created;
@@ -871,7 +982,7 @@ export const deleteDynamicPricingSetting = createServerFn({ method: "POST" })
       .from("dynamic_pricing_settings")
       .delete()
       .eq("id", data.id)
-      .not("program_id", "is", null); // jamais supprimer la ligne globale (program_id NULL)
+      .not("country", "is", null); // jamais supprimer la ligne globale (country NULL)
     if (error) throw new Error(error.message);
     await logAudit(await getActor(context), {
       action: "dynamic_pricing.delete",

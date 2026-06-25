@@ -679,6 +679,7 @@ export type Database = {
       dynamic_pricing_settings: {
         Row: {
           active: boolean
+          country: string | null
           created_at: string
           id: string
           notes: string | null
@@ -694,6 +695,7 @@ export type Database = {
         }
         Insert: {
           active?: boolean
+          country?: string | null
           created_at?: string
           id?: string
           notes?: string | null
@@ -709,6 +711,7 @@ export type Database = {
         }
         Update: {
           active?: boolean
+          country?: string | null
           created_at?: string
           id?: string
           notes?: string | null
@@ -1358,6 +1361,7 @@ export type Database = {
           commission_flat_xof: number
           commission_rate: number
           commission_type: Database["public"]["Enums"]["commission_kind"]
+          country: string | null
           created_at: string
           id: string
           min_fare_xof: number
@@ -1373,6 +1377,7 @@ export type Database = {
           commission_flat_xof?: number
           commission_rate?: number
           commission_type?: Database["public"]["Enums"]["commission_kind"]
+          country?: string | null
           created_at?: string
           id?: string
           min_fare_xof?: number
@@ -1388,6 +1393,7 @@ export type Database = {
           commission_flat_xof?: number
           commission_rate?: number
           commission_type?: Database["public"]["Enums"]["commission_kind"]
+          country?: string | null
           created_at?: string
           id?: string
           min_fare_xof?: number
@@ -1407,6 +1413,7 @@ export type Database = {
           commission_flat_xof: number
           commission_rate: number
           commission_type: Database["public"]["Enums"]["commission_kind"]
+          country: string | null
           created_at: string
           id: string
           min_fare_xof: number
@@ -1422,6 +1429,7 @@ export type Database = {
           commission_flat_xof?: number
           commission_rate?: number
           commission_type?: Database["public"]["Enums"]["commission_kind"]
+          country?: string | null
           created_at?: string
           id?: string
           min_fare_xof?: number
@@ -1437,6 +1445,7 @@ export type Database = {
           commission_flat_xof?: number
           commission_rate?: number
           commission_type?: Database["public"]["Enums"]["commission_kind"]
+          country?: string | null
           created_at?: string
           id?: string
           min_fare_xof?: number
@@ -2767,6 +2776,7 @@ export type Database = {
         Args: {
           _at: string
           _category: Database["public"]["Enums"]["vehicle_category"]
+          _country: string | null
         }
         Returns: {
           commission_flat_xof: number
@@ -2787,9 +2797,10 @@ export type Database = {
         }[]
       }
       resolve_dynamic_pricing_settings: {
-        Args: { _program_id: string }
+        Args: { _country: string | null }
         Returns: {
           active: boolean
+          country: string | null
           created_at: string
           id: string
           notes: string | null

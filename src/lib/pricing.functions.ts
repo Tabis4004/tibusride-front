@@ -9,10 +9,14 @@ import { DELIVERY_VEHICLES, PACKAGE_TYPES, DELIVERY_EXTRAS, type DeliveryVehicle
  * constantes codées en dur de dynamic-pricing.ts / delivery-pricing.ts.
  *
  * - `categories` : base/km/min/min_fare par catégorie, depuis `pricing_settings`
- *   (table déjà existante, déjà éditable via l'onglet admin "Tarifs", mais
- *   jusqu'ici jamais lue au moment du calcul réel du prix).
- * - `dynamic` : coefficients trafic + météo, résolus par programme (sinon
- *   défaut global) via `resolve_dynamic_pricing_settings()`.
+ *   (table déjà existante, déjà éditable via l'onglet admin "Tarifs").
+ * - `dynamic` : coefficients trafic + météo, résolus par pays (sinon défaut
+ *   global) via `resolve_dynamic_pricing_settings()`.
+ *
+ * Toutes les tables (`pricing_settings`, `delivery_pricing_settings`,
+ * `dynamic_pricing_settings`) sont scoped par pays : une ligne globale
+ * (country IS NULL) sert de défaut, et une ligne dédiée à un pays (créée via
+ * l'admin) prévaut pour ce pays uniquement si elle existe.
  *
  * Toujours retourne une config complète : si une catégorie n'a pas de ligne
  * active en base, on retombe sur les anciennes constantes de `pricing.ts`
@@ -56,16 +60,19 @@ const FALLBACK_DYNAMIC: EffectiveDynamicCoefficients = {
 export const getEffectivePricingConfig = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: unknown) =>
-    z.object({ programId: z.string().nullable().optional() }).parse(d ?? {}),
+    z.object({ country: z.string().nullable().optional() }).parse(d ?? {}),
   )
   .handler(async ({ data, context }): Promise<EffectivePricingConfig> => {
     const { supabase } = context;
+    const country = data.country ?? null;
 
-    // Base/km/min par catégorie — pricing_settings, fallback CATEGORIES si absent.
+    // Base/km/min/commission par catégorie — pricing_settings : ligne globale
+    // (country IS NULL) d'abord, puis dérogation pays si elle existe.
     const { data: rows } = await supabase
       .from("pricing_settings")
       .select("category, base_fare_xof, per_km_xof, per_min_xof, min_fare_xof, active")
-      .eq("active", true);
+      .eq("active", true)
+      .is("country", null);
 
     const categories = { ...defaultCategoryRates() };
     for (const row of rows ?? []) {
@@ -79,12 +86,31 @@ export const getEffectivePricingConfig = createServerFn({ method: "GET" })
         };
       }
     }
+    if (country) {
+      const { data: countryRows } = await supabase
+        .from("pricing_settings")
+        .select("category, base_fare_xof, per_km_xof, per_min_xof, min_fare_xof, active")
+        .eq("active", true)
+        .eq("country", country);
+      for (const row of countryRows ?? []) {
+        const cat = row.category as Category;
+        if (cat in categories) {
+          categories[cat] = {
+            base: row.base_fare_xof,
+            perKm: row.per_km_xof,
+            perMin: row.per_min_xof,
+            minFare: row.min_fare_xof,
+          };
+        }
+      }
+    }
 
-    // Tarifs livraison — delivery_pricing_settings, fallback DELIVERY_VEHICLES si absent.
+    // Tarifs livraison — delivery_pricing_settings, même logique défaut + dérogation pays.
     const { data: deliveryRows } = await supabase
       .from("delivery_pricing_settings")
       .select("vehicle, base_fare_xof, per_km_xof, per_min_xof, min_fare_xof, active")
-      .eq("active", true);
+      .eq("active", true)
+      .is("country", null);
 
     const deliveryVehicles = { ...defaultDeliveryRates() };
     for (const row of deliveryRows ?? []) {
@@ -96,6 +122,24 @@ export const getEffectivePricingConfig = createServerFn({ method: "GET" })
           perMin: row.per_min_xof,
           minFare: row.min_fare_xof,
         };
+      }
+    }
+    if (country) {
+      const { data: countryDeliveryRows } = await supabase
+        .from("delivery_pricing_settings")
+        .select("vehicle, base_fare_xof, per_km_xof, per_min_xof, min_fare_xof, active")
+        .eq("active", true)
+        .eq("country", country);
+      for (const row of countryDeliveryRows ?? []) {
+        const v = row.vehicle as DeliveryVehicle;
+        if (v in deliveryVehicles) {
+          deliveryVehicles[v] = {
+            base: row.base_fare_xof,
+            perKm: row.per_km_xof,
+            perMin: row.per_min_xof,
+            minFare: row.min_fare_xof,
+          };
+        }
       }
     }
 
@@ -129,12 +173,10 @@ export const getEffectivePricingConfig = createServerFn({ method: "GET" })
       }
     }
 
-    // Coefficients trafic/météo — résolus par programme, sinon défaut global.
+    // Coefficients trafic/météo — résolus par pays, sinon défaut global.
     const { data: dyn, error: dynError } = await supabase.rpc(
       "resolve_dynamic_pricing_settings",
-      // Le paramètre SQL accepte NULL (fallback global) ; les types générés le
-      // déclarent comme `string` non-nullable par limitation du générateur.
-      { _program_id: data.programId ?? null } as { _program_id: string },
+      { _country: country },
     );
 
     const dynamic: EffectiveDynamicCoefficients = dynError || !dyn
