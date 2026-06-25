@@ -510,11 +510,6 @@ function DriverPage() {
             {myRidesQ.data.map((r) => (
               <div key={r.id} className="space-y-2">
                 <RideCard ride={r} />
-                <DriverLocationSharer
-                  rideId={r.id}
-                  pickup={r.pickup_lat && r.pickup_lng ? { lat: r.pickup_lat, lng: r.pickup_lng } : null}
-                  dropoff={r.dropoff_lat && r.dropoff_lng ? { lat: r.dropoff_lat, lng: r.dropoff_lng } : null}
-                />
                 {(r.status === "accepted" || r.status === "arriving" || r.status === "in_progress") && (
                   <div className="flex gap-2">
                     {r.status === "accepted" && (
@@ -534,6 +529,11 @@ function DriverPage() {
                     )}
                   </div>
                 )}
+                <DriverLocationSharer
+                  rideId={r.id}
+                  pickup={r.pickup_lat && r.pickup_lng ? { lat: r.pickup_lat, lng: r.pickup_lng } : null}
+                  dropoff={r.dropoff_lat && r.dropoff_lng ? { lat: r.dropoff_lat, lng: r.dropoff_lng } : null}
+                />
                 {r.passenger_phone ? (
                   <div className="rounded-xl border border-border bg-card px-4 py-2 text-xs">
                     Passager : <a className="font-semibold text-primary" href={`tel:${r.passenger_phone}`}>{r.passenger_phone}</a>
