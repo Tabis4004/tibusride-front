@@ -1,13 +1,11 @@
 import type { CapacitorConfig } from "@capacitor/cli";
 
-// App conducteur/livreur — suivi GPS continu requis (background location).
-const serverUrl = process.env.CAPACITOR_SERVER_URL ?? "https://tibusride-front.vercel.app/app/driver";
+// App passager — pas de suivi GPS en arrière-plan, app légère.
+const serverUrl = process.env.CAPACITOR_SERVER_URL ?? "https://tibusride-front.vercel.app/app/passenger";
 
 const config: CapacitorConfig = {
-  appId: "com.tibus.ride.driver",
-  appName: "Tibus Ride Driver",
-  // Voir capacitor-shell/index.html : ne PAS utiliser "public" comme webDir
-  // (conflit avec le publicDir Vite, voir incident résolu précédemment).
+  appId: "com.tibus.ride.passenger",
+  appName: "Tibus Ride",
   webDir: "capacitor-shell",
   server: {
     url: serverUrl,
@@ -15,15 +13,11 @@ const config: CapacitorConfig = {
     cleartext: false,
   },
   android: {
-    // "androidDir" n'existe pas dans le schéma Capacitor — la bonne clé pour
-    // personnaliser le dossier du projet natif est android.path.
-    path: "android-driver",
+    path: "android-passenger",
     allowMixedContent: false,
   },
   ios: {
-    // Suivi GPS en arrière-plan : nécessitera NSLocationAlwaysAndWhenInUseUsageDescription
-    // + le mode "Background Modes > Location updates" dans Xcode (Signing & Capabilities).
-    path: "ios-driver",
+    path: "ios-passenger",
   },
   plugins: {
     SplashScreen: {
