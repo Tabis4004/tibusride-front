@@ -1594,6 +1594,15 @@ const DYNAMIC_DIFF_FIELDS: { key: string; label: string }[] = [
   { key: "active", label: "Actif" },
 ];
 
+function Field({ label, children }: { label: string; children: any }) {
+  return (
+    <div className="flex flex-col gap-1">
+      <span className="text-[10px] uppercase text-muted-foreground">{label}</span>
+      {children}
+    </div>
+  );
+}
+
 function formatDiffValue(field: string, v: any): string {
   if (v === null || v === undefined) return "—";
   if (field === "commission_type") return v === "flat" ? "Forfait" : "Pourcentage";
@@ -1622,15 +1631,127 @@ function diffRows(
  * défaut global — pour pouvoir rendre compte facilement aux associés.
  */
 function CountryPricingOverview() {
+  const qc = useQueryClient();
   const listPricing = useServerFn(listPricingSettings);
   const listDelivery = useServerFn(listDeliveryPricingSettings);
   const listDynamic = useServerFn(listDynamicPricingSettings);
+  const updatePricingFn = useServerFn(updatePricingSetting);
+  const createPricingOverrideFn = useServerFn(createPricingSettingOverride);
+  const deletePricingOverrideFn = useServerFn(deletePricingSettingOverride);
+  const updateDeliveryFn = useServerFn(updateDeliveryPricingSetting);
+  const createDeliveryOverrideFn = useServerFn(createDeliveryPricingSettingOverride);
+  const deleteDeliveryOverrideFn = useServerFn(deleteDeliveryPricingSettingOverride);
+  const updateDynamicFn = useServerFn(updateDynamicPricingSetting);
+  const createDynamicFn = useServerFn(createDynamicPricingSetting);
+  const deleteDynamicFn = useServerFn(deleteDynamicPricingSetting);
 
   const pricingQ = useQuery({ queryKey: ["admin", "pricing"], queryFn: () => listPricing({}) });
   const deliveryQ = useQuery({ queryKey: ["admin", "delivery-pricing"], queryFn: () => listDelivery({}) });
   const dynamicQ = useQuery({ queryKey: ["admin", "dynamic-pricing"], queryFn: () => listDynamic({}) });
 
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const [pendingCountries, setPendingCountries] = useState<Set<string>>(new Set());
+  const [newCountry, setNewCountry] = useState("");
+  const [drafts, setDrafts] = useState<Record<string, any>>({});
+
+  const setField = (id: string, k: string, v: any) =>
+    setDrafts((d) => ({ ...d, [id]: { ...d[id], [k]: v } }));
+  const clearDraft = (id: string) =>
+    setDrafts((d) => {
+      const { [id]: _omit, ...rest } = d;
+      return rest;
+    });
+
+  const invalidatePricing = () => qc.invalidateQueries({ queryKey: ["admin", "pricing"] });
+  const invalidateDelivery = () => qc.invalidateQueries({ queryKey: ["admin", "delivery-pricing"] });
+  const invalidateDynamic = () => qc.invalidateQueries({ queryKey: ["admin", "dynamic-pricing"] });
+  const unmarkPending = (country: string) =>
+    setPendingCountries((s) => {
+      const n = new Set(s);
+      n.delete(country);
+      return n;
+    });
+
+  const updatePricingMut = useMutation({
+    mutationFn: (payload: any) => updatePricingFn({ data: payload }),
+    onSuccess: (_d, vars: any) => {
+      toast.success("Tarifs mis à jour");
+      clearDraft(vars.id);
+      invalidatePricing();
+    },
+    onError: (e: any) => toast.error(e?.message ?? "Erreur de mise à jour"),
+  });
+  const createPricingOverrideMut = useMutation({
+    mutationFn: (payload: { category: string; country: string }) => createPricingOverrideFn({ data: payload }),
+    onSuccess: (_d, vars) => {
+      toast.success("Dérogation créée");
+      unmarkPending(vars.country);
+      invalidatePricing();
+    },
+    onError: (e: any) => toast.error(e?.message ?? "Erreur de création"),
+  });
+  const deletePricingOverrideMut = useMutation({
+    mutationFn: (id: string) => deletePricingOverrideFn({ data: { id } }),
+    onSuccess: () => {
+      toast.success("Dérogation supprimée");
+      invalidatePricing();
+    },
+    onError: (e: any) => toast.error(e?.message ?? "Erreur de suppression"),
+  });
+
+  const updateDeliveryMut = useMutation({
+    mutationFn: (payload: any) => updateDeliveryFn({ data: payload }),
+    onSuccess: (_d, vars: any) => {
+      toast.success("Tarifs livraison mis à jour");
+      clearDraft(vars.id);
+      invalidateDelivery();
+    },
+    onError: (e: any) => toast.error(e?.message ?? "Erreur de mise à jour"),
+  });
+  const createDeliveryOverrideMut = useMutation({
+    mutationFn: (payload: { vehicle: string; country: string }) => createDeliveryOverrideFn({ data: payload }),
+    onSuccess: (_d, vars) => {
+      toast.success("Dérogation créée");
+      unmarkPending(vars.country);
+      invalidateDelivery();
+    },
+    onError: (e: any) => toast.error(e?.message ?? "Erreur de création"),
+  });
+  const deleteDeliveryOverrideMut = useMutation({
+    mutationFn: (id: string) => deleteDeliveryOverrideFn({ data: { id } }),
+    onSuccess: () => {
+      toast.success("Dérogation supprimée");
+      invalidateDelivery();
+    },
+    onError: (e: any) => toast.error(e?.message ?? "Erreur de suppression"),
+  });
+
+  const updateDynamicMut = useMutation({
+    mutationFn: (payload: any) => updateDynamicFn({ data: payload }),
+    onSuccess: (_d, vars: any) => {
+      toast.success("Coefficients mis à jour");
+      clearDraft(vars.id);
+      invalidateDynamic();
+    },
+    onError: (e: any) => toast.error(e?.message ?? "Erreur de mise à jour"),
+  });
+  const createDynamicMut = useMutation({
+    mutationFn: (country: string) => createDynamicFn({ data: { country } }),
+    onSuccess: (_d, country) => {
+      toast.success("Dérogation créée");
+      unmarkPending(country);
+      invalidateDynamic();
+    },
+    onError: (e: any) => toast.error(e?.message ?? "Erreur de création"),
+  });
+  const deleteDynamicMut = useMutation({
+    mutationFn: (id: string) => deleteDynamicFn({ data: { id } }),
+    onSuccess: () => {
+      toast.success("Dérogation supprimée");
+      invalidateDynamic();
+    },
+    onError: (e: any) => toast.error(e?.message ?? "Erreur de suppression"),
+  });
 
   if (pricingQ.isLoading || deliveryQ.isLoading || dynamicQ.isLoading) {
     return <p className="text-sm text-muted-foreground">Chargement de la vue d&apos;ensemble…</p>;
@@ -1640,38 +1761,50 @@ function CountryPricingOverview() {
   const deliveryRows = (deliveryQ.data ?? []) as any[];
   const dynamicRows = (dynamicQ.data ?? []) as any[];
 
-  const countries = Array.from(
+  const realCountries = Array.from(
     new Set([
       ...pricingRows.filter((r) => r.country).map((r) => r.country as string),
       ...deliveryRows.filter((r) => r.country).map((r) => r.country as string),
       ...dynamicRows.filter((r) => r.country).map((r) => r.country as string),
     ]),
-  ).sort();
+  );
+  const countries = Array.from(new Set([...realCountries, ...pendingCountries])).sort();
+  const countryOptionsToAdd = SERVICE_COUNTRIES.filter((c) => !countries.includes(c));
 
   const reports = countries.map((country) => {
-    const pricing = pricingRows
-      .filter((r) => r.country === country)
-      .map((r) => {
-        const globalRow = pricingRows.find((g) => g.category === r.category && !g.country);
-        return { label: CATEGORY_LABEL[r.category] ?? r.category, diffs: diffRows(globalRow, r, PRICING_DIFF_FIELDS) };
-      });
-    const delivery = deliveryRows
-      .filter((r) => r.country === country)
-      .map((r) => {
-        const globalRow = deliveryRows.find((g) => g.vehicle === r.vehicle && !g.country);
-        const label = DELIVERY_VEHICLES[r.vehicle as DeliveryVehicle]?.label ?? r.vehicle;
-        return { label, diffs: diffRows(globalRow, r, PRICING_DIFF_FIELDS) };
-      });
-    const dynamicRow = dynamicRows.find((r) => r.country === country);
+    const pricing = Object.keys(CATEGORY_LABEL).map((category) => {
+      const globalRow = pricingRows.find((g) => g.category === category && !g.country);
+      const countryRow = pricingRows.find((r) => r.category === category && r.country === country);
+      return {
+        key: category,
+        label: CATEGORY_LABEL[category],
+        globalRow,
+        countryRow,
+        diffs: countryRow ? diffRows(globalRow, countryRow, PRICING_DIFF_FIELDS) : [],
+      };
+    });
+    const delivery = Object.keys(DELIVERY_VEHICLES).map((vehicle) => {
+      const globalRow = deliveryRows.find((g) => g.vehicle === vehicle && !g.country);
+      const countryRow = deliveryRows.find((r) => r.vehicle === vehicle && r.country === country);
+      const label = DELIVERY_VEHICLES[vehicle as DeliveryVehicle]?.label ?? vehicle;
+      return {
+        key: vehicle,
+        label,
+        globalRow,
+        countryRow,
+        diffs: countryRow ? diffRows(globalRow, countryRow, PRICING_DIFF_FIELDS) : [],
+      };
+    });
     const dynamicGlobal = dynamicRows.find((g) => !g.country);
-    const dynamic = dynamicRow ? diffRows(dynamicGlobal, dynamicRow, DYNAMIC_DIFF_FIELDS) : [];
+    const dynamicRow = dynamicRows.find((r) => r.country === country);
+    const dynamicDiffs = dynamicRow ? diffRows(dynamicGlobal, dynamicRow, DYNAMIC_DIFF_FIELDS) : [];
 
     const totalDiffs =
       pricing.reduce((n, p) => n + p.diffs.length, 0) +
       delivery.reduce((n, d) => n + d.diffs.length, 0) +
-      dynamic.length;
+      dynamicDiffs.length;
 
-    return { country, pricing, delivery, dynamic, totalDiffs };
+    return { country, pricing, delivery, dynamicGlobal, dynamicRow, dynamicDiffs, totalDiffs };
   });
 
   const toggle = (country: string) =>
@@ -1681,6 +1814,13 @@ function CountryPricingOverview() {
       else next.add(country);
       return next;
     });
+
+  const addCountry = () => {
+    if (!newCountry) return;
+    setPendingCountries((s) => new Set(s).add(newCountry));
+    setExpanded((s) => new Set(s).add(newCountry));
+    setNewCountry("");
+  };
 
   const copySummary = () => {
     const lines: string[] = [];
@@ -1698,9 +1838,9 @@ function CountryPricingOverview() {
         lines.push(`  Livraison ${d2.label} :`);
         for (const d of d2.diffs) lines.push(`    - ${d.label} : ${d.from} → ${d.to}`);
       }
-      if (r.dynamic.length > 0) {
+      if (r.dynamicDiffs.length > 0) {
         lines.push(`  Tarif dynamique :`);
-        for (const d of r.dynamic) lines.push(`    - ${d.label} : ${d.from} → ${d.to}`);
+        for (const d of r.dynamicDiffs) lines.push(`    - ${d.label} : ${d.from} → ${d.to}`);
       }
     }
     const text = lines.length > 0 ? lines.join("\n") : "Aucun pays n'a de dérogation tarifaire.";
@@ -1710,115 +1850,399 @@ function CountryPricingOverview() {
     );
   };
 
-  if (reports.length === 0) {
+  const numInput = (id: string, k: string, value: any, step = 50) => (
+    <Input
+      type="number"
+      step={step}
+      className="h-8 w-24 text-right"
+      value={(drafts[id]?.[k] ?? value) ?? 0}
+      onChange={(e) => setField(id, k, Number(e.target.value))}
+    />
+  );
+
+  const renderPricingRow = (country: string, p: (typeof reports)[number]["pricing"][number]) => {
+    if (!p.countryRow) {
+      const g = p.globalRow ?? {};
+      return (
+        <div
+          key={p.key}
+          className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-border/60 px-3 py-2"
+        >
+          <div className="text-xs">
+            <span className="font-semibold">{p.label}</span>{" "}
+            <span className="text-muted-foreground">
+              — suit le défaut global ({formatXof(g.base_fare_xof ?? 0)} + {formatXof(g.per_km_xof ?? 0)}/km,{" "}
+              {g.commission_type === "flat"
+                ? `${formatXof(g.commission_flat_xof ?? 0)} forfait`
+                : `${g.commission_rate ?? 0}%`}
+              )
+            </span>
+          </div>
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={createPricingOverrideMut.isPending}
+            onClick={() => createPricingOverrideMut.mutate({ category: p.key, country })}
+          >
+            Personnaliser pour ce pays
+          </Button>
+        </div>
+      );
+    }
+    const row = p.countryRow;
+    const id = row.id;
+    const draft = drafts[id] ?? {};
+    const current = { ...row, ...draft };
+    const dirty = Object.keys(draft).length > 0;
     return (
-      <div className="rounded-2xl border border-border bg-card p-4 text-sm text-muted-foreground">
-        Aucun pays n&apos;a de dérogation tarifaire pour le moment — tous appliquent le défaut global.
+      <div key={p.key} className="space-y-2 rounded-lg border border-primary/30 bg-primary/5 px-3 py-2">
+        <div className="flex items-center justify-between">
+          <span className="text-xs font-semibold">
+            {p.label} — dérogation {country}
+          </span>
+          <Button
+            size="sm"
+            variant="ghost"
+            className="text-destructive"
+            disabled={deletePricingOverrideMut.isPending}
+            onClick={() => deletePricingOverrideMut.mutate(id)}
+          >
+            Revenir au défaut global
+          </Button>
+        </div>
+        <div className="flex flex-wrap items-end gap-2">
+          <Field label="Prise en charge">{numInput(id, "base_fare_xof", row.base_fare_xof)}</Field>
+          <Field label="Prix / km">{numInput(id, "per_km_xof", row.per_km_xof, 10)}</Field>
+          <Field label="Prix / min">{numInput(id, "per_min_xof", row.per_min_xof, 5)}</Field>
+          <Field label="Tarif min">{numInput(id, "min_fare_xof", row.min_fare_xof)}</Field>
+          <Field label="Type">
+            <select
+              className="h-8 rounded-md border border-input bg-background px-2 text-sm"
+              value={current.commission_type ?? "percent"}
+              onChange={(e) => setField(id, "commission_type", e.target.value)}
+            >
+              <option value="percent">Pourcentage</option>
+              <option value="flat">Forfait</option>
+            </select>
+          </Field>
+          <Field label="%">{numInput(id, "commission_rate", row.commission_rate, 1)}</Field>
+          <Field label="Forfait (XOF)">{numInput(id, "commission_flat_xof", row.commission_flat_xof)}</Field>
+          <Field label="Actif">
+            <input
+              type="checkbox"
+              checked={!!current.active}
+              onChange={(e) => setField(id, "active", e.target.checked)}
+            />
+          </Field>
+          <Button
+            size="sm"
+            disabled={!dirty || updatePricingMut.isPending}
+            onClick={() =>
+              updatePricingMut.mutate({
+                id,
+                base_fare_xof: Number(current.base_fare_xof),
+                per_km_xof: Number(current.per_km_xof),
+                per_min_xof: Number(current.per_min_xof),
+                min_fare_xof: Number(current.min_fare_xof),
+                commission_type: current.commission_type ?? "percent",
+                commission_rate: Number(current.commission_rate ?? 0),
+                commission_flat_xof: Number(current.commission_flat_xof ?? 0),
+                active: !!current.active,
+              })
+            }
+          >
+            Enregistrer
+          </Button>
+        </div>
       </div>
     );
-  }
+  };
+
+  const renderDeliveryRow = (country: string, d: (typeof reports)[number]["delivery"][number]) => {
+    if (!d.countryRow) {
+      const g = d.globalRow ?? {};
+      return (
+        <div
+          key={d.key}
+          className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-border/60 px-3 py-2"
+        >
+          <div className="text-xs">
+            <span className="font-semibold">{d.label}</span>{" "}
+            <span className="text-muted-foreground">
+              — suit le défaut global ({formatXof(g.base_fare_xof ?? 0)} + {formatXof(g.per_km_xof ?? 0)}/km,{" "}
+              {g.commission_type === "flat"
+                ? `${formatXof(g.commission_flat_xof ?? 0)} forfait`
+                : `${g.commission_rate ?? 0}%`}
+              )
+            </span>
+          </div>
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={createDeliveryOverrideMut.isPending}
+            onClick={() => createDeliveryOverrideMut.mutate({ vehicle: d.key, country })}
+          >
+            Personnaliser pour ce pays
+          </Button>
+        </div>
+      );
+    }
+    const row = d.countryRow;
+    const id = row.id;
+    const draft = drafts[id] ?? {};
+    const current = { ...row, ...draft };
+    const dirty = Object.keys(draft).length > 0;
+    return (
+      <div key={d.key} className="space-y-2 rounded-lg border border-primary/30 bg-primary/5 px-3 py-2">
+        <div className="flex items-center justify-between">
+          <span className="text-xs font-semibold">
+            {d.label} — dérogation {country}
+          </span>
+          <Button
+            size="sm"
+            variant="ghost"
+            className="text-destructive"
+            disabled={deleteDeliveryOverrideMut.isPending}
+            onClick={() => deleteDeliveryOverrideMut.mutate(id)}
+          >
+            Revenir au défaut global
+          </Button>
+        </div>
+        <div className="flex flex-wrap items-end gap-2">
+          <Field label="Prise en charge">{numInput(id, "base_fare_xof", row.base_fare_xof)}</Field>
+          <Field label="Prix / km">{numInput(id, "per_km_xof", row.per_km_xof, 10)}</Field>
+          <Field label="Prix / min">{numInput(id, "per_min_xof", row.per_min_xof, 5)}</Field>
+          <Field label="Tarif min">{numInput(id, "min_fare_xof", row.min_fare_xof)}</Field>
+          <Field label="Type">
+            <select
+              className="h-8 rounded-md border border-input bg-background px-2 text-sm"
+              value={current.commission_type ?? "percent"}
+              onChange={(e) => setField(id, "commission_type", e.target.value)}
+            >
+              <option value="percent">Pourcentage</option>
+              <option value="flat">Forfait</option>
+            </select>
+          </Field>
+          <Field label="%">{numInput(id, "commission_rate", row.commission_rate, 1)}</Field>
+          <Field label="Forfait (XOF)">{numInput(id, "commission_flat_xof", row.commission_flat_xof)}</Field>
+          <Field label="Actif">
+            <input
+              type="checkbox"
+              checked={!!current.active}
+              onChange={(e) => setField(id, "active", e.target.checked)}
+            />
+          </Field>
+          <Button
+            size="sm"
+            disabled={!dirty || updateDeliveryMut.isPending}
+            onClick={() =>
+              updateDeliveryMut.mutate({
+                _vehicle: row.vehicle,
+                id,
+                base_fare_xof: Number(current.base_fare_xof),
+                per_km_xof: Number(current.per_km_xof),
+                per_min_xof: Number(current.per_min_xof),
+                min_fare_xof: Number(current.min_fare_xof),
+                commission_type: current.commission_type ?? "percent",
+                commission_rate: Number(current.commission_rate ?? 0),
+                commission_flat_xof: Number(current.commission_flat_xof ?? 0),
+                active: !!current.active,
+              } as any)
+            }
+          >
+            Enregistrer
+          </Button>
+        </div>
+      </div>
+    );
+  };
+
+  const renderDynamicRow = (
+    country: string,
+    dynamicGlobal: any,
+    dynamicRow: any,
+  ) => {
+    if (!dynamicRow) {
+      const g = dynamicGlobal ?? {};
+      return (
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-border/60 px-3 py-2">
+          <div className="text-xs">
+            <span className="font-semibold">Tarif dynamique</span>{" "}
+            <span className="text-muted-foreground">
+              — suit le défaut global (trafic ×{g.traffic_coefficient ?? 1}, pluie ×{g.weather_rainy_multiplier ?? 1})
+            </span>
+          </div>
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={createDynamicMut.isPending}
+            onClick={() => createDynamicMut.mutate(country)}
+          >
+            Personnaliser pour ce pays
+          </Button>
+        </div>
+      );
+    }
+    const row = dynamicRow;
+    const id = row.id;
+    const draft = drafts[id] ?? {};
+    const current = { ...row, ...draft };
+    const dirty = Object.keys(draft).length > 0;
+    return (
+      <div className="space-y-2 rounded-lg border border-primary/30 bg-primary/5 px-3 py-2">
+        <div className="flex items-center justify-between">
+          <span className="text-xs font-semibold">Tarif dynamique — dérogation {country}</span>
+          <Button
+            size="sm"
+            variant="ghost"
+            className="text-destructive"
+            disabled={deleteDynamicMut.isPending}
+            onClick={() => deleteDynamicMut.mutate(id)}
+          >
+            Revenir au défaut global
+          </Button>
+        </div>
+        <div className="flex flex-wrap items-end gap-2">
+          <Field label="Coef. trafic">{numInput(id, "traffic_coefficient", row.traffic_coefficient, 0.01)}</Field>
+          <Field label="Plafond trafic">{numInput(id, "traffic_ratio_cap", row.traffic_ratio_cap, 0.01)}</Field>
+          <Field label="Météo pluie ×">
+            {numInput(id, "weather_rainy_multiplier", row.weather_rainy_multiplier, 0.01)}
+          </Field>
+          <Field label="Météo nuage ×">
+            {numInput(id, "weather_cloudy_multiplier", row.weather_cloudy_multiplier, 0.01)}
+          </Field>
+          <Field label="Arrondi (XOF)">{numInput(id, "rounding_increment_xof", row.rounding_increment_xof, 10)}</Field>
+          <Field label="Actif">
+            <input
+              type="checkbox"
+              checked={!!current.active}
+              onChange={(e) => setField(id, "active", e.target.checked)}
+            />
+          </Field>
+          <Button
+            size="sm"
+            disabled={!dirty || updateDynamicMut.isPending}
+            onClick={() =>
+              updateDynamicMut.mutate({
+                id,
+                traffic_coefficient: Number(current.traffic_coefficient),
+                traffic_ratio_cap: Number(current.traffic_ratio_cap),
+                weather_rainy_multiplier: Number(current.weather_rainy_multiplier),
+                weather_cloudy_multiplier: Number(current.weather_cloudy_multiplier),
+                weather_sunny_multiplier: Number(current.weather_sunny_multiplier ?? 1),
+                rounding_increment_xof: Number(current.rounding_increment_xof),
+                active: !!current.active,
+              })
+            }
+          >
+            Enregistrer
+          </Button>
+        </div>
+      </div>
+    );
+  };
 
   return (
     <div className="overflow-x-auto rounded-2xl border border-border bg-card">
-      <div className="flex items-center justify-between border-b border-border px-4 py-3">
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border px-4 py-3">
         <div>
           <h2 className="font-display text-base font-bold">Vue d&apos;ensemble par pays</h2>
           <p className="text-xs text-muted-foreground">
-            Pays ayant une dérogation, et ce qui diffère réellement du défaut global (tarifs, commission, tarif
-            dynamique).
+            Gérez ici les dérogations par pays (tarifs, commission, tarif dynamique) — la table ci-dessous reste le
+            défaut global. Un pays peut être personnalisé sur autant de catégories/véhicules que nécessaire, et
+            modifié à nouveau à tout moment.
           </p>
         </div>
-        <Button size="sm" variant="outline" onClick={copySummary}>
-          Copier le résumé
+        <div className="flex items-center gap-2">
+          {reports.length > 0 && (
+            <Button size="sm" variant="outline" onClick={copySummary}>
+              Copier le résumé
+            </Button>
+          )}
+        </div>
+      </div>
+
+      <div className="flex flex-wrap items-end gap-2 border-b border-border px-4 py-3">
+        <div className="flex flex-col gap-1">
+          <span className="text-xs text-muted-foreground">Ajouter un pays à personnaliser</span>
+          <select
+            className="h-9 rounded-md border border-input bg-background px-2 text-sm"
+            value={newCountry}
+            onChange={(e) => setNewCountry(e.target.value)}
+          >
+            <option value="">Choisir…</option>
+            {countryOptionsToAdd.map((c) => (
+              <option key={c} value={c}>
+                {c}
+              </option>
+            ))}
+          </select>
+        </div>
+        <Button size="sm" disabled={!newCountry} onClick={addCountry}>
+          + Ajouter un pays
         </Button>
       </div>
-      <table className="w-full text-sm">
-        <thead className="bg-muted/40 text-xs uppercase text-muted-foreground">
-          <tr>
-            <th className="px-3 py-2 text-left">Pays</th>
-            <th className="px-3 py-2 text-left">Statut</th>
-            <th className="px-3 py-2 text-right">Détail</th>
-          </tr>
-        </thead>
-        <tbody>
-          {reports.map((r) => (
-            <Fragment key={r.country}>
-              <tr className="border-t border-border">
-                <td className="px-3 py-2 font-medium">{r.country}</td>
-                <td className="px-3 py-2">
-                  {r.totalDiffs === 0 ? (
-                    <span className="text-xs text-muted-foreground">Identique au défaut global</span>
-                  ) : (
-                    <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800">
-                      {r.totalDiffs} différence{r.totalDiffs > 1 ? "s" : ""}
-                    </span>
-                  )}
-                </td>
-                <td className="px-3 py-2 text-right">
-                  <Button size="sm" variant="ghost" onClick={() => toggle(r.country)}>
-                    {expanded.has(r.country) ? "Masquer" : "Voir"}
-                  </Button>
-                </td>
-              </tr>
-              {expanded.has(r.country) && (
-                <tr className="border-t border-border bg-muted/20">
-                  <td colSpan={3} className="px-4 py-3">
+
+      {reports.length === 0 ? (
+        <div className="px-4 py-6 text-center text-sm text-muted-foreground">
+          Aucun pays n&apos;a de dérogation tarifaire pour le moment — tous appliquent le défaut global.
+        </div>
+      ) : (
+        <table className="w-full text-sm">
+          <thead className="bg-muted/40 text-xs uppercase text-muted-foreground">
+            <tr>
+              <th className="px-3 py-2 text-left">Pays</th>
+              <th className="px-3 py-2 text-left">Statut</th>
+              <th className="px-3 py-2 text-right">Détail</th>
+            </tr>
+          </thead>
+          <tbody>
+            {reports.map((r) => (
+              <Fragment key={r.country}>
+                <tr className="border-t border-border">
+                  <td className="px-3 py-2 font-medium">{r.country}</td>
+                  <td className="px-3 py-2">
                     {r.totalDiffs === 0 ? (
-                      <p className="text-xs text-muted-foreground">
-                        Une ou plusieurs lignes existent pour ce pays mais aucune valeur n&apos;a encore été
-                        modifiée par rapport au défaut global.
-                      </p>
+                      <span className="text-xs text-muted-foreground">Identique au défaut global</span>
                     ) : (
-                      <div className="space-y-2">
-                        {r.pricing
-                          .filter((p) => p.diffs.length > 0)
-                          .map((p) => (
-                            <div key={`pricing-${p.label}`}>
-                              <p className="text-xs font-semibold">Catégorie {p.label}</p>
-                              <ul className="ml-4 list-disc text-xs text-muted-foreground">
-                                {p.diffs.map((d) => (
-                                  <li key={d.label}>
-                                    {d.label} : {d.from} → {d.to}
-                                  </li>
-                                ))}
-                              </ul>
-                            </div>
-                          ))}
-                        {r.delivery
-                          .filter((d) => d.diffs.length > 0)
-                          .map((d2) => (
-                            <div key={`delivery-${d2.label}`}>
-                              <p className="text-xs font-semibold">Livraison {d2.label}</p>
-                              <ul className="ml-4 list-disc text-xs text-muted-foreground">
-                                {d2.diffs.map((d) => (
-                                  <li key={d.label}>
-                                    {d.label} : {d.from} → {d.to}
-                                  </li>
-                                ))}
-                              </ul>
-                            </div>
-                          ))}
-                        {r.dynamic.length > 0 && (
-                          <div>
-                            <p className="text-xs font-semibold">Tarif dynamique</p>
-                            <ul className="ml-4 list-disc text-xs text-muted-foreground">
-                              {r.dynamic.map((d) => (
-                                <li key={d.label}>
-                                  {d.label} : {d.from} → {d.to}
-                                </li>
-                              ))}
-                            </ul>
-                          </div>
-                        )}
-                      </div>
+                      <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800">
+                        {r.totalDiffs} différence{r.totalDiffs > 1 ? "s" : ""}
+                      </span>
                     )}
                   </td>
+                  <td className="px-3 py-2 text-right">
+                    <Button size="sm" variant="ghost" onClick={() => toggle(r.country)}>
+                      {expanded.has(r.country) ? "Masquer" : "Voir plus"}
+                    </Button>
+                  </td>
                 </tr>
-              )}
-            </Fragment>
-          ))}
-        </tbody>
-      </table>
+                {expanded.has(r.country) && (
+                  <tr className="border-t border-border bg-muted/20">
+                    <td colSpan={3} className="space-y-4 px-4 py-3">
+                      <div className="space-y-2">
+                        <p className="text-xs font-semibold uppercase text-muted-foreground">
+                          Tarifs &amp; commissions par catégorie
+                        </p>
+                        {r.pricing.map((p) => renderPricingRow(r.country, p))}
+                      </div>
+                      <div className="space-y-2">
+                        <p className="text-xs font-semibold uppercase text-muted-foreground">
+                          Tarifs &amp; commissions livraison
+                        </p>
+                        {r.delivery.map((d) => renderDeliveryRow(r.country, d))}
+                      </div>
+                      <div className="space-y-2">
+                        <p className="text-xs font-semibold uppercase text-muted-foreground">Tarif dynamique</p>
+                        {renderDynamicRow(r.country, r.dynamicGlobal, r.dynamicRow)}
+                      </div>
+                    </td>
+                  </tr>
+                )}
+              </Fragment>
+            ))}
+          </tbody>
+        </table>
+      )}
     </div>
   );
 }
@@ -1827,15 +2251,11 @@ function PricingTab() {
   const qc = useQueryClient();
   const listFn = useServerFn(listPricingSettings);
   const updateFn = useServerFn(updatePricingSetting);
-  const createOverrideFn = useServerFn(createPricingSettingOverride);
-  const deleteOverrideFn = useServerFn(deletePricingSettingOverride);
   const { data, isLoading } = useQuery({
     queryKey: ["admin", "pricing"],
     queryFn: () => listFn({}),
   });
   const [drafts, setDrafts] = useState<Record<string, any>>({});
-  const [newOverrideCategory, setNewOverrideCategory] = useState<string>("");
-  const [newOverrideCountry, setNewOverrideCountry] = useState<string>("");
 
   const mutation = useMutation({
     mutationFn: (payload: any) => updateFn({ data: payload }),
@@ -1850,31 +2270,9 @@ function PricingTab() {
     onError: (e: any) => toast.error(e?.message ?? "Erreur de mise à jour"),
   });
 
-  const createOverride = useMutation({
-    mutationFn: (payload: { category: string; country: string }) => createOverrideFn({ data: payload }),
-    onSuccess: () => {
-      toast.success("Dérogation pays créée");
-      setNewOverrideCategory("");
-      setNewOverrideCountry("");
-      qc.invalidateQueries({ queryKey: ["admin", "pricing"] });
-    },
-    onError: (e: any) => toast.error(e?.message ?? "Erreur de création"),
-  });
-
-  const deleteOverride = useMutation({
-    mutationFn: (id: string) => deleteOverrideFn({ data: { id } }),
-    onSuccess: () => {
-      toast.success("Dérogation pays supprimée");
-      qc.invalidateQueries({ queryKey: ["admin", "pricing"] });
-    },
-    onError: (e: any) => toast.error(e?.message ?? "Erreur de suppression"),
-  });
-
   if (isLoading) return <p className="text-sm text-muted-foreground">Chargement…</p>;
 
-  const rows = (data ?? []) as any[];
-  const categories = Object.keys(CATEGORY_LABEL);
-  const existingPairs = new Set(rows.map((r) => `${r.category}::${r.country ?? ""}`));
+  const rows = ((data ?? []) as any[]).filter((r) => !r.country);
 
   return (
     <div className="space-y-6">
@@ -1979,17 +2377,6 @@ function PricingTab() {
                       >
                         Enregistrer
                       </Button>
-                      {row.country && (
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          className="text-destructive"
-                          disabled={deleteOverride.isPending}
-                          onClick={() => deleteOverride.mutate(row.id)}
-                        >
-                          Supprimer
-                        </Button>
-                      )}
                     </div>
                   </td>
                 </tr>
@@ -2006,46 +2393,6 @@ function PricingTab() {
         </table>
       </div>
 
-      <div className="flex flex-wrap items-end gap-2 rounded-2xl border border-border bg-card p-4">
-        <div className="flex flex-col gap-1">
-          <span className="text-xs text-muted-foreground">Catégorie</span>
-          <select
-            className="h-9 rounded-md border border-input bg-background px-2 text-sm"
-            value={newOverrideCategory}
-            onChange={(e) => setNewOverrideCategory(e.target.value)}
-          >
-            <option value="">Choisir…</option>
-            {categories.map((c) => (
-              <option key={c} value={c}>
-                {CATEGORY_LABEL[c]}
-              </option>
-            ))}
-          </select>
-        </div>
-        <div className="flex flex-col gap-1">
-          <span className="text-xs text-muted-foreground">Pays</span>
-          <select
-            className="h-9 rounded-md border border-input bg-background px-2 text-sm"
-            value={newOverrideCountry}
-            onChange={(e) => setNewOverrideCountry(e.target.value)}
-          >
-            <option value="">Choisir…</option>
-            {SERVICE_COUNTRIES.map((c) => (
-              <option key={c} value={c} disabled={existingPairs.has(`${newOverrideCategory}::${c}`)}>
-                {c}
-              </option>
-            ))}
-          </select>
-        </div>
-        <Button
-          size="sm"
-          disabled={!newOverrideCategory || !newOverrideCountry || createOverride.isPending}
-          onClick={() => createOverride.mutate({ category: newOverrideCategory, country: newOverrideCountry })}
-        >
-          Ajouter une dérogation pour un pays
-        </Button>
-      </div>
-
       <DeliveryPricingSection />
       <DeliveryPackagePricingSection />
       <DeliveryExtrasPricingSection />
@@ -2060,15 +2407,11 @@ function DeliveryPricingSection() {
   const qc = useQueryClient();
   const listFn = useServerFn(listDeliveryPricingSettings);
   const updateFn = useServerFn(updateDeliveryPricingSetting);
-  const createOverrideFn = useServerFn(createDeliveryPricingSettingOverride);
-  const deleteOverrideFn = useServerFn(deleteDeliveryPricingSettingOverride);
   const { data, isLoading } = useQuery({
     queryKey: ["admin", "delivery-pricing"],
     queryFn: () => listFn({}),
   });
   const [drafts, setDrafts] = useState<Record<string, any>>({});
-  const [newOverrideVehicle, setNewOverrideVehicle] = useState<string>("");
-  const [newOverrideCountry, setNewOverrideCountry] = useState<string>("");
 
   const mutation = useMutation({
     mutationFn: (payload: any) => updateFn({ data: payload }),
@@ -2083,31 +2426,9 @@ function DeliveryPricingSection() {
     onError: (e: any) => toast.error(e?.message ?? "Erreur de mise à jour"),
   });
 
-  const createOverride = useMutation({
-    mutationFn: (payload: { vehicle: string; country: string }) => createOverrideFn({ data: payload }),
-    onSuccess: () => {
-      toast.success("Dérogation pays créée");
-      setNewOverrideVehicle("");
-      setNewOverrideCountry("");
-      qc.invalidateQueries({ queryKey: ["admin", "delivery-pricing"] });
-    },
-    onError: (e: any) => toast.error(e?.message ?? "Erreur de création"),
-  });
-
-  const deleteOverride = useMutation({
-    mutationFn: (id: string) => deleteOverrideFn({ data: { id } }),
-    onSuccess: () => {
-      toast.success("Dérogation pays supprimée");
-      qc.invalidateQueries({ queryKey: ["admin", "delivery-pricing"] });
-    },
-    onError: (e: any) => toast.error(e?.message ?? "Erreur de suppression"),
-  });
-
   if (isLoading) return <p className="text-sm text-muted-foreground">Chargement…</p>;
 
-  const rows = (data ?? []) as any[];
-  const vehicles = Object.keys(DELIVERY_VEHICLES);
-  const existingPairs = new Set(rows.map((r) => `${r.vehicle}::${r.country ?? ""}`));
+  const rows = ((data ?? []) as any[]).filter((r) => !r.country);
 
   return (
     <div className="space-y-3">
@@ -2209,17 +2530,6 @@ function DeliveryPricingSection() {
                       >
                         Enregistrer
                       </Button>
-                      {row.country && (
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          className="text-destructive"
-                          disabled={deleteOverride.isPending}
-                          onClick={() => deleteOverride.mutate(row.id)}
-                        >
-                          Supprimer
-                        </Button>
-                      )}
                     </div>
                   </td>
                 </tr>
@@ -2234,46 +2544,6 @@ function DeliveryPricingSection() {
             )}
           </tbody>
         </table>
-      </div>
-
-      <div className="flex flex-wrap items-end gap-2 rounded-2xl border border-border bg-card p-4">
-        <div className="flex flex-col gap-1">
-          <span className="text-xs text-muted-foreground">Véhicule</span>
-          <select
-            className="h-9 rounded-md border border-input bg-background px-2 text-sm"
-            value={newOverrideVehicle}
-            onChange={(e) => setNewOverrideVehicle(e.target.value)}
-          >
-            <option value="">Choisir…</option>
-            {vehicles.map((v) => (
-              <option key={v} value={v}>
-                {DELIVERY_VEHICLES[v as DeliveryVehicle]?.label ?? v}
-              </option>
-            ))}
-          </select>
-        </div>
-        <div className="flex flex-col gap-1">
-          <span className="text-xs text-muted-foreground">Pays</span>
-          <select
-            className="h-9 rounded-md border border-input bg-background px-2 text-sm"
-            value={newOverrideCountry}
-            onChange={(e) => setNewOverrideCountry(e.target.value)}
-          >
-            <option value="">Choisir…</option>
-            {SERVICE_COUNTRIES.map((c) => (
-              <option key={c} value={c} disabled={existingPairs.has(`${newOverrideVehicle}::${c}`)}>
-                {c}
-              </option>
-            ))}
-          </select>
-        </div>
-        <Button
-          size="sm"
-          disabled={!newOverrideVehicle || !newOverrideCountry || createOverride.isPending}
-          onClick={() => createOverride.mutate({ vehicle: newOverrideVehicle, country: newOverrideCountry })}
-        >
-          Ajouter une dérogation pour un pays
-        </Button>
       </div>
     </div>
   );
@@ -2504,8 +2774,6 @@ function DynamicPricingSection() {
   const qc = useQueryClient();
   const listFn = useServerFn(listDynamicPricingSettings);
   const updateFn = useServerFn(updateDynamicPricingSetting);
-  const createFn = useServerFn(createDynamicPricingSetting);
-  const deleteFn = useServerFn(deleteDynamicPricingSetting);
 
   const { data, isLoading } = useQuery({
     queryKey: ["admin", "dynamic-pricing"],
@@ -2513,7 +2781,6 @@ function DynamicPricingSection() {
   });
 
   const [drafts, setDrafts] = useState<Record<string, any>>({});
-  const [newCountry, setNewCountry] = useState<string>("");
 
   const invalidate = () => qc.invalidateQueries({ queryKey: ["admin", "dynamic-pricing"] });
 
@@ -2529,21 +2796,10 @@ function DynamicPricingSection() {
     },
     onError: (e: any) => toast.error(e?.message ?? "Erreur de mise à jour"),
   });
-  const createMut = useMutation({
-    mutationFn: (country: string) => createFn({ data: { country } }),
-    onSuccess: () => { toast.success("Dérogation pays ajoutée"); setNewCountry(""); invalidate(); },
-    onError: (e: any) => toast.error(e?.message ?? "Erreur"),
-  });
-  const deleteMut = useMutation({
-    mutationFn: (id: string) => deleteFn({ data: { id } }),
-    onSuccess: () => { toast.success("Dérogation supprimée"); invalidate(); },
-    onError: (e: any) => toast.error(e?.message ?? "Erreur"),
-  });
 
   if (isLoading) return <p className="text-sm text-muted-foreground">Chargement…</p>;
 
-  const rows = (data ?? []) as any[];
-  const countryOptions = SERVICE_COUNTRIES.filter((c) => !rows.some((r) => r.country === c));
+  const rows = ((data ?? []) as any[]).filter((r) => !r.country);
 
   return (
     <div className="space-y-3">
@@ -2621,16 +2877,6 @@ function DynamicPricingSection() {
                     >
                       Enregistrer
                     </Button>
-                    {row.country && (
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        disabled={deleteMut.isPending}
-                        onClick={() => deleteMut.mutate(row.id)}
-                      >
-                        Supprimer
-                      </Button>
-                    )}
                   </td>
                 </tr>
               );
@@ -2638,31 +2884,6 @@ function DynamicPricingSection() {
           </tbody>
         </table>
       </div>
-
-      {countryOptions.length > 0 && (
-        <div className="flex items-end gap-2 rounded-2xl border border-border bg-card p-3">
-          <div className="flex-1">
-            <Label className="text-xs">Ajouter une dérogation pour un pays</Label>
-            <Select value={newCountry} onValueChange={setNewCountry}>
-              <SelectTrigger><SelectValue placeholder="Choisir un pays" /></SelectTrigger>
-              <SelectContent>
-                {countryOptions.map((c) => (
-                  <SelectItem key={c} value={c}>
-                    {c}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <Button
-            size="sm"
-            disabled={!newCountry || createMut.isPending}
-            onClick={() => createMut.mutate(newCountry)}
-          >
-            Ajouter
-          </Button>
-        </div>
-      )}
     </div>
   );
 }
