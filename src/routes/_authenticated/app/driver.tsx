@@ -132,6 +132,15 @@ function DriverPage() {
   const [statsRange, setStatsRange] = useState<StatsRange>("all");
   const statsRangeStart = rangeStartIso(statsRange);
 
+  // "Prominent disclosure" position en arrière-plan (exigence Google Play —
+  // formulaire "Background location") : avant la toute première activation
+  // du mode "En ligne" sur cet appareil, on doit présenter explicitement à
+  // l'utilisateur ce que la position fait, y compris en arrière-plan/app
+  // fermée, et obtenir un geste d'acceptation explicite. Mémorisé en local
+  // (par appareil) pour ne pas le redemander à chaque connexion.
+  const LOCATION_DISCLOSURE_KEY = "tibus_driver_location_disclosure_ack";
+  const [showLocationDisclosure, setShowLocationDisclosure] = useState(false);
+
   // `driver_profiles.total_earnings`/`rides_count` ne sont mis à jour par
   // aucun trigger — toujours à 0. Les vrais gains nets sont déjà journalisés
   // par course dans `ride_payouts` (déclenché à la complétion), donc on les
@@ -402,6 +411,36 @@ function DriverPage() {
       <InsuranceAlertsBanner />
       <PendingOfferBanner />
 
+      {/* Prominent disclosure position en arrière-plan — voir LOCATION_DISCLOSURE_KEY ci-dessus. */}
+      <Dialog open={showLocationDisclosure} onOpenChange={() => setShowLocationDisclosure(false)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Partage de votre position</DialogTitle>
+            <DialogDescription>
+              Tibus Ride Driver utilise votre position pour vous proposer des courses et vous localiser pendant un
+              trajet en cours. Lorsque vous êtes « en ligne », votre position continue d'être transmise même
+              lorsque l'application est en arrière-plan ou même quand l'app est fermée au premier plan — afin de
+              rester localisable par le voyageur jusqu'à la fin de la course. Vous pouvez repasser « hors ligne » à
+              tout moment pour arrêter ce partage.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowLocationDisclosure(false)}>
+              Annuler
+            </Button>
+            <Button
+              onClick={() => {
+                localStorage.setItem(LOCATION_DISCLOSURE_KEY, "1");
+                setShowLocationDisclosure(false);
+                toggleOnline.mutate(true);
+              }}
+            >
+              J'accepte, passer en ligne
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       {/* Popup minuté "nouvelle course" — mode self_assign, voir SELF_ASSIGN_POPUP_SECONDS. */}
       <Dialog open={!!newRidePopup} onOpenChange={() => {}}>
         <DialogContent>
@@ -558,7 +597,14 @@ function DriverPage() {
           <span className="text-sm font-medium">{driverQ.data.is_online ? "En ligne" : "Hors ligne"}</span>
           <Switch
             checked={driverQ.data.is_online}
-            onCheckedChange={(v) => { primeSpeechSynthesis(); toggleOnline.mutate(v); }}
+            onCheckedChange={(v) => {
+              primeSpeechSynthesis();
+              if (v && !localStorage.getItem(LOCATION_DISCLOSURE_KEY)) {
+                setShowLocationDisclosure(true);
+                return;
+              }
+              toggleOnline.mutate(v);
+            }}
           />
         </div>
       </div>
