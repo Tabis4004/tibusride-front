@@ -57,12 +57,18 @@ C'est l'**AAB** (pas l'APK) qu'il faut uploader sur la Play Console.
       Voyageur ("Tibus Ride").
 - [ ] Catégorie (Transport/Maps & navigation ou équivalent local), email de
       contact, site web.
-- [ ] **Politique de confidentialité (URL publique, obligatoire)** :
+- [x] **Politique de confidentialité (URL publique, obligatoire)** :
       doit décrire la collecte caméra (photo de profil chauffeur),
       localisation précise (chauffeur : aussi en arrière-plan), numéro de
-      téléphone, et le sous-traitant hébergeur (Supabase). À rédiger/publier
-      si elle n'existe pas encore — dis-moi si tu veux que je la rédige et
-      l'héberge sur une route du site.
+      téléphone, et le sous-traitant hébergeur (Supabase).
+      Fait : page créée sur `/confidentialite` (couvre les 8 points requis +
+      la disclosure "position"/"arrière-plan"/"même quand l'app est fermée"
+      exigée par le formulaire background location). URL à utiliser dans les
+      deux fiches Play Console une fois déployée :
+      `https://<ton-domaine-vercel>/confidentialite`.
+      ⚠️ **À vérifier avant publication** : l'email de contact
+      `support@tibusride.app` utilisé sur la page est un **placeholder** —
+      confirme/remplace-le par une adresse réelle et surveillée.
 
 ## 4. Questionnaires obligatoires (Play Console)
 
