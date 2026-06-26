@@ -91,9 +91,14 @@ C'est l'**AAB** (pas l'APK) qu'il faut uploader sur la Play Console.
   - Fournir une **vidéo de démo (~30 s max)** montrant le déclenchement de la
     permission runtime, précédé d'un message de "prominent disclosure" dans
     l'app qui mentionne explicitement les mots "position", "arrière-plan" et
-    "même quand l'app est fermée" — **à vérifier si ce message existe déjà
-    dans l'UI driver, sinon je peux l'ajouter avant l'enregistrement de la
-    vidéo.**
+    "même quand l'app est fermée".
+    ✅ **Fait** : popup affichée dans l'app chauffeur avant la première
+    activation du mode "En ligne" sur un appareil (commit `f994779`). Pour
+    la vidéo : désinstalle/réinstalle l'app (ou vide le localStorage du
+    WebView) pour que la popup réapparaisse à l'écran pendant
+    l'enregistrement, puis filmer : ouverture app → bascule "En ligne" →
+    popup de consentement → "J'accepte, passer en ligne" → prompt système
+    Android de permission position.
 
 ## 5. Publication
 
