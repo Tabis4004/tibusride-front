@@ -128,9 +128,13 @@ function PrivacyPolicy() {
 
         <Section title="7. Contact">
           <p>
-            Pour toute question relative à cette politique ou à vos données :{" "}
-            <a href="mailto:support@tibusride.app" className="text-primary underline">
-              support@tibusride.app
+            Pour toute question relative à cette politique ou à vos données : voir notre{" "}
+            <Link to="/contact" className="text-primary underline">
+              page de contact
+            </Link>
+            , ou directement par email à{" "}
+            <a href="mailto:tabistibus@gmail.com" className="text-primary underline">
+              tabistibus@gmail.com
             </a>
             .
           </p>
