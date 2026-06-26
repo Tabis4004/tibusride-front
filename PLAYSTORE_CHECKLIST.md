@@ -6,6 +6,9 @@ Tout ce qui suit est à faire pour CHACUNE, sauf indication contraire.
 
 ## 0. Compte développeur
 
+Guide détaillé pas-à-pas (création de compte, signature, build, upload,
+test fermé) : voir `PLAYSTORE_PUBLISHING_GUIDE.md`.
+
 - [ ] Créer/avoir un compte Google Play Console (frais unique 25 $US).
 - [ ] Si compte **personnel créé récemment** : Google impose un test fermé
       avec **12 testeurs pendant 14 jours consécutifs** avant d'autoriser la
@@ -52,9 +55,14 @@ C'est l'**AAB** (pas l'APK) qu'il faut uploader sur la Play Console.
 - [ ] Captures d'écran téléphone : minimum 2, recommandé 4-8 (déjà des
       captures admin/chauffeur existantes dans le projet — à réutiliser/
       retailler si pertinent).
-- [ ] Titre, description courte (80 car.) et longue (4000 car.) — à
+- [x] Titre, description courte (80 car.) et longue (4000 car.) — à
       différencier clairement entre Chauffeur ("Tibus Ride Driver") et
       Voyageur ("Tibus Ride").
+      ✅ **Fait** : textes prêts à copier-coller dans `PLAYSTORE_LISTINGS.md`,
+      basés uniquement sur les données vérifiables du code (11 villes/9 pays,
+      catégories de course et de livraison réelles, paiement Mobile Money/
+      cash/carte) — sans reprendre les statistiques marketing non
+      vérifiables de la landing page.
 - [x] Catégorie (Transport/Maps & navigation ou équivalent local), email de
       contact, site web.
       Email : `tabistibus@gmail.com`. WhatsApp : `+225 01 72 96 00 00`.
@@ -75,13 +83,10 @@ C'est l'**AAB** (pas l'APK) qu'il faut uploader sur la Play Console.
 ## 4. Questionnaires obligatoires (Play Console)
 
 - [ ] **Content rating** (questionnaire IARC).
-- [ ] **Data safety form** — déclarer pour chaque app :
-  - Caméra : collectée (photo de profil chauffeur), finalité "identification
-    de l'utilisateur", pas de partage avec des tiers publicitaires.
-  - Localisation précise : collectée ; app chauffeur = aussi en arrière-plan.
-  - Numéro de téléphone : collecté (mise en contact chauffeur/voyageur).
-  - Préciser le chiffrement en transit et la possibilité de suppression de
-    compte/données.
+- [x] **Data safety form** — réponses détaillées prêtes dans
+      `PLAYSTORE_DATA_SAFETY.md` (tableau par catégorie de donnée, par app,
+      avec le point d'attention sur les infos de paiement à vérifier selon
+      l'implémentation GeniusPay).
 - [ ] **Formulaire dédié "Background location"** (app chauffeur uniquement,
       apparaît automatiquement dans la Play Console dès que
       `ACCESS_BACKGROUND_LOCATION` est détecté dans le manifest) :
