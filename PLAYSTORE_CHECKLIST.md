@@ -17,13 +17,14 @@ Tout ce qui suit est à faire pour CHACUNE, sauf indication contraire.
 
 ## 1. Avant de builder
 
-- [ ] **Cible API obligatoire** : à partir du **31 août 2026**, toute
+- [x] **Cible API obligatoire** : à partir du **31 août 2026**, toute
       nouvelle app ou mise à jour doit cibler **Android 16 (API 36)**.
-      Le projet est actuellement sur `targetSdkVersion 35`
-      (`android-driver/variables.gradle` et `android-passenger/variables.gradle`).
-      → Il faut passer `compileSdkVersion`/`targetSdkVersion` à 36 avant la
-      soumission (sinon refus probable si la date limite est passée au
-      moment de l'upload). Dis-moi quand tu veux que je fasse ce changement.
+      Fait : `compileSdkVersion`/`targetSdkVersion` passés à 36 (driver +
+      passenger), AGP monté à 8.9.1 (minimum requis pour compileSdk 36,
+      compatible avec le Gradle wrapper 8.11.1 déjà présent).
+      → **Avant le premier build**, Android Studio/le SDK manager devra
+      télécharger la plateforme SDK 36 si elle n'est pas déjà installée sur
+      ta machine (se fait automatiquement au premier `gradle sync`).
 - [ ] Générer **une clé de signature par app** (gardée précieusement — non
       récupérable en cas de perte, sauf via le processus Play App Signing) :
       voir `android-driver/keystore.properties.example` et
