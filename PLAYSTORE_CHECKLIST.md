@@ -55,20 +55,22 @@ C'est l'**AAB** (pas l'APK) qu'il faut uploader sur la Play Console.
 - [ ] Titre, description courte (80 car.) et longue (4000 car.) — à
       différencier clairement entre Chauffeur ("Tibus Ride Driver") et
       Voyageur ("Tibus Ride").
-- [ ] Catégorie (Transport/Maps & navigation ou équivalent local), email de
+- [x] Catégorie (Transport/Maps & navigation ou équivalent local), email de
       contact, site web.
+      Email : `tabistibus@gmail.com`. WhatsApp : `+225 01 72 96 00 00`.
+- [x] **Page de contact (URL publique, exigée par Play Store)** :
+      Fait : page créée sur `/contact` (email + WhatsApp), liée depuis
+      `/confidentialite`. URL à utiliser dans les fiches Play Console :
+      `https://<ton-domaine-vercel>/contact`.
 - [x] **Politique de confidentialité (URL publique, obligatoire)** :
       doit décrire la collecte caméra (photo de profil chauffeur),
       localisation précise (chauffeur : aussi en arrière-plan), numéro de
       téléphone, et le sous-traitant hébergeur (Supabase).
       Fait : page créée sur `/confidentialite` (couvre les 8 points requis +
       la disclosure "position"/"arrière-plan"/"même quand l'app est fermée"
-      exigée par le formulaire background location). URL à utiliser dans les
-      deux fiches Play Console une fois déployée :
-      `https://<ton-domaine-vercel>/confidentialite`.
-      ⚠️ **À vérifier avant publication** : l'email de contact
-      `support@tibusride.app` utilisé sur la page est un **placeholder** —
-      confirme/remplace-le par une adresse réelle et surveillée.
+      exigée par le formulaire background location), email de contact mis à
+      jour vers `tabistibus@gmail.com`. URL à utiliser dans les deux fiches
+      Play Console une fois déployée : `https://<ton-domaine-vercel>/confidentialite`.
 
 ## 4. Questionnaires obligatoires (Play Console)
 
