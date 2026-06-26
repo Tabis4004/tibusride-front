@@ -32,7 +32,11 @@
     "cap:ios:sync:driver": "npm run cap:select:driver && npx cap sync ios",
     "cap:ios:sync:passenger": "npm run cap:select:passenger && npx cap sync ios",
     "cap:ios:open:driver": "npm run cap:select:driver && npx cap open ios",
-    "cap:ios:open:passenger": "npm run cap:select:passenger && npx cap open ios"
+    "cap:ios:open:passenger": "npm run cap:select:passenger && npx cap open ios",
+    "android:build:driver": "bash scripts/build-android.sh driver",
+    "android:build:passenger": "bash scripts/build-android.sh passenger",
+    "android:build:all": "bash scripts/build-android.sh all",
+    "android:version:bump": "node scripts/bump-android-version.mjs all"
   },
   "dependencies": {
     "@capacitor-community/text-to-speech": "^8.0.2",
