@@ -10,7 +10,7 @@ import { CATEGORIES, countryForCoords, formatXof, type Category } from "@/lib/pr
 import { toast } from "sonner";
 import { Bar, BarChart, CartesianGrid, Legend, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { type ReportGranularity, buildPeriodSeries, downloadCsv } from "@/lib/reporting";
-import { BookOpen, Car, Clock, MapPin, Wallet } from "lucide-react";
+import { BookOpen, Car, Clock, MapPin, Navigation, Wallet } from "lucide-react";
 import { CarIcon } from "@/components/CarIcon";
 import { useServerFn } from "@tanstack/react-start";
 import { getMyWallet } from "@/lib/wallet.functions";
@@ -24,6 +24,14 @@ import { getAnnouncementAudioUrl, ANNOUNCEMENT_TEXT } from "@/lib/tts.functions"
  * fait foi ; ici, aucune réservation exclusive n'existe, le popup n'est
  * qu'une alerte temporisée pour inciter à réagir vite. */
 const SELF_ASSIGN_POPUP_SECONDS = 20;
+
+/** Construit un lien Google Maps en navigation guidée (voix + recalcul en
+ * temps réel) vers une destination donnée. Ouvert dans un nouvel onglet, ça
+ * lance l'app Google Maps native sur mobile (ou Maps web sinon). */
+function googleMapsDirectionsUrl(dest: { lat: number; lng: number } | null | undefined) {
+  if (!dest) return null;
+  return `https://www.google.com/maps/dir/?api=1&destination=${dest.lat},${dest.lng}&travelmode=driving`;
+}
 import {
   reportMyLocation,
   getMyZone,
@@ -496,6 +504,22 @@ function DriverPage() {
                         Terminer
                       </Button>
                     )}
+                    {(() => {
+                      // Avant la prise en charge -> direction le point de départ ;
+                      // course démarrée -> direction la destination du passager.
+                      const dest = r.status === "in_progress"
+                        ? (r.dropoff_lat && r.dropoff_lng ? { lat: r.dropoff_lat, lng: r.dropoff_lng } : null)
+                        : (r.pickup_lat && r.pickup_lng ? { lat: r.pickup_lat, lng: r.pickup_lng } : null);
+                      const navUrl = googleMapsDirectionsUrl(dest);
+                      if (!navUrl) return null;
+                      return (
+                        <Button variant="outline" size="lg" asChild>
+                          <a href={navUrl} target="_blank" rel="noreferrer">
+                            <Navigation className="h-4 w-4" />
+                          </a>
+                        </Button>
+                      );
+                    })()}
                   </div>
                 )}
                 <DriverLocationSharer
