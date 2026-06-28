@@ -451,30 +451,42 @@ function PassengerPage() {
               type="button"
               onClick={() => setServiceMode("ride")}
               className={cn(
-                "rounded-2xl border p-3 text-left transition-all",
-                serviceMode === "ride" ? "border-primary/30 bg-primary/5 ring-1 ring-primary/20" : "border-border bg-muted/30",
+                "rounded-[20px] p-3 text-left text-white shadow-md transition-all",
+                "bg-[#0fae7e]",
+                serviceMode === "ride" ? "ring-2 ring-white ring-offset-2 ring-offset-background" : "opacity-90 shadow-sm",
               )}
             >
-              <Car className={cn("h-5 w-5", serviceMode === "ride" ? "text-primary" : "text-muted-foreground")} />
-              <div className="mt-2 text-xs font-semibold">Courses</div>
-              <div className="text-[10px] text-muted-foreground">dès 4 min</div>
+              <div className="flex h-8 w-8 items-center justify-center rounded-[10px] bg-white/25">
+                <Car className="h-5 w-5 text-white" />
+              </div>
+              <div className="mt-2 text-xs font-bold">Courses</div>
+              <div className="text-[10px] text-white/80">dès 4 min</div>
             </button>
             <button
               type="button"
               onClick={() => setServiceMode("delivery")}
               className={cn(
-                "rounded-2xl border p-3 text-left transition-all",
-                serviceMode === "delivery" ? "border-primary/30 bg-primary/5 ring-1 ring-primary/20" : "border-border bg-muted/30",
+                "rounded-[20px] p-3 text-left text-white shadow-md transition-all",
+                "bg-[#ff7a1a]",
+                serviceMode === "delivery" ? "ring-2 ring-white ring-offset-2 ring-offset-background" : "opacity-90 shadow-sm",
               )}
             >
-              <Package className={cn("h-5 w-5", serviceMode === "delivery" ? "text-primary" : "text-muted-foreground")} />
-              <div className="mt-2 text-xs font-semibold">Livraison</div>
-              <div className="text-[10px] text-muted-foreground">colis & repas</div>
+              <div className="flex h-8 w-8 items-center justify-center rounded-[10px] bg-white/25">
+                <Package className="h-5 w-5 text-white" />
+              </div>
+              <div className="mt-2 text-xs font-bold">Livraison</div>
+              <div className="text-[10px] text-white/80">colis & repas</div>
             </button>
-            <button type="button" onClick={() => toast.info("Tibus Food — bientôt disponible")} className="rounded-2xl border border-border bg-muted/30 p-3 text-left opacity-80">
-              <UtensilsCrossed className="h-5 w-5 text-muted-foreground" />
-              <div className="mt-2 text-xs font-semibold">Food</div>
-              <div className="text-[10px] text-muted-foreground">restos</div>
+            <button
+              type="button"
+              onClick={() => toast.info("Tibus Food — bientôt disponible")}
+              className="rounded-[20px] bg-[#7c5cff] p-3 text-left text-white opacity-80 shadow-sm transition-all"
+            >
+              <div className="flex h-8 w-8 items-center justify-center rounded-[10px] bg-white/25">
+                <UtensilsCrossed className="h-5 w-5 text-white" />
+              </div>
+              <div className="mt-2 text-xs font-bold">Food</div>
+              <div className="text-[10px] text-white/80">restos</div>
             </button>
           </div>
         </section>
