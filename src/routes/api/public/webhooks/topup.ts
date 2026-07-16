@@ -9,7 +9,12 @@ import { createHmac, timingSafeEqual } from "crypto";
  *   X-Webhook-Timestamp: unix seconds
  *   X-Webhook-Event:     payment.success | payment.failed | payment.cancelled | ...
  *
- * Payload identifies our topup via data.metadata.topup_id (set at creation).
+ * Payload identifies our topup via data.metadata.topup_id (wallet points
+ * passager, topup_orders/confirm_topup) OR data.metadata.driver_topup_id
+ * (wallet FCFA livreur, self-service — driver_topup_orders/confirm_driver_topup,
+ * voir courrier_livreur + Edge Function geniuspay-driver-topup). Les deux
+ * flux partagent ce même webhook GeniusPay, distingués par la clé de
+ * metadata présente dans le payload.
  *
  * Legacy shared-secret fallback (TOPUP_WEBHOOK_SECRET via x-webhook-secret) is kept
  * for other providers (TabisPay, manual confirmation).
@@ -59,12 +64,14 @@ export const Route = createFileRoute("/api/public/webhooks/topup")({
         }
 
         // Resolve topup_id (GeniusPay → metadata.topup_id ; legacy → top-level)
+        // et driverTopupId séparément (wallet FCFA livreur, self-service).
+        const driverTopupId: string | undefined = body?.data?.metadata?.driver_topup_id;
         const topupId: string | undefined =
           body?.data?.metadata?.topup_id ?? body?.topup_id;
         const providerRef: string | undefined =
           body?.data?.reference ?? body?.provider_reference;
 
-        if (!topupId) {
+        if (!driverTopupId && !topupId) {
           return new Response("Missing topup_id", { status: 400 });
         }
 
@@ -91,9 +98,13 @@ export const Route = createFileRoute("/api/public/webhooks/topup")({
 
         const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
 
+        const table = driverTopupId ? "driver_topup_orders" : "topup_orders";
+        const id = (driverTopupId ?? topupId)!;
+        const confirmRpc = driverTopupId ? "confirm_driver_topup" : "confirm_topup";
+
         if (status === "paid") {
-          const { data, error } = await supabaseAdmin.rpc("confirm_topup", {
-            _topup_id: topupId,
+          const { data, error } = await supabaseAdmin.rpc(confirmRpc, {
+            _topup_id: id,
             _provider_ref: providerRef ?? undefined,
           });
           if (error)
@@ -107,9 +118,9 @@ export const Route = createFileRoute("/api/public/webhooks/topup")({
         }
 
         const { error } = await supabaseAdmin
-          .from("topup_orders")
+          .from(table)
           .update({ status, provider_reference: providerRef ?? null })
-          .eq("id", topupId);
+          .eq("id", id);
         if (error)
           return new Response(JSON.stringify({ ok: false, error: error.message }), {
             status: 500,

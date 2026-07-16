@@ -174,9 +174,15 @@ export const getEffectivePricingConfig = createServerFn({ method: "GET" })
     }
 
     // Coefficients trafic/météo — résolus par pays, sinon défaut global.
+    // `country` peut être null (fallback global, voir plus haut) — le RPC
+    // l'accepte très bien à l'exécution (paramètre `_country text` sans
+    // contrainte NOT NULL côté Postgres), mais les types générés par
+    // supabase-js ne modélisent pas la nullabilité des paramètres de
+    // fonction, seulement des colonnes de table : d'où le cast, purement
+    // pour satisfaire TypeScript, sans changement de comportement.
     const { data: dyn, error: dynError } = await supabase.rpc(
       "resolve_dynamic_pricing_settings",
-      { _country: country },
+      { _country: country as string },
     );
 
     const dynamic: EffectiveDynamicCoefficients = dynError || !dyn

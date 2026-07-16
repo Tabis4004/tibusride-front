@@ -344,6 +344,120 @@ export type Database = {
           },
         ]
       }
+      delivery_extras_pricing: {
+        Row: {
+          active: boolean
+          created_at: string
+          extra_key: string
+          fee_xof: number
+          id: string
+          percent_extra: number
+          updated_at: string
+          updated_by: string | null
+        }
+        Insert: {
+          active?: boolean
+          created_at?: string
+          extra_key: string
+          fee_xof?: number
+          id?: string
+          percent_extra?: number
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Update: {
+          active?: boolean
+          created_at?: string
+          extra_key?: string
+          fee_xof?: number
+          id?: string
+          percent_extra?: number
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Relationships: []
+      }
+      delivery_package_pricing: {
+        Row: {
+          active: boolean
+          created_at: string
+          id: string
+          multiplier: number
+          package_type: string
+          updated_at: string
+          updated_by: string | null
+        }
+        Insert: {
+          active?: boolean
+          created_at?: string
+          id?: string
+          multiplier?: number
+          package_type: string
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Update: {
+          active?: boolean
+          created_at?: string
+          id?: string
+          multiplier?: number
+          package_type?: string
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Relationships: []
+      }
+      delivery_pricing_settings: {
+        Row: {
+          active: boolean
+          base_fare_xof: number
+          commission_flat_xof: number
+          commission_rate: number
+          commission_type: Database["public"]["Enums"]["commission_kind"]
+          country: string | null
+          created_at: string
+          id: string
+          min_fare_xof: number
+          per_km_xof: number
+          per_min_xof: number
+          updated_at: string
+          updated_by: string | null
+          vehicle: string
+        }
+        Insert: {
+          active?: boolean
+          base_fare_xof?: number
+          commission_flat_xof?: number
+          commission_rate?: number
+          commission_type?: Database["public"]["Enums"]["commission_kind"]
+          country?: string | null
+          created_at?: string
+          id?: string
+          min_fare_xof?: number
+          per_km_xof?: number
+          per_min_xof?: number
+          updated_at?: string
+          updated_by?: string | null
+          vehicle: string
+        }
+        Update: {
+          active?: boolean
+          base_fare_xof?: number
+          commission_flat_xof?: number
+          commission_rate?: number
+          commission_type?: Database["public"]["Enums"]["commission_kind"]
+          country?: string | null
+          created_at?: string
+          id?: string
+          min_fare_xof?: number
+          per_km_xof?: number
+          per_min_xof?: number
+          updated_at?: string
+          updated_by?: string | null
+          vehicle?: string
+        }
+        Relationships: []
+      }
       driver_alerts: {
         Row: {
           body: string
@@ -622,6 +736,42 @@ export type Database = {
           points_balance?: number
           updated_at?: string
           user_id?: string
+        }
+        Relationships: []
+      }
+      driver_topup_orders: {
+        Row: {
+          amount_xof: number
+          created_at: string
+          driver_id: string
+          id: string
+          paid_at: string | null
+          payload: Json | null
+          provider: string
+          provider_reference: string | null
+          status: Database["public"]["Enums"]["topup_status"]
+        }
+        Insert: {
+          amount_xof: number
+          created_at?: string
+          driver_id: string
+          id?: string
+          paid_at?: string | null
+          payload?: Json | null
+          provider?: string
+          provider_reference?: string | null
+          status?: Database["public"]["Enums"]["topup_status"]
+        }
+        Update: {
+          amount_xof?: number
+          created_at?: string
+          driver_id?: string
+          id?: string
+          paid_at?: string | null
+          payload?: Json | null
+          provider?: string
+          provider_reference?: string | null
+          status?: Database["public"]["Enums"]["topup_status"]
         }
         Relationships: []
       }
@@ -1290,120 +1440,6 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
-      }
-      delivery_package_pricing: {
-        Row: {
-          active: boolean
-          created_at: string
-          id: string
-          multiplier: number
-          package_type: string
-          updated_at: string
-          updated_by: string | null
-        }
-        Insert: {
-          active?: boolean
-          created_at?: string
-          id?: string
-          multiplier?: number
-          package_type: string
-          updated_at?: string
-          updated_by?: string | null
-        }
-        Update: {
-          active?: boolean
-          created_at?: string
-          id?: string
-          multiplier?: number
-          package_type?: string
-          updated_at?: string
-          updated_by?: string | null
-        }
-        Relationships: []
-      }
-      delivery_extras_pricing: {
-        Row: {
-          active: boolean
-          created_at: string
-          extra_key: string
-          fee_xof: number
-          id: string
-          percent_extra: number
-          updated_at: string
-          updated_by: string | null
-        }
-        Insert: {
-          active?: boolean
-          created_at?: string
-          extra_key: string
-          fee_xof?: number
-          id?: string
-          percent_extra?: number
-          updated_at?: string
-          updated_by?: string | null
-        }
-        Update: {
-          active?: boolean
-          created_at?: string
-          extra_key?: string
-          fee_xof?: number
-          id?: string
-          percent_extra?: number
-          updated_at?: string
-          updated_by?: string | null
-        }
-        Relationships: []
-      }
-      delivery_pricing_settings: {
-        Row: {
-          active: boolean
-          base_fare_xof: number
-          commission_flat_xof: number
-          commission_rate: number
-          commission_type: Database["public"]["Enums"]["commission_kind"]
-          country: string | null
-          created_at: string
-          id: string
-          min_fare_xof: number
-          per_km_xof: number
-          per_min_xof: number
-          updated_at: string
-          updated_by: string | null
-          vehicle: string
-        }
-        Insert: {
-          active?: boolean
-          base_fare_xof?: number
-          commission_flat_xof?: number
-          commission_rate?: number
-          commission_type?: Database["public"]["Enums"]["commission_kind"]
-          country?: string | null
-          created_at?: string
-          id?: string
-          min_fare_xof?: number
-          per_km_xof?: number
-          per_min_xof?: number
-          updated_at?: string
-          updated_by?: string | null
-          vehicle: string
-        }
-        Update: {
-          active?: boolean
-          base_fare_xof?: number
-          commission_flat_xof?: number
-          commission_rate?: number
-          commission_type?: Database["public"]["Enums"]["commission_kind"]
-          country?: string | null
-          created_at?: string
-          id?: string
-          min_fare_xof?: number
-          per_km_xof?: number
-          per_min_xof?: number
-          updated_at?: string
-          updated_by?: string | null
-          vehicle?: string
-        }
-        Relationships: []
       }
       pricing_settings: {
         Row: {
@@ -2460,6 +2496,7 @@ export type Database = {
         Args: { _ride_id: string }
         Returns: {
           accepted_at: string | null
+          base_price_xof: number | null
           cancelled_at: string | null
           category: Database["public"]["Enums"]["vehicle_category"]
           city: string
@@ -2505,6 +2542,10 @@ export type Database = {
           started_at: string | null
           status: Database["public"]["Enums"]["ride_status"]
           updated_at: string
+          waiting_fee_xof: number
+          waiting_minutes: number
+          waiting_started_at: string | null
+          waypoints: Json
         }
         SetofOptions: {
           from: "*"
@@ -2563,6 +2604,10 @@ export type Database = {
         Returns: number
       }
       claim_driver_share_reward: { Args: { _channel: string }; Returns: Json }
+      confirm_driver_topup: {
+        Args: { _provider_ref?: string; _topup_id: string }
+        Returns: Json
+      }
       confirm_topup: {
         Args: { _provider_ref?: string; _topup_id: string }
         Returns: Json
@@ -2645,6 +2690,10 @@ export type Database = {
           isSetofReturn: false
         }
       }
+      get_insurance_document_path: {
+        Args: { _driver_id: string }
+        Returns: string
+      }
       get_market_program: {
         Args: { _program_id: string }
         Returns: {
@@ -2707,10 +2756,6 @@ export type Database = {
         Returns: number
       }
       is_superadmin: { Args: { _uid: string }; Returns: boolean }
-      get_insurance_document_path: {
-        Args: { _driver_id: string }
-        Returns: string
-      }
       list_insured_drivers: {
         Args: never
         Returns: {
@@ -2776,7 +2821,7 @@ export type Database = {
         Args: {
           _at: string
           _category: Database["public"]["Enums"]["vehicle_category"]
-          _country: string | null
+          _country: string
         }
         Returns: {
           commission_flat_xof: number
@@ -2797,7 +2842,7 @@ export type Database = {
         }[]
       }
       resolve_dynamic_pricing_settings: {
-        Args: { _country: string | null }
+        Args: { _country: string }
         Returns: {
           active: boolean
           country: string | null
