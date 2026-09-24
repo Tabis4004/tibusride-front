@@ -1,0 +1,10 @@
+{
+  // Worker Cloudflare de l'app web Tibus Ride (build Nitro preset cloudflare_module).
+  // Nitro fusionne ce fichier dans .output/server/wrangler.json, et
+  // .wrangler/deploy/config.json redirige `npx wrangler deploy` vers ce fichier généré.
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "tibusride-front",
+  "compatibility_date": "2026-09-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "observability": { "enabled": true }
+}

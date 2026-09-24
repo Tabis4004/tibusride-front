@@ -19,6 +19,7 @@ export default defineConfig({
     server: { entry: "server" },
   },
   nitro: {
-    preset: "vercel",
+    preset: "cloudflare_module",
+    cloudflare: { deployConfig: true, nodeCompat: true },
   },
 });
